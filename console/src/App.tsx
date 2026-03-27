@@ -17,6 +17,7 @@ import MainLayout from "./layouts/MainLayout";
 import { ThemeProvider, useTheme } from "./contexts/ThemeContext";
 import LoginPage from "./pages/Login";
 import { authApi } from "./api/modules/auth";
+import { settingsApi } from "./api/modules/settings";
 import { getApiUrl, getApiToken, clearAuthToken } from "./api/config";
 import "./styles/layout.css";
 import "./styles/form-override.css";
@@ -125,6 +126,28 @@ function AppInner() {
     i18n.on("languageChanged", handleLanguageChanged);
     return () => {
       i18n.off("languageChanged", handleLanguageChanged);
+    };
+  }, [i18n]);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const { language } = await settingsApi.getLanguage();
+        if (cancelled || !language) return;
+        const current = i18n.resolvedLanguage || i18n.language || "en";
+        const next = language.split("-")[0];
+        const currentShort = current.split("-")[0];
+        if (next !== currentShort) {
+          await i18n.changeLanguage(next);
+        }
+        localStorage.setItem("language", next);
+      } catch {
+        // Keep local language fallback when settings API is unavailable.
+      }
+    })();
+    return () => {
+      cancelled = true;
     };
   }, [i18n]);
 
