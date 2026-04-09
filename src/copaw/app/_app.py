@@ -205,6 +205,22 @@ async def lifespan(
     # Expose to endpoints - multi-agent manager
     app.state.multi_agent_manager = multi_agent_manager
 
+    # --- Snapshot manager initialization ---
+    from .snapshot.manager import SnapshotManager
+    from ..constant import SECRET_DIR
+
+    snapshot_manager = SnapshotManager(
+        working_dir=WORKING_DIR,
+        secret_dir=SECRET_DIR,
+        multi_agent_manager=multi_agent_manager,
+    )
+    app.state.snapshot_manager = snapshot_manager
+
+    # Check for crash recovery from interrupted restores
+    recovery_actions = await snapshot_manager.check_crash_recovery()
+    if recovery_actions:
+        logger.info("Snapshot crash recovery: %s", recovery_actions)
+
     # Connect DynamicMultiAgentRunner to MultiAgentManager
     if isinstance(runner, DynamicMultiAgentRunner):
         runner.set_multi_agent_manager(multi_agent_manager)

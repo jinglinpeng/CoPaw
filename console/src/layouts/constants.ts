@@ -33,6 +33,7 @@ export const KEY_TO_PATH: Record<string, string> = {
   environments: "/environments",
   "agent-config": "/agent-config",
   security: "/security",
+  snapshot: "/snapshot",
   "token-usage": "/token-usage",
   "voice-transcription": "/voice-transcription",
 };
@@ -52,6 +53,7 @@ export const KEY_TO_LABEL: Record<string, string> = {
   models: "nav.models",
   environments: "nav.environments",
   security: "nav.security",
+  snapshot: "nav.snapshot",
   "token-usage": "nav.tokenUsage",
   agents: "nav.agents",
 };

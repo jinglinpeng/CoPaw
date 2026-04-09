@@ -40,6 +40,7 @@ dependencies = [
     "pillow>=10.0.0",
     # anyio 4.13.0: _deliver_cancellation busy-loop / getpid storm (CoPaw#2632)
     "anyio>=4.0.0,<4.13.0",
+    "cryptography>=42.0.0",
 ]
 
 [tool.setuptools.dynamic]

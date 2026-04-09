@@ -223,6 +223,12 @@ export default function Sidebar({ selectedKey }: SidebarProps) {
       label: t("nav.security"),
     },
     {
+      key: "snapshot",
+      icon: <SparkLocalFileLine size={18} />,
+      path: "/snapshot",
+      label: t("nav.snapshot", "Snapshot"),
+    },
+    {
       key: "token-usage",
       icon: <SparkDataLine size={18} />,
       path: "/token-usage",
@@ -329,6 +335,11 @@ export default function Sidebar({ selectedKey }: SidebarProps) {
           key: "security",
           label: collapsed ? null : t("nav.security"),
           icon: <SparkBrowseLine size={16} />,
+        },
+        {
+          key: "snapshot",
+          label: collapsed ? null : t("nav.snapshot", "Snapshot"),
+          icon: <SparkLocalFileLine size={16} />,
         },
         {
           key: "token-usage",

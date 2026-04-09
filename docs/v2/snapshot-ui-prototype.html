@@ -1,0 +1,1163 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>CoPaw 快照功能 UI 原型 v2</title>
+<style>
+  :root {
+    --primary: #FF7F16;
+    --primary-hover: #E86F0A;
+    --primary-bg: #FFF7F0;
+    --primary-border: #FFD8B8;
+    --sidebar-bg: #FAF7F5;
+    --sidebar-width: 220px;
+    --text-primary: #1A1A1A;
+    --text-secondary: #666;
+    --text-tertiary: #999;
+    --border: #F0EDEB;
+    --bg-page: #FAFAFA;
+    --bg-card: #FFF;
+    --success: #52C41A;
+    --warning: #FAAD14;
+    --error: #FF4D4F;
+    --info: #1677FF;
+    --radius: 8px;
+    --shadow-sm: 0 1px 2px rgba(0,0,0,0.06);
+    --shadow-md: 0 4px 12px rgba(0,0,0,0.08);
+    --shadow-lg: 0 8px 24px rgba(0,0,0,0.12);
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: -apple-system, BlinkMacSystemFont, 'PingFang SC', 'Microsoft YaHei', 'Segoe UI', sans-serif; color: var(--text-primary); background: var(--bg-page); font-size: 14px; line-height: 1.5; }
+
+  .screen-nav { position: fixed; top: 0; left: 0; right: 0; z-index: 1000; background: #1A1A1A; color: #fff; display: flex; align-items: center; padding: 0 16px; height: 44px; gap: 6px; overflow-x: auto; }
+  .screen-nav h3 { font-size: 13px; font-weight: 500; margin-right: 12px; white-space: nowrap; color: #ccc; }
+  .screen-nav button { background: none; border: 1px solid #444; color: #ccc; padding: 4px 10px; border-radius: 4px; cursor: pointer; font-size: 11px; white-space: nowrap; transition: all 0.2s; }
+  .screen-nav button:hover { border-color: var(--primary); color: var(--primary); }
+  .screen-nav button.active { background: var(--primary); border-color: var(--primary); color: #fff; }
+  .screen { display: none; margin-top: 44px; }
+  .screen.active { display: block; }
+  .console { display: flex; min-height: calc(100vh - 44px); }
+
+  .sidebar { width: var(--sidebar-width); background: var(--sidebar-bg); border-right: 1px solid var(--border); flex-shrink: 0; padding: 16px 0; }
+  .sidebar .agent-selector { padding: 0 16px 16px; border-bottom: 1px solid var(--border); margin-bottom: 8px; }
+  .sidebar .agent-selector.dimmed { opacity: 0.45; }
+  .sidebar .agent-label { font-size: 12px; color: var(--text-tertiary); margin-bottom: 4px; }
+  .sidebar .agent-dropdown { display: flex; align-items: center; justify-content: space-between; padding: 6px 12px; background: #fff; border: 1px solid var(--border); border-radius: 6px; cursor: pointer; }
+  .sidebar .agent-dropdown .name { font-weight: 500; }
+  .sidebar .agent-dropdown .arrow { color: var(--text-tertiary); font-size: 10px; }
+  .sidebar .nav-group { padding: 0 8px; margin-bottom: 4px; }
+  .sidebar .nav-group-label { font-size: 11px; color: var(--text-tertiary); padding: 8px 12px 4px; text-transform: uppercase; letter-spacing: 0.5px; }
+  .sidebar .nav-item { display: flex; align-items: center; gap: 10px; padding: 8px 12px; border-radius: 6px; cursor: pointer; font-size: 14px; color: var(--text-secondary); transition: all 0.15s; }
+  .sidebar .nav-item:hover { background: rgba(0,0,0,0.04); }
+  .sidebar .nav-item.active { background: var(--primary); color: #fff; }
+  .sidebar .nav-item .icon { width: 18px; text-align: center; font-size: 16px; }
+
+  .main { flex: 1; padding: 24px 32px; overflow-y: auto; }
+  .breadcrumb { font-size: 13px; color: var(--text-tertiary); margin-bottom: 4px; }
+  .breadcrumb .sep { margin: 0 6px; }
+  .page-header { display: flex; align-items: flex-start; justify-content: space-between; margin-bottom: 20px; }
+  .page-title { font-size: 20px; font-weight: 600; }
+  .page-subtitle { font-size: 13px; color: var(--text-tertiary); margin-top: 2px; }
+
+  .btn { display: inline-flex; align-items: center; gap: 6px; padding: 6px 16px; border-radius: 6px; font-size: 14px; cursor: pointer; transition: all 0.2s; border: 1px solid var(--border); background: #fff; color: var(--text-primary); font-family: inherit; }
+  .btn:hover { border-color: var(--primary); color: var(--primary); }
+  .btn-primary { background: var(--primary); border-color: var(--primary); color: #fff; }
+  .btn-primary:hover { background: var(--primary-hover); border-color: var(--primary-hover); color: #fff; }
+  .btn-primary[disabled] { background: #FFD0A8; border-color: #FFD0A8; color: #fff; cursor: not-allowed; }
+  .btn-danger { border-color: var(--error); color: var(--error); }
+  .btn-danger:hover { background: #FFF1F0; }
+  .btn-text { border: none; background: none; padding: 6px 8px; }
+  .btn-text:hover { background: rgba(0,0,0,0.04); border: none; }
+  .btn-sm { padding: 3px 10px; font-size: 13px; }
+
+  .table-wrapper { background: var(--bg-card); border-radius: var(--radius); border: 1px solid var(--border); overflow: hidden; }
+  table { width: 100%; border-collapse: collapse; }
+  th { background: #FAFAFA; font-weight: 500; text-align: left; padding: 12px 16px; font-size: 13px; color: var(--text-secondary); border-bottom: 1px solid var(--border); }
+  th.sortable { cursor: pointer; user-select: none; }
+  th.sortable:hover { color: var(--primary); }
+  td { padding: 14px 16px; border-bottom: 1px solid var(--border); vertical-align: middle; }
+  tr:last-child td { border-bottom: none; }
+  tr:hover td { background: #FAFAFA; }
+
+  .tag { display: inline-flex; align-items: center; gap: 4px; padding: 2px 8px; border-radius: 4px; font-size: 12px; font-weight: 500; }
+  .tag-success { background: #F6FFED; color: #389E0D; border: 1px solid #B7EB8F; }
+  .tag-warning { background: #FFFBE6; color: #D48806; border: 1px solid #FFE58F; }
+  .tag-error { background: #FFF1F0; color: #CF1322; border: 1px solid #FFA39E; }
+  .tag-info { background: #E6F4FF; color: #0958D9; border: 1px solid #91CAFF; }
+  .tag-default { background: #F5F5F5; color: #666; border: 1px solid #D9D9D9; }
+  .tag-purple { background: #F9F0FF; color: #531DAB; border: 1px solid #D3ADF7; }
+
+  .modal-overlay { position: fixed; top: 44px; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.45); display: flex; align-items: center; justify-content: center; z-index: 100; }
+  .modal { background: #fff; border-radius: 12px; box-shadow: var(--shadow-lg); width: 600px; max-width: 90vw; max-height: 85vh; overflow-y: auto; }
+  .modal-header { padding: 20px 24px 12px; display: flex; align-items: center; justify-content: space-between; }
+  .modal-header h3 { font-size: 16px; font-weight: 600; }
+  .modal-close { width: 28px; height: 28px; border: none; background: none; cursor: pointer; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 18px; color: var(--text-tertiary); }
+  .modal-close:hover { background: #F5F5F5; }
+  .modal-body { padding: 8px 24px 20px; }
+  .modal-footer { padding: 12px 24px 20px; display: flex; justify-content: flex-end; gap: 8px; border-top: 1px solid var(--border); }
+
+  .form-item { margin-bottom: 16px; }
+  .form-label { display: block; font-size: 13px; font-weight: 500; color: var(--text-primary); margin-bottom: 6px; }
+  .form-hint { font-size: 12px; color: var(--text-tertiary); margin-top: 4px; }
+  .form-input { width: 100%; padding: 8px 12px; border: 1px solid var(--border); border-radius: 6px; font-size: 14px; font-family: inherit; outline: none; transition: border-color 0.2s; }
+  .form-input:focus { border-color: var(--primary); box-shadow: 0 0 0 2px rgba(255,127,22,0.1); }
+  .form-input-error { border-color: var(--error); }
+  .form-error-text { font-size: 12px; color: var(--error); margin-top: 4px; }
+
+  .checkbox-group { display: flex; flex-direction: column; gap: 10px; }
+  .checkbox-item { display: flex; align-items: flex-start; gap: 8px; cursor: pointer; }
+  .checkbox-item input[type="checkbox"], .checkbox-item input[type="radio"] { accent-color: var(--primary); margin-top: 3px; }
+  .checkbox-item .cb-label { font-size: 14px; }
+  .checkbox-item .cb-desc { font-size: 12px; color: var(--text-tertiary); }
+
+  .alert { padding: 12px 16px; border-radius: 6px; font-size: 13px; display: flex; gap: 10px; align-items: flex-start; }
+  .alert-warning { background: #FFFBE6; border: 1px solid #FFE58F; color: #8B6914; }
+  .alert-info { background: #E6F4FF; border: 1px solid #91CAFF; color: #0958D9; }
+  .alert-success { background: #F6FFED; border: 1px solid #B7EB8F; color: #389E0D; }
+  .alert-error { background: #FFF1F0; border: 1px solid #FFA39E; color: #CF1322; }
+  .alert-icon { font-size: 16px; flex-shrink: 0; margin-top: 1px; }
+
+  .progress-bar { height: 8px; background: #F0F0F0; border-radius: 4px; overflow: hidden; }
+  .progress-fill { height: 100%; background: var(--primary); border-radius: 4px; transition: width 0.3s; }
+
+  .steps { display: flex; gap: 0; margin-bottom: 24px; }
+  .step { flex: 1; display: flex; align-items: center; gap: 8px; }
+  .step-num { width: 28px; height: 28px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 13px; font-weight: 600; border: 2px solid var(--border); color: var(--text-tertiary); flex-shrink: 0; }
+  .step.active .step-num { background: var(--primary); border-color: var(--primary); color: #fff; }
+  .step.done .step-num { background: var(--success); border-color: var(--success); color: #fff; }
+  .step-label { font-size: 13px; color: var(--text-tertiary); }
+  .step.active .step-label { color: var(--text-primary); font-weight: 500; }
+  .step.done .step-label { color: var(--success); }
+  .step-line { flex: 1; height: 2px; background: var(--border); margin: 0 8px; }
+  .step.done .step-line { background: var(--success); }
+
+  .upload-area { border: 2px dashed var(--border); border-radius: var(--radius); padding: 48px 24px; text-align: center; cursor: pointer; transition: all 0.2s; }
+  .upload-area:hover { border-color: var(--primary); background: var(--primary-bg); }
+  .upload-icon { font-size: 48px; color: var(--text-tertiary); margin-bottom: 12px; }
+  .upload-text { font-size: 14px; color: var(--text-secondary); }
+  .upload-hint { font-size: 12px; color: var(--text-tertiary); margin-top: 4px; }
+
+  .checklist { list-style: none; }
+  .checklist-item { display: flex; gap: 12px; padding: 12px 0; border-bottom: 1px solid var(--border); align-items: flex-start; }
+  .checklist-item:last-child { border-bottom: none; }
+  .checklist-priority { padding: 2px 8px; border-radius: 4px; font-size: 11px; font-weight: 600; flex-shrink: 0; margin-top: 2px; }
+  .checklist-priority.must { background: #FFF1F0; color: var(--error); }
+  .checklist-priority.should { background: #E6F4FF; color: var(--info); }
+  .checklist-content { flex: 1; }
+  .checklist-title { font-weight: 500; margin-bottom: 2px; }
+  .checklist-hint { font-size: 12px; color: var(--text-tertiary); font-family: monospace; }
+
+  .stats-row { display: flex; gap: 16px; margin-bottom: 20px; }
+  .stat-card { flex: 1; background: #fff; border: 1px solid var(--border); border-radius: var(--radius); padding: 16px; }
+  .stat-value { font-size: 24px; font-weight: 600; margin-bottom: 2px; }
+  .stat-label { font-size: 12px; color: var(--text-tertiary); }
+
+  .empty-state { text-align: center; padding: 64px 24px; }
+  .empty-icon { font-size: 64px; color: #E0E0E0; margin-bottom: 16px; }
+  .empty-title { font-size: 16px; font-weight: 600; margin-bottom: 8px; }
+  .empty-desc { font-size: 14px; color: var(--text-tertiary); margin-bottom: 20px; max-width: 400px; margin-left: auto; margin-right: auto; }
+
+  .result-section { margin-bottom: 20px; }
+  .result-section h4 { font-size: 14px; font-weight: 600; margin-bottom: 8px; display: flex; align-items: center; gap: 8px; }
+  .result-list { list-style: none; }
+  .result-item { display: flex; align-items: center; gap: 8px; padding: 6px 0; font-size: 13px; }
+  .result-item .check { color: var(--success); }
+  .result-item .warn { color: var(--warning); }
+  .result-item .cross { color: var(--error); }
+
+  .text-muted { color: var(--text-tertiary); }
+  .text-sm { font-size: 13px; }
+  .text-xs { font-size: 12px; }
+  .mt-4 { margin-top: 4px; }
+  .mt-8 { margin-top: 8px; }
+  .mt-12 { margin-top: 12px; }
+  .mt-16 { margin-top: 16px; }
+  .mb-8 { margin-bottom: 8px; }
+  .mb-12 { margin-bottom: 12px; }
+  .mb-16 { margin-bottom: 16px; }
+  .flex { display: flex; align-items: center; }
+  .gap-8 { gap: 8px; }
+  .gap-12 { gap: 12px; }
+  .mono { font-family: 'SF Mono', 'Fira Code', monospace; font-size: 12px; }
+
+  .agent-chip { display: inline-flex; align-items: center; gap: 4px; padding: 2px 10px; border-radius: 12px; font-size: 12px; background: #F0F0F0; color: var(--text-secondary); margin: 2px; }
+  .agent-more { display: inline-flex; align-items: center; padding: 2px 8px; border-radius: 12px; font-size: 11px; background: #E8E8E8; color: var(--text-secondary); margin: 2px; cursor: pointer; position: relative; }
+  .agent-more:hover { background: #D8D8D8; }
+  .agent-more .tooltip { display: none; position: absolute; bottom: calc(100% + 6px); left: 50%; transform: translateX(-50%); background: #333; color: #fff; padding: 6px 10px; border-radius: 6px; font-size: 11px; white-space: nowrap; z-index: 10; }
+  .agent-more:hover .tooltip { display: block; }
+
+  .agent-multi-select { border: 1px solid var(--border); border-radius: 6px; padding: 8px; margin-top: 8px; max-height: 200px; overflow-y: auto; }
+  .agent-multi-select .search-input { width: 100%; padding: 6px 10px; border: 1px solid var(--border); border-radius: 4px; font-size: 13px; margin-bottom: 8px; outline: none; font-family: inherit; }
+  .agent-multi-select .search-input:focus { border-color: var(--primary); }
+  .agent-multi-select label { display: flex; align-items: center; gap: 6px; padding: 4px 10px; border-radius: 6px; background: #FAFAFA; cursor: pointer; font-size: 13px; margin-bottom: 4px; }
+  .agent-multi-select label:hover { background: var(--primary-bg); }
+  .agent-multi-select input[type="checkbox"] { accent-color: var(--primary); }
+
+  .filter-bar { display: flex; gap: 8px; margin-bottom: 12px; align-items: center; }
+  .filter-bar .search { width: 240px; padding: 6px 12px; border: 1px solid var(--border); border-radius: 6px; font-size: 13px; outline: none; font-family: inherit; }
+  .filter-bar .search:focus { border-color: var(--primary); }
+  .filter-bar select { padding: 6px 12px; border: 1px solid var(--border); border-radius: 6px; font-size: 13px; outline: none; font-family: inherit; background: #fff; color: var(--text-primary); }
+
+  .dropdown-menu { position: relative; display: inline-block; }
+  .dropdown-menu .dropdown-trigger { cursor: pointer; padding: 3px 8px; border-radius: 4px; }
+  .dropdown-menu .dropdown-trigger:hover { background: #F0F0F0; }
+  .dropdown-content { display: none; position: absolute; right: 0; top: 100%; background: #fff; border: 1px solid var(--border); border-radius: 6px; box-shadow: var(--shadow-md); min-width: 140px; z-index: 10; padding: 4px 0; }
+  .dropdown-menu:hover .dropdown-content { display: block; }
+  .dropdown-content .dropdown-item { padding: 8px 16px; font-size: 13px; cursor: pointer; }
+  .dropdown-content .dropdown-item:hover { background: #FAFAFA; }
+  .dropdown-content .dropdown-item.danger { color: var(--error); }
+
+  .confirm-input-row { display: flex; align-items: center; gap: 8px; margin-top: 8px; }
+  .confirm-input-row input { width: 100px; padding: 4px 8px; border: 1px solid var(--border); border-radius: 4px; font-size: 13px; font-family: inherit; outline: none; }
+  .confirm-input-row input:focus { border-color: var(--primary); }
+
+  .impact-list { list-style: none; margin-top: 8px; }
+  .impact-list li { padding: 4px 0; font-size: 13px; display: flex; align-items: center; gap: 6px; }
+  .impact-list li::before { content: "•"; color: var(--text-tertiary); }
+
+  .mapping-table { width: 100%; border-collapse: collapse; margin-top: 8px; }
+  .mapping-table th { background: #FAFAFA; padding: 8px 12px; font-size: 12px; font-weight: 500; color: var(--text-secondary); border: 1px solid var(--border); }
+  .mapping-table td { padding: 8px 12px; border: 1px solid var(--border); }
+  .mapping-table input { width: 100%; border: 1px solid var(--border); border-radius: 4px; padding: 4px 8px; font-size: 13px; font-family: inherit; outline: none; }
+  .mapping-table input:focus { border-color: var(--primary); }
+
+  .collapsible-header { display: flex; align-items: center; gap: 6px; cursor: pointer; font-size: 13px; font-weight: 500; color: var(--text-secondary); padding: 8px 0; }
+  .collapsible-header:hover { color: var(--primary); }
+  .collapsible-header .arrow { transition: transform 0.2s; font-size: 10px; }
+  .collapsible-header .arrow.open { transform: rotate(90deg); }
+</style>
+</head>
+<body>
+
+<div class="screen-nav">
+  <h3>CoPaw 快照 UI v2</h3>
+  <button class="active" onclick="showScreen('list')">1. 列表</button>
+  <button onclick="showScreen('list-empty')">2. 空状态</button>
+  <button onclick="showScreen('create')">3. 创建</button>
+  <button onclick="showScreen('restore')">4. 恢复</button>
+  <button onclick="showScreen('export')">5. 导出</button>
+  <button onclick="showScreen('import-upload')">6. 导入</button>
+  <button onclick="showScreen('import-decrypt')">7. 解密</button>
+  <button onclick="showScreen('import-progress')">8. 验证</button>
+  <button onclick="showScreen('import-result')">9. 结果</button>
+  <button onclick="showScreen('import-error')">10. 失败</button>
+  <button onclick="showScreen('agent-status')">11. 状态</button>
+</div>
+
+<!-- ═══════════════════════ SCREEN 1: 快照列表 ═══════════════════════ -->
+<div class="screen active" id="screen-list">
+  <div class="console">
+    <div class="sidebar">
+      <div class="agent-selector dimmed">
+        <div class="agent-label">当前 Agent</div>
+        <div class="agent-dropdown"><span class="name">default</span><span class="arrow">▾</span></div>
+      </div>
+      <div class="nav-group">
+        <div class="nav-group-label">控制</div>
+        <div class="nav-item"><span class="icon">📡</span> 渠道</div>
+        <div class="nav-item"><span class="icon">👥</span> 会话</div>
+        <div class="nav-item"><span class="icon">📅</span> 定时任务</div>
+        <div class="nav-item"><span class="icon">💬</span> 心跳</div>
+      </div>
+      <div class="nav-group">
+        <div class="nav-group-label">工作空间</div>
+        <div class="nav-item"><span class="icon">📁</span> 文件</div>
+        <div class="nav-item"><span class="icon">✨</span> 技能</div>
+        <div class="nav-item"><span class="icon">🔧</span> 工具</div>
+        <div class="nav-item"><span class="icon">⚡</span> MCP</div>
+        <div class="nav-item"><span class="icon">⚙️</span> 配置</div>
+      </div>
+      <div class="nav-group">
+        <div class="nav-group-label">设置</div>
+        <div class="nav-item"><span class="icon">🤖</span> Agent 管理</div>
+        <div class="nav-item"><span class="icon">🧠</span> 模型</div>
+        <div class="nav-item"><span class="icon">🧩</span> 技能池</div>
+        <div class="nav-item"><span class="icon">🌐</span> 环境变量</div>
+        <div class="nav-item"><span class="icon">🔒</span> 安全</div>
+        <div class="nav-item active"><span class="icon">📸</span> 快照</div>
+        <div class="nav-item"><span class="icon">📊</span> Token 用量</div>
+      </div>
+    </div>
+    <div class="main">
+      <div class="breadcrumb"><span>设置</span><span class="sep">/</span><span>快照</span></div>
+      <div class="page-header">
+        <div>
+          <h1 class="page-title">快照管理</h1>
+          <div class="page-subtitle">管理所有 Agent 的快照。与当前选中的 Agent 无关。</div>
+        </div>
+        <div class="flex gap-8">
+          <button class="btn" onclick="showScreen('import-upload')">↓ 导入</button>
+          <button class="btn btn-primary" onclick="showScreen('create')">+ 创建快照</button>
+        </div>
+      </div>
+      <div class="stats-row">
+        <div class="stat-card"><div class="stat-value">5</div><div class="stat-label">快照总数</div></div>
+        <div class="stat-card"><div class="stat-value">128 MB</div><div class="stat-label">总大小</div></div>
+        <div class="stat-card"><div class="stat-value">4月8日</div><div class="stat-label">最近快照</div></div>
+      </div>
+      <!-- 筛选栏 -->
+      <div class="filter-bar">
+        <input type="text" class="search" placeholder="搜索备注或 ID...">
+        <select><option>所有 Agent</option><option>default</option><option>customer-svc</option><option>dev-agent</option></select>
+        <select><option>所有内容</option><option>含密钥</option><option>含全局</option></select>
+      </div>
+      <div class="table-wrapper">
+        <table>
+          <thead><tr>
+            <th style="width:24px"><input type="checkbox"></th>
+            <th>备注</th>
+            <th>包含 Agent</th>
+            <th class="sortable">创建时间 ↓</th>
+            <th class="sortable">大小</th>
+            <th>内容</th>
+            <th style="width:180px">操作</th>
+          </tr></thead>
+          <tbody>
+            <tr>
+              <td><input type="checkbox"></td>
+              <td>
+                <div style="font-weight:500">v2-stable-prompt</div>
+                <div class="text-xs text-muted mono">snap-a1b2c3d4</div>
+              </td>
+              <td><span class="agent-chip">default</span></td>
+              <td><div>2026-04-08 14:30</div><div class="text-xs text-muted">2 小时前</div></td>
+              <td>32.5 MB</td>
+              <td>
+                <span class="tag tag-info">工作空间</span>
+                <span class="tag tag-warning" style="margin-left:4px">密钥</span>
+              </td>
+              <td>
+                <button class="btn btn-sm" onclick="showScreen('restore')">↩ 恢复</button>
+                <button class="btn btn-sm" onclick="showScreen('export')">↗ 导出</button>
+                <div class="dropdown-menu" style="display:inline-block">
+                  <span class="dropdown-trigger">⋯</span>
+                  <div class="dropdown-content">
+                    <div class="dropdown-item danger">删除快照</div>
+                  </div>
+                </div>
+              </td>
+            </tr>
+            <tr>
+              <td><input type="checkbox"></td>
+              <td>
+                <div style="font-weight:500">全量备份-0405</div>
+                <div class="text-xs text-muted mono">snap-e5f6g7h8</div>
+              </td>
+              <td>
+                <span class="agent-chip">default</span>
+                <span class="agent-chip">customer-svc</span>
+                <span class="agent-more">+1<span class="tooltip">dev-agent</span></span>
+              </td>
+              <td><div>2026-04-05 09:00</div><div class="text-xs text-muted">3 天前</div></td>
+              <td>86.2 MB</td>
+              <td>
+                <span class="tag tag-purple">全部 Agent</span>
+                <span class="tag tag-warning" style="margin-left:4px">密钥</span>
+                <span class="tag tag-default" style="margin-left:4px">全局</span>
+              </td>
+              <td>
+                <button class="btn btn-sm" onclick="showScreen('restore')">↩ 恢复</button>
+                <button class="btn btn-sm" onclick="showScreen('export')">↗ 导出</button>
+                <div class="dropdown-menu" style="display:inline-block">
+                  <span class="dropdown-trigger">⋯</span>
+                  <div class="dropdown-content">
+                    <div class="dropdown-item danger">删除快照</div>
+                  </div>
+                </div>
+              </td>
+            </tr>
+            <tr>
+              <td><input type="checkbox"></td>
+              <td>
+                <div style="font-weight:500">修改技能前</div>
+                <div class="text-xs text-muted mono">snap-i9j0k1l2</div>
+              </td>
+              <td><span class="agent-chip">customer-svc</span></td>
+              <td><div>2026-04-04 15:20</div><div class="text-xs text-muted">4 天前</div></td>
+              <td>22.1 MB</td>
+              <td><span class="tag tag-info">工作空间</span></td>
+              <td>
+                <button class="btn btn-sm" onclick="showScreen('restore')">↩ 恢复</button>
+                <button class="btn btn-sm" onclick="showScreen('export')">↗ 导出</button>
+                <div class="dropdown-menu" style="display:inline-block">
+                  <span class="dropdown-trigger">⋯</span>
+                  <div class="dropdown-content">
+                    <div class="dropdown-item danger">删除快照</div>
+                  </div>
+                </div>
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="flex gap-8 mt-16" style="justify-content:space-between">
+        <div class="text-sm text-muted">3 个快照 · 140.8 MB</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════════════════ SCREEN 2: 空状态 ═══════════════════════ -->
+<div class="screen" id="screen-list-empty">
+  <div class="console">
+    <div class="sidebar">
+      <div class="agent-selector dimmed">
+        <div class="agent-label">当前 Agent</div>
+        <div class="agent-dropdown"><span class="name">default</span><span class="arrow">▾</span></div>
+      </div>
+      <div class="nav-group"><div class="nav-group-label">设置</div>
+        <div class="nav-item"><span class="icon">🤖</span> Agent 管理</div>
+        <div class="nav-item"><span class="icon">🧠</span> 模型</div>
+        <div class="nav-item active"><span class="icon">📸</span> 快照</div>
+        <div class="nav-item"><span class="icon">📊</span> Token 用量</div>
+      </div>
+    </div>
+    <div class="main">
+      <div class="breadcrumb"><span>设置</span><span class="sep">/</span><span>快照</span></div>
+      <div class="page-header">
+        <div><h1 class="page-title">快照管理</h1><div class="page-subtitle">管理所有 Agent 的快照。与当前选中的 Agent 无关。</div></div>
+        <div class="flex gap-8">
+          <button class="btn">↓ 导入</button>
+          <button class="btn btn-primary" onclick="showScreen('create')">+ 创建快照</button>
+        </div>
+      </div>
+      <div class="table-wrapper">
+        <div class="empty-state">
+          <div class="empty-icon">📸</div>
+          <div class="empty-title">还没有快照</div>
+          <div class="empty-desc">创建第一个快照来保存 Agent 的状态。您可以随时恢复、导出或分享快照。</div>
+          <button class="btn btn-primary" onclick="showScreen('create')">+ 创建第一个快照</button>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════════════════ SCREEN 3: 创建快照 Modal ═══════════════════════ -->
+<div class="screen" id="screen-create">
+  <div class="console" style="filter:brightness(0.7)"></div>
+  <div class="modal-overlay">
+    <div class="modal">
+      <div class="modal-header">
+        <h3>创建快照</h3>
+        <button class="modal-close" onclick="showScreen('list')">✕</button>
+      </div>
+      <div class="modal-body">
+        <div class="form-item">
+          <label class="form-label">快照范围</label>
+          <div class="checkbox-group">
+            <label class="checkbox-item">
+              <input type="radio" name="scope" value="single" checked onchange="toggleAgentSelect()">
+              <div><div class="cb-label">当前 Agent（default）</div><div class="cb-desc">仅快照当前选中的工作空间</div></div>
+            </label>
+            <label class="checkbox-item">
+              <input type="radio" name="scope" value="selected" onchange="toggleAgentSelect()">
+              <div><div class="cb-label">选择指定 Agent</div><div class="cb-desc">选择一个或多个工作空间进行快照</div></div>
+            </label>
+            <label class="checkbox-item">
+              <input type="radio" name="scope" value="all" onchange="toggleAgentSelect()">
+              <div><div class="cb-label">所有 Agent（全量备份）</div><div class="cb-desc">快照全部工作空间 + 全局配置，适合定期备份和设备迁移</div></div>
+            </label>
+          </div>
+        </div>
+
+        <!-- 多选面板：仅在选择"指定 Agent"时显示 -->
+        <div class="form-item" id="agent-select-panel" style="display:none; padding-left:28px">
+          <div class="agent-multi-select">
+            <input type="text" class="search-input" placeholder="搜索 Agent...">
+            <label><input type="checkbox" checked> default</label>
+            <label><input type="checkbox" checked> customer-svc</label>
+            <label><input type="checkbox"> dev-agent</label>
+            <label><input type="checkbox"> test-bot</label>
+            <label><input type="checkbox"> assistant-v2</label>
+          </div>
+          <div class="form-hint">已选 2 个 Agent · 预估大小 ~54 MB</div>
+        </div>
+
+        <div class="alert alert-info mb-16">
+          <span class="alert-icon">ℹ️</span>
+          <div>
+            <div style="font-weight:500">预估大小：~32 MB</div>
+            <div class="text-xs" style="margin-top:2px">14 个会话 · 5 个技能 · 18 个记忆文件</div>
+          </div>
+        </div>
+
+        <div class="form-item">
+          <label class="form-label">备注（可选）</label>
+          <input type="text" class="form-input" placeholder="例如：修改 prompt 前、每周备份...">
+          <div class="form-hint">简短描述，方便日后识别</div>
+        </div>
+
+        <div class="form-item">
+          <label class="form-label">包含内容</label>
+          <div class="checkbox-group">
+            <label class="checkbox-item">
+              <input type="checkbox" checked disabled>
+              <div><div class="cb-label">工作空间数据（必选）</div><div class="cb-desc">Agent 配置、对话历史、技能、记忆、定时任务</div></div>
+            </label>
+            <label class="checkbox-item">
+              <input type="checkbox" checked>
+              <div><div class="cb-label">密钥信息（API Key、Token）</div><div class="cb-desc">Provider 配置和环境变量。本地恢复时需要。</div></div>
+            </label>
+            <label class="checkbox-item">
+              <input type="checkbox" id="create-global-check">
+              <div><div class="cb-label">全局配置</div><div class="cb-desc">根配置、UI 设置、共享技能池</div></div>
+            </label>
+          </div>
+        </div>
+
+        <!-- 高级选项折叠区 -->
+        <div class="collapsible-header" onclick="this.querySelector('.arrow').classList.toggle('open'); document.getElementById('advanced-options').style.display = document.getElementById('advanced-options').style.display === 'none' ? 'block' : 'none'">
+          <span class="arrow">▶</span> 高级选项（排除内容）
+        </div>
+        <div id="advanced-options" style="display:none">
+          <div class="form-item" style="padding-left:20px">
+            <div class="checkbox-group">
+              <label class="checkbox-item">
+                <input type="checkbox">
+                <div><div class="cb-label">排除对话历史</div><div class="cb-desc">跳过 sessions/*.json 文件（节省 ~18 MB）</div></div>
+              </label>
+              <label class="checkbox-item">
+                <input type="checkbox">
+                <div><div class="cb-label">排除向量记忆</div><div class="cb-desc">跳过 ReMe 数据库文件（节省 ~8 MB）</div></div>
+              </label>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn" onclick="showScreen('list')">取消</button>
+        <button class="btn btn-primary">创建快照</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════════════════ SCREEN 4: 恢复确认 Modal ═══════════════════════ -->
+<div class="screen" id="screen-restore">
+  <div class="console" style="filter:brightness(0.7)"></div>
+  <div class="modal-overlay">
+    <div class="modal">
+      <div class="modal-header">
+        <h3>恢复快照</h3>
+        <button class="modal-close" onclick="showScreen('list')">✕</button>
+      </div>
+      <div class="modal-body">
+        <div class="alert alert-warning mb-16">
+          <span class="alert-icon">⚠️</span>
+          <div>
+            <strong>此操作不可自动撤销。</strong>
+            <div class="text-xs" style="margin-top:4px">恢复快照仅回滚 CoPaw 本地配置和数据。已通过渠道发送的消息、已执行的定时任务不会被撤销。系统将自动备份当前状态。</div>
+          </div>
+        </div>
+
+        <div style="background:#FAFAFA; border-radius:8px; padding:16px; margin-bottom:16px">
+          <div class="flex" style="justify-content:space-between; margin-bottom:8px">
+            <div style="font-weight:600">v2-stable-prompt</div>
+            <span class="tag tag-default">32.5 MB</span>
+          </div>
+          <div class="text-sm text-muted">创建于 2026-04-08 14:30（2 小时前）</div>
+          <div class="text-sm text-muted mt-4">CoPaw v0.5.2 · AgentScope v0.1.4 · Python 3.11.5</div>
+          <div class="flex gap-8 mt-8">
+            <span class="tag tag-info">工作空间</span>
+            <span class="tag tag-warning">密钥</span>
+          </div>
+          <div class="mt-8">
+            <span class="text-xs text-muted">包含 Agent：</span>
+            <span class="agent-chip">default</span>
+          </div>
+        </div>
+
+        <!-- 恢复影响范围 -->
+        <div class="form-item">
+          <label class="form-label">本次恢复将影响</label>
+          <div style="background:#fff; border:1px solid var(--border); border-radius:6px; padding:12px">
+            <ul class="impact-list">
+              <li>Agent 配置（agent.json）</li>
+              <li>3 个对话历史</li>
+              <li>5 个技能</li>
+              <li>2 个定时任务</li>
+              <li>Provider 密钥配置</li>
+            </ul>
+            <div class="text-xs text-muted mt-8">自动备份命名：<code>default.backup.20260408163000</code></div>
+          </div>
+        </div>
+
+        <div class="form-item">
+          <label class="form-label">恢复目标 Agent</label>
+          <select class="form-input" style="width:auto; min-width:200px">
+            <option>default（原 Agent）</option>
+          </select>
+          <div class="form-hint">此快照包含 1 个 Agent，选择要恢复的目标。</div>
+        </div>
+
+        <div class="form-item">
+          <label class="form-label">恢复模式</label>
+          <div class="checkbox-group">
+            <label class="checkbox-item">
+              <input type="radio" name="restore-mode" value="inplace" checked onchange="toggleCloneInput()">
+              <div><div class="cb-label">原地恢复（回滚）</div><div class="cb-desc">将 Agent "default" 回滚到快照状态。</div></div>
+            </label>
+            <label class="checkbox-item">
+              <input type="radio" name="restore-mode" value="clone" onchange="toggleCloneInput()">
+              <div><div class="cb-label">克隆为新 Agent</div><div class="cb-desc">从快照创建新 Agent，不影响现有 Agent。</div></div>
+            </label>
+          </div>
+        </div>
+
+        <!-- 克隆目标 Agent ID（仅克隆模式显示） -->
+        <div class="form-item" id="clone-input-panel" style="display:none; padding-left:28px">
+          <label class="form-label">新 Agent ID</label>
+          <input type="text" class="form-input" placeholder="default-clone-1" style="max-width:300px">
+          <div class="form-hint">留空则使用默认命名。如果 ID 已存在会自动追加编号。</div>
+        </div>
+
+        <!-- 操作护栏：确认 checkbox -->
+        <div class="form-item mt-12">
+          <label class="checkbox-item" id="restore-confirm-check">
+            <input type="checkbox" onchange="document.getElementById('restore-submit').disabled = !this.checked">
+            <div><div class="cb-label" style="font-size:13px">我理解此操作将覆盖当前工作空间，且外部副作用不会被撤销</div></div>
+          </label>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn" onclick="showScreen('list')">取消</button>
+        <button class="btn btn-primary" id="restore-submit" disabled>确认恢复</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════════════════ SCREEN 5: 导出选项 Modal ═══════════════════════ -->
+<div class="screen" id="screen-export">
+  <div class="console" style="filter:brightness(0.7)"></div>
+  <div class="modal-overlay">
+    <div class="modal">
+      <div class="modal-header">
+        <h3>导出快照</h3>
+        <button class="modal-close" onclick="showScreen('list')">✕</button>
+      </div>
+      <div class="modal-body">
+        <div style="background:#FAFAFA; border-radius:8px; padding:12px 16px; margin-bottom:16px">
+          <div class="flex" style="justify-content:space-between">
+            <div style="font-weight:500">v2-stable-prompt</div>
+            <span class="text-sm text-muted">32.5 MB</span>
+          </div>
+        </div>
+
+        <div class="alert alert-info mb-16">
+          <span class="alert-icon">ℹ️</span>
+          <div>导出包默认会剥离 API Key 和 Token，可安全分享给他人。</div>
+        </div>
+
+        <div class="form-item">
+          <label class="form-label">安全选项</label>
+          <div class="checkbox-group">
+            <label class="checkbox-item">
+              <input type="checkbox" id="export-include-secrets" onchange="toggleExportSecrets()">
+              <div><div class="cb-label">包含密钥信息（API Key、Token）</div><div class="cb-desc">⚠️ 不建议用于分享。勾选后需要输入 YES 确认，且必须设置加密密码。</div></div>
+            </label>
+
+            <!-- 包含密钥时的 YES 确认 -->
+            <div id="export-yes-confirm" style="display:none; padding-left:28px">
+              <div class="confirm-input-row">
+                <span class="text-sm">输入 <strong>YES</strong> 确认：</span>
+                <input type="text" placeholder="YES" id="export-yes-input" oninput="checkExportReady()">
+              </div>
+              <div class="form-hint" style="color:var(--error)">密钥泄露风险！请确保传输安全。</div>
+            </div>
+
+            <label class="checkbox-item">
+              <input type="checkbox" id="export-encrypt-check" onchange="toggleEncryptFields()">
+              <div><div class="cb-label">使用密码加密（AES-256-GCM）</div><div class="cb-desc">接收方需要密码才能导入。</div></div>
+            </label>
+
+            <!-- 加密密码输入 -->
+            <div id="export-password-fields" style="display:none; padding-left:28px">
+              <div class="form-item mb-8">
+                <input type="password" class="form-input" placeholder="设置密码" style="max-width:300px">
+              </div>
+              <div class="form-item mb-8">
+                <input type="password" class="form-input" placeholder="确认密码" style="max-width:300px">
+              </div>
+              <div class="alert alert-warning" style="padding:8px 12px; font-size:12px">
+                <span class="alert-icon">⚠️</span>
+                <div>密码不会被保存，丢失后无法恢复快照。</div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="form-item">
+          <label class="form-label">输出文件名</label>
+          <input type="text" class="form-input" value="copaw-snapshot-default-20260408.zip">
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn" onclick="showScreen('list')">取消</button>
+        <button class="btn btn-primary" id="export-submit">↗ 下载导出文件</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════════════════ SCREEN 6: 导入 - 上传 ═══════════════════════ -->
+<div class="screen" id="screen-import-upload">
+  <div class="console">
+    <div class="sidebar">
+      <div class="agent-selector dimmed">
+        <div class="agent-label">当前 Agent</div>
+        <div class="agent-dropdown"><span class="name">default</span><span class="arrow">▾</span></div>
+      </div>
+      <div class="nav-group"><div class="nav-group-label">设置</div>
+        <div class="nav-item"><span class="icon">🤖</span> Agent 管理</div>
+        <div class="nav-item active"><span class="icon">📸</span> 快照</div>
+      </div>
+    </div>
+    <div class="main">
+      <div class="breadcrumb"><span>设置</span><span class="sep">/</span><span>快照</span><span class="sep">/</span><span>导入</span></div>
+      <div class="page-header"><h1 class="page-title">导入快照</h1></div>
+      <div class="steps">
+        <div class="step active"><div class="step-num">1</div><div class="step-label">上传</div></div>
+        <div class="step-line"></div>
+        <div class="step"><div class="step-num">2</div><div class="step-label">解密</div></div>
+        <div class="step-line"></div>
+        <div class="step"><div class="step-num">3</div><div class="step-label">验证</div></div>
+        <div class="step-line"></div>
+        <div class="step"><div class="step-num">4</div><div class="step-label">结果</div></div>
+      </div>
+
+      <div class="upload-area" onclick="showScreen('import-decrypt')">
+        <div class="upload-icon">📦</div>
+        <div class="upload-text">点击或拖拽快照文件到此处上传</div>
+        <div class="upload-hint">支持 .zip 文件，最大 2 GB</div>
+      </div>
+
+      <div class="alert alert-info mt-16">
+        <span class="alert-icon">🔒</span>
+        <div>
+          <strong>安全提示：</strong>导入的快照视为不可信来源。
+          所有技能、定时任务、渠道和 MCP 连接默认处于禁用状态，
+          导入后需要逐一审核并手动启用。
+        </div>
+      </div>
+      <div style="margin-top:24px">
+        <button class="btn" onclick="showScreen('list')">← 返回快照列表</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════════════════ SCREEN 7: 导入 - 解密（加密包时） ═══════════════════════ -->
+<div class="screen" id="screen-import-decrypt">
+  <div class="console">
+    <div class="sidebar">
+      <div class="agent-selector dimmed">
+        <div class="agent-label">当前 Agent</div>
+        <div class="agent-dropdown"><span class="name">default</span><span class="arrow">▾</span></div>
+      </div>
+      <div class="nav-group"><div class="nav-group-label">设置</div>
+        <div class="nav-item active"><span class="icon">📸</span> 快照</div>
+      </div>
+    </div>
+    <div class="main">
+      <div class="breadcrumb"><span>设置</span><span class="sep">/</span><span>快照</span><span class="sep">/</span><span>导入</span></div>
+      <div class="page-header"><h1 class="page-title">导入快照</h1></div>
+      <div class="steps">
+        <div class="step done"><div class="step-num">✓</div><div class="step-label">上传</div></div>
+        <div class="step-line" style="background:var(--success)"></div>
+        <div class="step active"><div class="step-num">2</div><div class="step-label">解密</div></div>
+        <div class="step-line"></div>
+        <div class="step"><div class="step-num">3</div><div class="step-label">验证</div></div>
+        <div class="step-line"></div>
+        <div class="step"><div class="step-num">4</div><div class="step-label">结果</div></div>
+      </div>
+
+      <div style="max-width:480px; margin:32px auto">
+        <div class="alert alert-info mb-16">
+          <span class="alert-icon">🔐</span>
+          <div>
+            <strong>检测到加密快照</strong>
+            <div class="text-xs mt-4">此快照文件已加密（AES-256-GCM），需要输入导出时设置的密码才能继续。</div>
+          </div>
+        </div>
+
+        <div style="background:#FAFAFA; border-radius:8px; padding:12px 16px; margin-bottom:16px">
+          <div class="text-sm"><strong>文件：</strong>community-agent.zip · 45.2 MB</div>
+          <div class="text-sm text-muted mt-4">加密方式：AES-256-GCM</div>
+        </div>
+
+        <div class="form-item">
+          <label class="form-label">输入密码</label>
+          <input type="password" class="form-input" placeholder="输入导出时设置的密码">
+          <div class="form-hint">密码错误或文件被篡改时将无法解密。</div>
+        </div>
+
+        <!-- 多 Agent 包：ID 映射 -->
+        <div class="form-item">
+          <label class="form-label">Agent ID 映射</label>
+          <div class="form-hint mb-8">此快照包含 2 个 Agent。您可以为每个 Agent 指定导入后的 ID。</div>
+          <table class="mapping-table">
+            <thead><tr><th>快照中的 Agent ID</th><th>导入后 Agent ID</th><th>状态</th></tr></thead>
+            <tbody>
+              <tr>
+                <td class="text-sm">customer-service</td>
+                <td><input type="text" value="customer-service"></td>
+                <td><span class="tag tag-success" style="font-size:11px">可用</span></td>
+              </tr>
+              <tr>
+                <td class="text-sm">helper-bot</td>
+                <td><input type="text" value="helper-bot-imported" class="form-input-error" style="border-color:var(--warning)"></td>
+                <td><span class="tag tag-warning" style="font-size:11px">已重命名</span></td>
+              </tr>
+            </tbody>
+          </table>
+          <div class="form-hint mt-4">⚠ "helper-bot" 已存在，已自动重命名为 "helper-bot-imported"。</div>
+        </div>
+
+        <div class="flex gap-8 mt-16">
+          <button class="btn" onclick="showScreen('import-upload')">← 上一步</button>
+          <button class="btn btn-primary" onclick="showScreen('import-progress')">解密并继续</button>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════════════════ SCREEN 8: 导入 - 验证进度 ═══════════════════════ -->
+<div class="screen" id="screen-import-progress">
+  <div class="console">
+    <div class="sidebar">
+      <div class="agent-selector dimmed">
+        <div class="agent-label">当前 Agent</div>
+        <div class="agent-dropdown"><span class="name">default</span><span class="arrow">▾</span></div>
+      </div>
+      <div class="nav-group"><div class="nav-group-label">设置</div>
+        <div class="nav-item active"><span class="icon">📸</span> 快照</div>
+      </div>
+    </div>
+    <div class="main">
+      <div class="breadcrumb"><span>设置</span><span class="sep">/</span><span>快照</span><span class="sep">/</span><span>导入</span></div>
+      <div class="page-header"><h1 class="page-title">导入快照</h1></div>
+      <div class="steps">
+        <div class="step done"><div class="step-num">✓</div><div class="step-label">上传</div></div>
+        <div class="step-line" style="background:var(--success)"></div>
+        <div class="step done"><div class="step-num">✓</div><div class="step-label">解密</div></div>
+        <div class="step-line" style="background:var(--success)"></div>
+        <div class="step active"><div class="step-num">3</div><div class="step-label">验证</div></div>
+        <div class="step-line"></div>
+        <div class="step"><div class="step-num">4</div><div class="step-label">结果</div></div>
+      </div>
+      <div style="max-width:500px; margin:48px auto; text-align:center">
+        <div style="font-size:48px; margin-bottom:16px">📦</div>
+        <h3 style="margin-bottom:8px">正在导入快照...</h3>
+        <div class="text-sm text-muted mb-16">community-agent.zip · 45.2 MB · 2 个 Agent</div>
+        <div class="progress-bar mb-12"><div class="progress-fill" style="width:65%"></div></div>
+        <div class="text-sm text-muted">正在验证文件并检查兼容性...（65%）</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════════════════ SCREEN 9: 导入 - 结果与待办清单 ═══════════════════════ -->
+<div class="screen" id="screen-import-result">
+  <div class="console">
+    <div class="sidebar">
+      <div class="agent-selector">
+        <div class="agent-label">当前 Agent</div>
+        <div class="agent-dropdown"><span class="name">customer-service</span><span class="arrow">▾</span></div>
+      </div>
+      <div class="nav-group"><div class="nav-group-label">工作空间</div>
+        <div class="nav-item"><span class="icon">✨</span> 技能 <span class="tag tag-warning" style="margin-left:auto;font-size:10px">3 待审核</span></div>
+      </div>
+      <div class="nav-group"><div class="nav-group-label">设置</div>
+        <div class="nav-item active"><span class="icon">📸</span> 快照</div>
+      </div>
+    </div>
+    <div class="main">
+      <div class="breadcrumb"><span>设置</span><span class="sep">/</span><span>快照</span><span class="sep">/</span><span>导入结果</span></div>
+      <div class="page-header">
+        <h1 class="page-title">导入完成</h1>
+        <!-- 统一使用最严重状态 -->
+        <span class="tag tag-error" style="font-size:14px; padding:4px 12px">需配置 needs_setup</span>
+      </div>
+      <div class="alert alert-warning mb-16">
+        <span class="alert-icon">⚠️</span>
+        <div>还需完成 <strong>2 个必须项</strong>后 Agent 才能正常运行。</div>
+      </div>
+      <div class="steps mb-16">
+        <div class="step done"><div class="step-num">✓</div><div class="step-label">上传</div></div>
+        <div class="step-line" style="background:var(--success)"></div>
+        <div class="step done"><div class="step-num">✓</div><div class="step-label">解密</div></div>
+        <div class="step-line" style="background:var(--success)"></div>
+        <div class="step done"><div class="step-num">✓</div><div class="step-label">已验证</div></div>
+        <div class="step-line" style="background:var(--success)"></div>
+        <div class="step done"><div class="step-num">✓</div><div class="step-label">结果</div></div>
+      </div>
+
+      <div class="result-section">
+        <h4>阶段 1/2：文件导入</h4>
+        <div style="background:#fff; border:1px solid var(--border); border-radius:8px; padding:16px">
+          <ul class="result-list">
+            <li class="result-item"><span class="check">✓</span> agent.json 已导入</li>
+            <li class="result-item"><span class="check">✓</span> 3 个技能已导入 <span class="tag tag-warning" style="margin-left:8px">已禁用，待审核</span></li>
+            <li class="result-item"><span class="check">✓</span> 2 个定时任务已导入 <span class="tag tag-warning" style="margin-left:8px">已暂停</span></li>
+            <li class="result-item"><span class="check">✓</span> 渠道配置已导入 <span class="tag tag-warning" style="margin-left:8px">未连接</span></li>
+            <li class="result-item"><span class="check">✓</span> MCP 配置已导入 <span class="tag tag-warning" style="margin-left:8px">未连接</span></li>
+            <li class="result-item"><span class="check">✓</span> 10 个对话历史已导入</li>
+            <li class="result-item"><span class="warn">⚠</span> 2 个对话不兼容 <span class="text-xs text-muted" style="margin-left:8px">已归档到 sessions/_incompatible/</span></li>
+            <li class="result-item"><span class="warn">⚠</span> 检测到 2 处 Windows 路径引用</li>
+          </ul>
+        </div>
+      </div>
+
+      <div class="result-section">
+        <h4>阶段 2/2：可运行性检查</h4>
+        <div style="background:#fff; border:1px solid var(--border); border-radius:8px; padding:16px">
+          <!-- 统一状态 -->
+          <div class="flex gap-12 mb-12">
+            <span class="tag tag-error" style="font-size:13px; padding:4px 12px">Agent 状态：needs_setup</span>
+          </div>
+          <ul class="result-list">
+            <li class="result-item"><span class="cross">✗</span> Provider "openai"：API Key 未配置 <span class="tag tag-error" style="margin-left:8px">必须</span></li>
+            <li class="result-item"><span class="cross">✗</span> 渠道 "dingtalk"：需要重新认证 <span class="tag tag-error" style="margin-left:8px">必须</span></li>
+            <li class="result-item"><span class="warn">⚠</span> 技能依赖 "pandas"：未安装 <span class="tag tag-info" style="margin-left:8px">建议</span></li>
+          </ul>
+        </div>
+      </div>
+
+      <div class="result-section">
+        <h4>📋 待办清单</h4>
+        <div style="background:#fff; border:1px solid var(--border); border-radius:8px; padding:16px">
+          <ul class="checklist">
+            <li class="checklist-item">
+              <span class="checklist-priority must">必须</span>
+              <div class="checklist-content"><div class="checklist-title">配置 Provider API Key</div><div class="checklist-hint">设置 → 模型 → openai → 设置 API Key</div></div>
+              <button class="btn btn-sm">前往 →</button>
+            </li>
+            <li class="checklist-item">
+              <span class="checklist-priority must">必须</span>
+              <div class="checklist-content"><div class="checklist-title">重新认证渠道</div><div class="checklist-hint">控制 → 渠道 → dingtalk → 配置</div></div>
+              <button class="btn btn-sm">前往 →</button>
+            </li>
+            <li class="checklist-item">
+              <span class="checklist-priority should">建议</span>
+              <div class="checklist-content"><div class="checklist-title">安装技能依赖</div><div class="checklist-hint">pip install pandas</div></div>
+            </li>
+            <li class="checklist-item">
+              <span class="checklist-priority should">建议</span>
+              <div class="checklist-content"><div class="checklist-title">审核并启用技能（3 个待审核）</div><div class="checklist-hint">工作空间 → 技能 → 逐个查看内容</div></div>
+              <button class="btn btn-sm">前往 →</button>
+            </li>
+            <li class="checklist-item">
+              <span class="checklist-priority should">建议</span>
+              <div class="checklist-content"><div class="checklist-title">审核并启用定时任务（2 个已暂停）</div><div class="checklist-hint">控制 → 定时任务 → 审核触发条件和动作</div></div>
+              <button class="btn btn-sm">前往 →</button>
+            </li>
+          </ul>
+        </div>
+      </div>
+      <div class="flex gap-8 mt-16">
+        <button class="btn btn-primary" onclick="showScreen('list')">前往快照列表</button>
+        <!-- needs_setup 时置灰 -->
+        <button class="btn" disabled title="完成所有必须项后可用" style="opacity:0.5; cursor:not-allowed">打开聊天测试</button>
+        <span class="text-xs text-muted">完成必须项后可用</span>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════════════════ SCREEN 10: 导入失败 ═══════════════════════ -->
+<div class="screen" id="screen-import-error">
+  <div class="console">
+    <div class="sidebar">
+      <div class="agent-selector dimmed">
+        <div class="agent-label">当前 Agent</div>
+        <div class="agent-dropdown"><span class="name">default</span><span class="arrow">▾</span></div>
+      </div>
+      <div class="nav-group"><div class="nav-group-label">设置</div>
+        <div class="nav-item active"><span class="icon">📸</span> 快照</div>
+      </div>
+    </div>
+    <div class="main">
+      <div class="breadcrumb"><span>设置</span><span class="sep">/</span><span>快照</span><span class="sep">/</span><span>导入</span></div>
+      <div class="page-header"><h1 class="page-title">导入快照</h1></div>
+      <div class="steps mb-16">
+        <div class="step done"><div class="step-num">✓</div><div class="step-label">上传</div></div>
+        <div class="step-line" style="background:var(--success)"></div>
+        <div class="step done"><div class="step-num">✓</div><div class="step-label">解密</div></div>
+        <div class="step-line" style="background:var(--success)"></div>
+        <div class="step" style=""><div class="step-num" style="border-color:var(--error); color:var(--error); font-weight:700">✗</div><div class="step-label" style="color:var(--error); font-weight:500">验证失败</div></div>
+        <div class="step-line"></div>
+        <div class="step"><div class="step-num">4</div><div class="step-label">结果</div></div>
+      </div>
+
+      <div style="max-width:560px; margin:24px auto">
+        <div class="alert alert-error mb-16">
+          <span class="alert-icon">❌</span>
+          <div>
+            <strong>导入失败：快照文件校验未通过</strong>
+            <div class="text-xs mt-4">无法完成导入，请检查以下信息。</div>
+          </div>
+        </div>
+
+        <div style="background:#fff; border:1px solid var(--border); border-radius:8px; padding:16px; margin-bottom:16px">
+          <div class="text-sm mb-8"><strong>错误类型：</strong>文件完整性校验失败</div>
+          <div class="text-sm mb-8"><strong>错误详情：</strong></div>
+          <div style="background:#FAFAFA; border-radius:4px; padding:12px; font-family:monospace; font-size:12px; color:var(--error)">
+            SHA-256 checksum mismatch for workspace/agent.json<br>
+            Expected: sha256:a1b2c3d4e5f6...<br>
+            Actual:   sha256:f6e5d4c3b2a1...<br><br>
+            The file may have been corrupted or tampered with during transfer.
+          </div>
+        </div>
+
+        <div style="background:#fff; border:1px solid var(--border); border-radius:8px; padding:16px; margin-bottom:16px">
+          <div class="text-sm mb-8"><strong>建议操作：</strong></div>
+          <ul class="result-list">
+            <li class="result-item"><span style="color:var(--info)">→</span> 重新下载快照文件，确保传输完整</li>
+            <li class="result-item"><span style="color:var(--info)">→</span> 向快照分享者确认文件是否被修改</li>
+            <li class="result-item"><span style="color:var(--info)">→</span> 如果使用了加密，确认密码是否正确</li>
+          </ul>
+        </div>
+
+        <div class="flex gap-8">
+          <button class="btn btn-primary" onclick="showScreen('import-upload')">重新上传</button>
+          <button class="btn" onclick="showScreen('list')">返回快照列表</button>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════════════════ SCREEN 11: Agent 状态说明 ═══════════════════════ -->
+<div class="screen" id="screen-agent-status">
+  <div class="console">
+    <div class="sidebar" style="width:280px">
+      <div class="agent-selector" style="padding-bottom:20px">
+        <div class="agent-label">当前 Agent</div>
+        <div class="agent-dropdown"><span class="name">default</span><span class="arrow">▾</span></div>
+      </div>
+      <div style="padding:0 16px 16px; border-bottom:1px solid var(--border)">
+        <div style="font-size:12px; font-weight:600; color:var(--text-tertiary); margin-bottom:12px">AGENT 状态示例</div>
+        <div style="background:#fff; border:1px solid var(--border); border-radius:8px; padding:12px; margin-bottom:10px">
+          <div class="flex gap-8" style="margin-bottom:4px"><span style="font-weight:600">default</span><span class="tag tag-success" style="margin-left:auto">就绪</span></div>
+          <div class="text-xs text-muted">所有组件正常运行</div>
+        </div>
+        <div style="background:#fff; border:1px solid var(--warning); border-radius:8px; padding:12px; margin-bottom:10px">
+          <div class="flex gap-8" style="margin-bottom:4px"><span style="font-weight:600">customer-svc</span><span class="tag tag-warning" style="margin-left:auto">待审核</span></div>
+          <div class="text-xs text-muted">3 个技能、2 个任务待审核</div>
+          <button class="btn btn-sm mt-8" style="font-size:11px; padding:2px 8px">查看清单 →</button>
+        </div>
+        <div style="background:#fff; border:1px solid var(--error); border-radius:8px; padding:12px">
+          <div class="flex gap-8" style="margin-bottom:4px"><span style="font-weight:600">imported-agent</span><span class="tag tag-error" style="margin-left:auto">需配置</span></div>
+          <div class="text-xs text-muted">缺少 API Key，需要认证渠道</div>
+          <button class="btn btn-sm btn-danger mt-8" style="font-size:11px; padding:2px 8px">修复问题 →</button>
+        </div>
+      </div>
+      <div class="nav-group" style="margin-top:12px">
+        <div class="nav-group-label">设置</div>
+        <div class="nav-item"><span class="icon">🤖</span> Agent 管理</div>
+        <div class="nav-item active"><span class="icon">📸</span> 快照</div>
+      </div>
+    </div>
+    <div class="main">
+      <div class="page-header"><h1 class="page-title">Agent 状态说明</h1></div>
+      <div class="alert alert-info mb-16">
+        <span class="alert-icon">ℹ️</span>
+        <div>此页面展示导入快照后 Agent 可能出现的三种状态。状态标签显示在侧边栏 Agent 选择器和 Agent 管理页面中。</div>
+      </div>
+      <div style="display:grid; grid-template-columns:1fr 1fr 1fr; gap:16px">
+        <div style="background:#fff; border:1px solid var(--border); border-radius:8px; padding:20px; text-align:center">
+          <div style="font-size:32px; margin-bottom:8px">🟢</div>
+          <span class="tag tag-success" style="font-size:14px; padding:4px 16px">就绪 ready</span>
+          <div class="text-sm mt-8">所有组件已激活并正常运行。Agent 完全可用。</div>
+        </div>
+        <div style="background:#fff; border:1px solid var(--border); border-radius:8px; padding:20px; text-align:center">
+          <div style="font-size:32px; margin-bottom:8px">🟡</div>
+          <span class="tag tag-warning" style="font-size:14px; padding:4px 16px">待审核 needs_review</span>
+          <div class="text-sm mt-8">Agent 可对话，但部分组件（技能、任务、渠道）处于禁用状态待审核。</div>
+        </div>
+        <div style="background:#fff; border:1px solid var(--border); border-radius:8px; padding:20px; text-align:center">
+          <div style="font-size:32px; margin-bottom:8px">🔴</div>
+          <span class="tag tag-error" style="font-size:14px; padding:4px 16px">需配置 needs_setup</span>
+          <div class="text-sm mt-8">缺少关键配置（API Key、认证），Agent 无法正常工作。</div>
+        </div>
+      </div>
+      <h3 style="margin-top:32px; margin-bottom:12px">Agent 管理页面视图</h3>
+      <div class="table-wrapper">
+        <table>
+          <thead><tr><th>名称</th><th>状态</th><th>快照数</th><th>最近活动</th><th>操作</th></tr></thead>
+          <tbody>
+            <tr>
+              <td><span style="font-weight:500">default</span></td>
+              <td><span class="tag tag-success">就绪</span></td>
+              <td>5</td><td>刚刚</td>
+              <td><button class="btn btn-sm btn-text">⚙</button><button class="btn btn-sm btn-text">📸</button></td>
+            </tr>
+            <tr>
+              <td><span style="font-weight:500">customer-svc</span></td>
+              <td><span class="tag tag-warning">待审核</span></td>
+              <td>1</td><td>10 分钟前</td>
+              <td><button class="btn btn-sm" style="border-color:var(--warning); color:var(--warning)">审核 →</button></td>
+            </tr>
+            <tr>
+              <td><span style="font-weight:500">imported-agent</span></td>
+              <td><span class="tag tag-error">需配置</span></td>
+              <td>0</td><td>从未</td>
+              <td><button class="btn btn-sm" style="border-color:var(--error); color:var(--error)">修复 →</button></td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+function showScreen(id) {
+  document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
+  document.getElementById('screen-' + id).classList.add('active');
+  document.querySelectorAll('.screen-nav button').forEach(b => b.classList.remove('active'));
+  if (event && event.target && event.target.tagName === 'BUTTON') event.target.classList.add('active');
+}
+
+function toggleAgentSelect() {
+  var selected = document.querySelector('input[name="scope"][value="selected"]');
+  document.getElementById('agent-select-panel').style.display = selected && selected.checked ? 'block' : 'none';
+}
+
+function toggleCloneInput() {
+  var clone = document.querySelector('input[name="restore-mode"][value="clone"]');
+  document.getElementById('clone-input-panel').style.display = clone && clone.checked ? 'block' : 'none';
+}
+
+function toggleExportSecrets() {
+  var checked = document.getElementById('export-include-secrets').checked;
+  document.getElementById('export-yes-confirm').style.display = checked ? 'block' : 'none';
+  if (checked) {
+    document.getElementById('export-encrypt-check').checked = true;
+    toggleEncryptFields();
+  }
+  checkExportReady();
+}
+
+function toggleEncryptFields() {
+  var checked = document.getElementById('export-encrypt-check').checked;
+  document.getElementById('export-password-fields').style.display = checked ? 'block' : 'none';
+}
+
+function checkExportReady() {
+  var secretsChecked = document.getElementById('export-include-secrets').checked;
+  var yesInput = document.getElementById('export-yes-input');
+  var submitBtn = document.getElementById('export-submit');
+  if (secretsChecked && yesInput.value !== 'YES') {
+    submitBtn.disabled = true;
+  } else {
+    submitBtn.disabled = false;
+  }
+}
+</script>
+</body>
+</html>

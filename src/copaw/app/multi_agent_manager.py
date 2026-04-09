@@ -6,12 +6,23 @@ including lazy loading, lifecycle management, and hot reloading.
 """
 import asyncio
 import logging
-from typing import Dict, Set
+from contextlib import asynccontextmanager
+from typing import AsyncIterator, Dict, List, Set
 
 from .workspace import Workspace
 from ..config.utils import load_config
 
 logger = logging.getLogger(__name__)
+
+
+def snapshot_agent_operation_key(agent_id: str) -> str:
+    """Key for per-agent snapshot/lifecycle serialization (stable prefix)."""
+    return f"snapshot:agent:{agent_id}"
+
+
+def snapshot_export_operation_key(snapshot_id: str) -> str:
+    """Key for export serialization (distinct from agent ids)."""
+    return f"snapshot:export:{snapshot_id}"
 
 
 class MultiAgentManager:
@@ -29,9 +40,52 @@ class MultiAgentManager:
         self.agents: Dict[str, Workspace] = {}
         self._lock = asyncio.Lock()
         self._cleanup_tasks: Set[asyncio.Task] = set()
+        self._operation_locks: Dict[str, asyncio.Lock] = {}
         logger.debug("MultiAgentManager initialized")
 
-    async def get_agent(self, agent_id: str) -> Workspace:
+    def get_operation_lock(self, key: str) -> asyncio.Lock:
+        """Return a shared async lock for the given operation domain key."""
+        if key not in self._operation_locks:
+            self._operation_locks[key] = asyncio.Lock()
+        return self._operation_locks[key]
+
+    @asynccontextmanager
+    async def hold_operation_locks(self, keys: List[str]) -> AsyncIterator[None]:
+        """Acquire locks for all keys in sorted order; release in reverse.
+
+        Sorting avoids deadlocks when multiple coroutines lock several agents.
+        """
+        unique_sorted = sorted(set(keys))
+        locks = [self.get_operation_lock(k) for k in unique_sorted]
+        for lock in locks:
+            await lock.acquire()
+        try:
+            yield
+        finally:
+            for lock in reversed(locks):
+                lock.release()
+
+    @asynccontextmanager
+    async def _agent_op_context(
+        self,
+        agent_id: str,
+        *,
+        operation_lock_held: bool,
+    ) -> AsyncIterator[None]:
+        if operation_lock_held:
+            yield
+        else:
+            async with self.hold_operation_locks(
+                [snapshot_agent_operation_key(agent_id)],
+            ):
+                yield
+
+    async def get_agent(
+        self,
+        agent_id: str,
+        *,
+        operation_lock_held: bool = False,
+    ) -> Workspace:
         """Get agent workspace by ID (lazy loading).
 
         If workspace doesn't exist in memory, it will be created and started.
@@ -46,39 +100,42 @@ class MultiAgentManager:
         Raises:
             ValueError: If agent ID not found in configuration
         """
-        async with self._lock:
-            # Return existing agent if already loaded
-            if agent_id in self.agents:
-                logger.debug(f"Returning cached agent: {agent_id}")
-                return self.agents[agent_id]
+        async with self._agent_op_context(
+            agent_id, operation_lock_held=operation_lock_held,
+        ):
+            async with self._lock:
+                # Return existing agent if already loaded
+                if agent_id in self.agents:
+                    logger.debug(f"Returning cached agent: {agent_id}")
+                    return self.agents[agent_id]
 
-            # Load configuration to get agent reference
-            config = load_config()
+                # Load configuration to get agent reference
+                config = load_config()
 
-            if agent_id not in config.agents.profiles:
-                raise ValueError(
-                    f"Agent '{agent_id}' not found in configuration. "
-                    f"Available agents: {list(config.agents.profiles.keys())}",
+                if agent_id not in config.agents.profiles:
+                    raise ValueError(
+                        f"Agent '{agent_id}' not found in configuration. "
+                        f"Available agents: {list(config.agents.profiles.keys())}",
+                    )
+
+                agent_ref = config.agents.profiles[agent_id]
+
+                # Create and start new workspace
+                logger.info(f"Creating new workspace: {agent_id}")
+                instance = Workspace(
+                    agent_id=agent_id,
+                    workspace_dir=agent_ref.workspace_dir,
                 )
 
-            agent_ref = config.agents.profiles[agent_id]
-
-            # Create and start new workspace
-            logger.info(f"Creating new workspace: {agent_id}")
-            instance = Workspace(
-                agent_id=agent_id,
-                workspace_dir=agent_ref.workspace_dir,
-            )
-
-            try:
-                await instance.start()
-                instance.set_manager(self)  # Set manager reference
-                self.agents[agent_id] = instance
-                logger.info(f"Workspace created and started: {agent_id}")
-                return instance
-            except Exception as e:
-                logger.error(f"Failed to start workspace {agent_id}: {e}")
-                raise
+                try:
+                    await instance.start()
+                    instance.set_manager(self)  # Set manager reference
+                    self.agents[agent_id] = instance
+                    logger.info(f"Workspace created and started: {agent_id}")
+                    return instance
+                except Exception as e:
+                    logger.error(f"Failed to start workspace {agent_id}: {e}")
+                    raise
 
     async def _graceful_stop_old_instance(
         self,
@@ -177,27 +234,42 @@ class MultiAgentManager:
                     f"New instance is active and serving requests.",
                 )
 
-    async def stop_agent(self, agent_id: str) -> bool:
+    async def stop_agent(
+        self,
+        agent_id: str,
+        *,
+        operation_lock_held: bool = False,
+    ) -> bool:
         """Stop a specific agent instance.
 
         Args:
             agent_id: Agent ID to stop
+            operation_lock_held: If True, caller already holds the snapshot op lock
+                for this agent (e.g. SnapshotManager restore/import).
 
         Returns:
             bool: True if agent was stopped, False if not running
         """
-        async with self._lock:
-            if agent_id not in self.agents:
-                logger.warning(f"Agent not running: {agent_id}")
-                return False
+        async with self._agent_op_context(
+            agent_id, operation_lock_held=operation_lock_held,
+        ):
+            async with self._lock:
+                if agent_id not in self.agents:
+                    logger.warning(f"Agent not running: {agent_id}")
+                    return False
 
-            instance = self.agents[agent_id]
-            await instance.stop()
-            del self.agents[agent_id]
-            logger.info(f"Agent stopped and removed: {agent_id}")
-            return True
+                instance = self.agents[agent_id]
+                await instance.stop()
+                del self.agents[agent_id]
+                logger.info(f"Agent stopped and removed: {agent_id}")
+                return True
 
-    async def reload_agent(self, agent_id: str) -> bool:
+    async def reload_agent(
+        self,
+        agent_id: str,
+        *,
+        operation_lock_held: bool = False,
+    ) -> bool:
         """Reload a specific agent instance with zero-downtime.
 
         This method performs a seamless reload by:
@@ -219,10 +291,18 @@ class MultiAgentManager:
 
         Args:
             agent_id: Agent ID to reload
+            operation_lock_held: If True, caller already holds the snapshot op lock.
 
         Returns:
             bool: True if agent was reloaded, False if not running
         """
+        async with self._agent_op_context(
+            agent_id, operation_lock_held=operation_lock_held,
+        ):
+            return await self._reload_agent_impl(agent_id)
+
+    async def _reload_agent_impl(self, agent_id: str) -> bool:
+        """Reload implementation (invoked under optional outer op lock)."""
         # Step 1: Check if agent exists (quick check with lock)
         async with self._lock:
             if agent_id not in self.agents:
