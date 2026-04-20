@@ -439,6 +439,14 @@ export function ChannelDrawer({
                 );
               }}
             </Form.Item>
+            <Form.Item
+              name="at_sender_on_reply"
+              label={t("channels.atSenderOnReply")}
+              tooltip={t("channels.atSenderOnReplyTooltip")}
+              valuePropName="checked"
+            >
+              <Switch />
+            </Form.Item>
           </>
         );
 
@@ -502,6 +510,13 @@ export function ChannelDrawer({
               rules={[{ required: true }]}
             >
               <Input.Password />
+            </Form.Item>
+            <Form.Item
+              name="ack_message"
+              label={t("channels.ackMessage")}
+              tooltip={t("channels.ackMessageTooltip")}
+            >
+              <Input placeholder={t("channels.ackMessagePlaceholder")} />
             </Form.Item>
           </>
         );

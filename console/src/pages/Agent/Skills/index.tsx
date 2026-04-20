@@ -59,6 +59,12 @@ type DownloadConflict =
       reason: "builtin_upgrade";
       current_version_text: string;
       source_version_text: string;
+    }
+  | {
+      skill_name: string;
+      reason: "language_switch";
+      source_language: string;
+      current_language: string;
     };
 
 function SkillsPage() {
@@ -477,19 +483,28 @@ function SkillsPage() {
             throw error;
           }
           conflicts.push(
-            ...returnedConflicts.map((conflict) =>
-              conflict?.reason === "builtin_upgrade"
-                ? {
-                    skill_name: conflict.skill_name || skillName,
-                    reason: "builtin_upgrade" as const,
-                    current_version_text: conflict.current_version_text || "",
-                    source_version_text: conflict.source_version_text || "",
-                  }
-                : {
-                    skill_name: conflict?.skill_name || skillName,
-                    reason: "conflict" as const,
-                  },
-            ),
+            ...returnedConflicts.map((conflict): DownloadConflict => {
+              if (conflict?.reason === "builtin_upgrade") {
+                return {
+                  skill_name: conflict.skill_name || skillName,
+                  reason: "builtin_upgrade" as const,
+                  current_version_text: conflict.current_version_text || "",
+                  source_version_text: conflict.source_version_text || "",
+                };
+              }
+              if (conflict?.reason === "language_switch") {
+                return {
+                  skill_name: conflict.skill_name || skillName,
+                  reason: "language_switch" as const,
+                  source_language: conflict.source_language || "",
+                  current_language: conflict.current_language || "",
+                };
+              }
+              return {
+                skill_name: conflict?.skill_name || skillName,
+                reason: "conflict" as const,
+              };
+            }),
           );
         }
       }
@@ -497,16 +512,23 @@ function SkillsPage() {
         const allBuiltinUpgrades = conflicts.every(
           (conflict) => conflict.reason === "builtin_upgrade",
         );
+        const allLanguageSwitch = conflicts.every(
+          (conflict) => conflict.reason === "language_switch",
+        );
+        const title = allBuiltinUpgrades
+          ? t("skills.builtinUpgradeTitle")
+          : allLanguageSwitch
+          ? t("skills.languageSwitchTitle")
+          : t("skillPool.overwriteConfirm");
+        const subtitle = allBuiltinUpgrades
+          ? t("skillPool.builtinOverwriteTargetsContent")
+          : allLanguageSwitch
+          ? t("skills.languageSwitchContent")
+          : t("skills.overwriteExistingList");
         const confirmed = await confirmOverwrite(
-          allBuiltinUpgrades
-            ? t("skills.builtinUpgradeTitle")
-            : t("skillPool.overwriteConfirm"),
+          title,
           <div style={{ display: "grid", gap: 8 }}>
-            <div>
-              {allBuiltinUpgrades
-                ? t("skillPool.builtinOverwriteTargetsContent")
-                : t("skills.overwriteExistingList")}
-            </div>
+            <div>{subtitle}</div>
             {conflicts.map((conflict) => (
               <div key={conflict.skill_name}>
                 <strong>{conflict.skill_name}</strong>
@@ -518,6 +540,18 @@ function SkillsPage() {
                     {"  ->  "}
                     {t("skillPool.sourceVersion")}:{" "}
                     {conflict.source_version_text || "-"}
+                  </>
+                ) : null}
+                {conflict.reason === "language_switch" ? (
+                  <>
+                    {"  "}
+                    {conflict.current_language === "zh"
+                      ? t("skillPool.langZh")
+                      : t("skillPool.langEn")}
+                    {"  →  "}
+                    {conflict.source_language === "zh"
+                      ? t("skillPool.langZh")
+                      : t("skillPool.langEn")}
                   </>
                 ) : null}
               </div>
@@ -748,7 +782,7 @@ function SkillsPage() {
               onChange={setSearchTags}
               searchValue={searchQuery}
               onSearch={setSearchQuery}
-              open={filterOpen}
+              open={filterOpen && allTags.length > 0}
               onDropdownVisibleChange={setFilterOpen}
               allowClear
               maxTagCount="responsive"
@@ -896,14 +930,16 @@ function SkillsPage() {
                   </div>
                 </div>
                 <div className={styles.listItemRight}>
-                  <Switch
-                    checked={skill.enabled}
-                    disabled={batchModeEnabled}
-                    onChange={async () => {
-                      await toggleEnabled(skill);
-                      await refreshSkills();
-                    }}
-                  />
+                  <span onClick={(e) => e.stopPropagation()}>
+                    <Switch
+                      checked={skill.enabled}
+                      disabled={batchModeEnabled}
+                      onChange={async () => {
+                        await toggleEnabled(skill);
+                        await refreshSkills();
+                      }}
+                    />
+                  </span>
                   <Button
                     danger
                     disabled={batchModeEnabled}

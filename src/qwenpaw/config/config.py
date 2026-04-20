@@ -1,10 +1,19 @@
 # -*- coding: utf-8 -*-
+from __future__ import annotations
+
 import os
 import json
+import re
 from pathlib import Path
-from typing import Optional, Union, Dict, List, Literal, Any
+from typing import Optional, Union, Dict, List, Literal, Any, Set
 
-from pydantic import BaseModel, Field, ConfigDict, model_validator
+from pydantic import (
+    BaseModel,
+    Field,
+    ConfigDict,
+    field_validator,
+    model_validator,
+)
 import shortuuid
 from agentscope_runtime.engine.schemas.exception import (
     ConfigurationException,
@@ -24,7 +33,94 @@ from ..constant import (
     LLM_RATE_LIMIT_PAUSE,
     WORKING_DIR,
 )
-from ..providers.models import ModelSlotConfig
+
+
+# ============================================================================
+# Core config models (moved here to avoid circular imports)
+# ============================================================================
+
+
+class ModelSlotConfig(BaseModel):
+    """Model slot configuration for LLM routing."""
+
+    provider_id: str = Field(default="")
+    model: str = Field(default="")
+
+
+class ActiveModelsInfo(BaseModel):
+    """Active models information for provider manager."""
+
+    active_llm: ModelSlotConfig | None
+
+
+class ACPAgentConfig(BaseModel):
+    """Configuration for one ACP agent."""
+
+    enabled: bool = False
+    command: str = ""
+    args: list[str] = Field(default_factory=list)
+    env: Dict[str, str] = Field(default_factory=dict)
+    trusted: bool = True
+    tool_parse_mode: str = "call_title"
+
+
+def _get_default_acp_agents() -> Dict[str, ACPAgentConfig]:
+    """Get default ACP agents configuration."""
+    return {
+        "opencode": ACPAgentConfig(
+            enabled=True,
+            command="opencode",
+            args=["acp"],
+            trusted=True,
+            tool_parse_mode="update_detail",
+        ),
+        "qwen_code": ACPAgentConfig(
+            enabled=True,
+            command="qwen",
+            args=["--acp"],
+            trusted=True,
+            tool_parse_mode="call_detail",
+        ),
+        "claude_code": ACPAgentConfig(
+            enabled=True,
+            command="npx",
+            args=["-y", "@zed-industries/claude-agent-acp"],
+            trusted=True,
+            tool_parse_mode="update_detail",
+        ),
+        "codex": ACPAgentConfig(
+            enabled=True,
+            command="npx",
+            args=["-y", "@zed-industries/codex-acp"],
+            trusted=True,
+            tool_parse_mode="call_detail",
+        ),
+    }
+
+
+class ACPConfig(BaseModel):
+    """ACP (Agent Communication Protocol) configuration."""
+
+    agents: Dict[str, ACPAgentConfig] = Field(
+        default_factory=_get_default_acp_agents,
+    )
+
+    @model_validator(mode="after")
+    def _merge_default_agents(self):
+        """Merge default agents with user-configured agents."""
+        for name, agent_cfg in _get_default_acp_agents().items():
+            if name not in self.agents:
+                self.agents[name] = agent_cfg
+        return self
+
+
+# Agent ID validation: alphanumeric, hyphens, underscores.
+_AGENT_ID_PATTERN = re.compile(
+    r"^[a-zA-Z0-9][a-zA-Z0-9_-]*[a-zA-Z0-9]$",
+)
+_AGENT_ID_MIN_LENGTH = 2
+_AGENT_ID_MAX_LENGTH = 64
+_RESERVED_AGENT_IDS = frozenset({"default"})
 
 
 def generate_short_agent_id() -> str:
@@ -34,6 +130,59 @@ def generate_short_agent_id() -> str:
         6-character short UUID string
     """
     return shortuuid.ShortUUID().random(length=6)
+
+
+def sanitize_agent_id(raw: str) -> str:
+    """Normalize raw agent ID input: strip whitespace.
+
+    Args:
+        raw: Raw user input for agent ID.
+
+    Returns:
+        Sanitized agent ID string.
+    """
+    return raw.strip()
+
+
+def validate_agent_id(
+    agent_id: str,
+    existing_ids: Set[str],
+) -> None:
+    """Validate a custom agent ID.
+
+    Checks length, character set, reserved words, and uniqueness.
+
+    Args:
+        agent_id: The sanitized agent ID to validate.
+        existing_ids: Set of already-registered agent IDs.
+
+    Raises:
+        ValueError: If the ID is invalid.
+    """
+    if len(agent_id) < _AGENT_ID_MIN_LENGTH:
+        raise ValueError(
+            f"Agent ID must be at least {_AGENT_ID_MIN_LENGTH} characters, "
+            f"got {len(agent_id)}.",
+        )
+    if len(agent_id) > _AGENT_ID_MAX_LENGTH:
+        raise ValueError(
+            f"Agent ID must be at most {_AGENT_ID_MAX_LENGTH} characters, "
+            f"got {len(agent_id)}.",
+        )
+    if not _AGENT_ID_PATTERN.match(agent_id):
+        raise ValueError(
+            f"Agent ID '{agent_id}' contains invalid characters. "
+            "Only letters, digits, hyphens, and underscores "
+            "are allowed. Cannot start or end with '-' or '_'.",
+        )
+    if agent_id in _RESERVED_AGENT_IDS:
+        raise ValueError(
+            f"Agent ID '{agent_id}' is reserved and cannot be used.",
+        )
+    if agent_id in existing_ids:
+        raise ValueError(
+            f"Agent ID '{agent_id}' already exists.",
+        )
 
 
 class BaseChannelConfig(BaseModel):
@@ -75,6 +224,7 @@ class DingTalkConfig(BaseChannelConfig):
     robot_code: str = ""
     media_dir: Optional[str] = None
     card_auto_layout: bool = False
+    at_sender_on_reply: bool = False
 
 
 class FeishuConfig(BaseChannelConfig):
@@ -96,6 +246,7 @@ class QQConfig(BaseChannelConfig):
     client_secret: str = ""
     markdown_enabled: bool = True
     max_reconnect_attempts: int = 100
+    ack_message: str = ""
 
 
 class OneBotConfig(BaseChannelConfig):
@@ -161,6 +312,12 @@ class MatrixConfig(BaseChannelConfig):
     """Matrix channel configuration."""
 
     homeserver: str = ""
+
+    @field_validator("homeserver")
+    @classmethod
+    def strip_trailing_slash(cls, v: str) -> str:
+        return v.rstrip("/")
+
     user_id: str = ""
     access_token: str = ""
 
@@ -1053,6 +1210,12 @@ def _default_builtin_tools() -> Dict[str, BuiltinToolConfig]:
             description="Get llm token usage",
             icon="📊",
         ),
+        "delegate_external_agent": BuiltinToolConfig(
+            name="delegate_external_agent",
+            enabled=False,
+            description="Delegate work to an external ACP agent runner",
+            icon="📡",
+        ),
         "list_agents": BuiltinToolConfig(
             name="list_agents",
             enabled=True,
@@ -1062,8 +1225,23 @@ def _default_builtin_tools() -> Dict[str, BuiltinToolConfig]:
         "chat_with_agent": BuiltinToolConfig(
             name="chat_with_agent",
             enabled=True,
-            description="Send a message to another configured agent",
+            description=(
+                "Send a message to another configured agent and wait for "
+                "the response"
+            ),
             icon="💬",
+        ),
+        "submit_to_agent": BuiltinToolConfig(
+            name="submit_to_agent",
+            enabled=True,
+            description="Submit a background task to another configured agent",
+            icon="📨",
+        ),
+        "check_agent_task": BuiltinToolConfig(
+            name="check_agent_task",
+            enabled=True,
+            description="Check the status of a background agent task",
+            icon="⏳",
         ),
     }
 
@@ -1120,6 +1298,8 @@ def build_local_agent_tools_config() -> ToolsConfig:
         {
             "list_agents",
             "chat_with_agent",
+            "submit_to_agent",
+            "check_agent_task",
             "execute_shell_command",
             "read_file",
             "write_file",
@@ -1228,6 +1408,7 @@ class Config(BaseModel):
     agents: AgentsConfig = Field(default_factory=AgentsConfig)
     last_dispatch: Optional[LastDispatchConfig] = None
     security: SecurityConfig = Field(default_factory=SecurityConfig)
+    acp: ACPConfig = Field(default_factory=ACPConfig)
     show_tool_details: bool = True
     user_timezone: str = Field(
         default_factory=detect_system_timezone,

@@ -577,6 +577,11 @@
   }
 }
 
+.slotActionField {
+  flex: 0 0 auto;
+  min-width: 120px;
+}
+
 .slotLabel {
   font-size: 14px;
   color: #666;
@@ -584,6 +589,10 @@
   display: flex;
   align-items: center;
   gap: 4px;
+}
+
+.visuallyHiddenLabel {
+  visibility: hidden;
 }
 
 .slotActions {
@@ -1467,8 +1476,16 @@
     border-top-color: rgba(255, 255, 255, 0.08);
   }
 
+  .localAdvancedConfigSection {
+    border-top-color: rgba(255, 255, 255, 0.08);
+  }
+
   .advancedConfigToggle {
     color: rgba(255, 255, 255, 0.65);
+  }
+
+  .localAdvancedConfigLabel {
+    color: rgba(255, 255, 255, 0.88);
   }
 
   /* JSON editor */

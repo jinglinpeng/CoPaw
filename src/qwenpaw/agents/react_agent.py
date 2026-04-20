@@ -37,7 +37,10 @@ from .skills_manager import (
 from .tool_guard_mixin import ToolGuardMixin
 from .tools import (
     browser_use,
+    delegate_external_agent,
     chat_with_agent,
+    check_agent_task,
+    submit_to_agent,
     desktop_screenshot,
     edit_file,
     execute_shell_command,
@@ -242,24 +245,18 @@ class QwenPawAgent(ToolGuardMixin, ReActAgent):
             "get_current_time": get_current_time,
             "set_user_timezone": set_user_timezone,
             "get_token_usage": get_token_usage,
+            "delegate_external_agent": delegate_external_agent,
             "list_agents": list_agents,
             "chat_with_agent": chat_with_agent,
+            "submit_to_agent": submit_to_agent,
+            "check_agent_task": check_agent_task,
         }
-
-        multimodal = get_active_model_supports_multimodal()
 
         # Register only enabled tools
         for tool_name, tool_func in tool_functions.items():
             # If tool not in config, enable by default (backward compatibility)
             if not enabled_tools.get(tool_name, True):
                 logger.debug("Skipped disabled tool: %s", tool_name)
-                continue
-
-            if tool_name in ("view_image", "view_video") and not multimodal:
-                logger.debug(
-                    "Skipped %s — model does not support multimodal",
-                    tool_name,
-                )
                 continue
 
             # Get async_execution setting (default to False for backward

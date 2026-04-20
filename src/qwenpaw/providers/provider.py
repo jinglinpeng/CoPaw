@@ -4,8 +4,9 @@
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
-from typing import TYPE_CHECKING, Dict, List, Type, Any
+from typing import TYPE_CHECKING, Any, Dict, List, Type
 from pydantic import BaseModel, Field
+from pydantic import ConfigDict
 
 from agentscope.model import ChatModelBase
 from qwenpaw.exceptions import ProviderError
@@ -39,6 +40,10 @@ class ModelInfo(BaseModel):
             " or 'probed' (actual probe)"
         ),
     )
+    is_free: bool = Field(
+        default=False,
+        description="Whether this model is free to use (e.g., no API cost)",
+    )
     generate_kwargs: Dict[str, Any] = Field(
         default_factory=dict,
         description="Per-model generation parameters that override "
@@ -68,6 +73,15 @@ class ExtendedModelInfo(ModelInfo):
 
 
 class ProviderInfo(BaseModel):
+    """Provider configuration and metadata."""
+
+    # Allow flexible typing for test environments where ModelInfo
+    # may be reloaded (different object identity)
+    model_config = ConfigDict(
+        arbitrary_types_allowed=True,
+        validate_default=False,
+    )
+
     id: str = Field(..., description="Provider identifier")
     name: str = Field(..., description="Human-readable provider name")
     base_url: str = Field(default="", description="API base URL")
@@ -84,6 +98,7 @@ class ProviderInfo(BaseModel):
         default_factory=list,
         description="List of user-added models (not fetched from provider)",
     )
+
     api_key_prefix: str = Field(
         default="",
         description="Expected prefix for the API key (e.g., 'sk-')",
@@ -300,8 +315,17 @@ class Provider(ProviderInfo, ABC):
         self,
         model_id: str,  # pylint: disable=unused-argument
         timeout: float = 10,  # pylint: disable=unused-argument
+        image_only: bool = False,  # pylint: disable=unused-argument
     ) -> ProbeResult:
         """Probe if a model supports multimodal input.
+
+        Args:
+            model_id: Model identifier.
+            timeout: Per-probe timeout in seconds.
+            image_only: When True, skip the video probe and return after
+                the image probe only.  Use this for fast checks (e.g.
+                from ``view_image``) to avoid blocking on the slower
+                video probe.
 
         Default implementation returns ProbeResult() (all False).
         Subclasses with API access should override.
