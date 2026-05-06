@@ -24,6 +24,9 @@ dist/
 console/.cursor/
 src/qwenpaw/console/dist/
 src/qwenpaw/console/
+console/build
+console/dist-macos-x64
+
 
 # frontend (website)
 website/node_modules/
@@ -114,4 +117,3 @@ src/.hypothesis/
 
 *.lock
 .gitnexus
-console/src-tauri/binaries
