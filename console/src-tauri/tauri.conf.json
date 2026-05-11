@@ -1,6 +1,6 @@
 {
   "$schema": "../node_modules/@tauri-apps/cli/config.schema.json",
-  "productName": "qwenpaw-console",
+  "productName": "QwenPaw Desktop",
   "version": "0.1.0",
   "identifier": "com.qwenpaw.desktop",
   "build": {
@@ -13,7 +13,7 @@
     "withGlobalTauri": true,
     "windows": [
       {
-        "title": "qwenpaw-console",
+        "title": "QwenPaw Desktop",
         "width": 800,
         "height": 600,
         "resizable": true,
