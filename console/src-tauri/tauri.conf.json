@@ -42,6 +42,13 @@
       "icons/icon.icns",
       "icons/icon.ico"
     ],
-    "externalBin": ["binaries/qwenpaw-backend"]
+    "externalBin": ["binaries/qwenpaw-backend"],
+    "windows": {
+      "nsis": {
+        "installerIcon": "icons/icon.ico",
+        "sidebarImage": "icons/nsis-sidebar.bmp",
+        "headerImage": "icons/nsis-header.bmp"
+      }
+    }
   }
 }
