@@ -10,6 +10,7 @@
     "beforeBuildCommand": "bun build:prod"
   },
   "app": {
+    "withGlobalTauri": true,
     "windows": [
       {
         "title": "qwenpaw-console",

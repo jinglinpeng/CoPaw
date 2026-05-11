@@ -20,6 +20,8 @@ def main() -> None:
     from qwenpaw.cli.main import cli
     from qwenpaw.constant import WORKING_DIR
 
+    port = os.environ.get("QWENPAW_DESKTOP_PORT", "8088")
+
     # Auto-initialize if no config exists
     config_path = WORKING_DIR / "config.json"
     if not config_path.exists():
@@ -31,7 +33,7 @@ def main() -> None:
             pass
 
     # Start the backend server
-    sys.argv = ["qwenpaw", "app", "--host", "127.0.0.1", "--port", "8088"]
+    sys.argv = ["qwenpaw", "app", "--host", "127.0.0.1", "--port", port]
     # pylint: disable-next=no-value-for-parameter
     cli()
 

@@ -3,13 +3,54 @@ declare const TOKEN: string;
 
 const AUTH_TOKEN_KEY = "qwenpaw_auth_token";
 
+declare global {
+  interface Window {
+    __TAURI__?: {
+      core?: {
+        invoke?: <T>(
+          command: string,
+          args?: Record<string, unknown>,
+        ) => Promise<T>;
+      };
+    };
+  }
+}
+
+let runtimeApiBaseUrl = "";
+
+export function getApiBaseUrl(): string {
+  return (
+    runtimeApiBaseUrl ||
+    (typeof VITE_API_BASE_URL !== "undefined" ? VITE_API_BASE_URL : "")
+  );
+}
+
+export function isTauriRuntime(): boolean {
+  return typeof window !== "undefined" && !!window.__TAURI__?.core?.invoke;
+}
+
+export async function initRuntimeApiBaseUrl(): Promise<string> {
+  const baseUrl = getApiBaseUrl();
+  const invoke =
+    typeof window !== "undefined" ? window.__TAURI__?.core?.invoke : undefined;
+  if (baseUrl || !invoke) return baseUrl;
+
+  const port = await invoke<number>("backend_port");
+  runtimeApiBaseUrl = `http://127.0.0.1:${port}`;
+
+  const host = (window as any).QwenPaw?.host;
+  if (host) host.apiBaseUrl = runtimeApiBaseUrl;
+
+  return runtimeApiBaseUrl;
+}
+
 /**
  * Get the full API URL with /api prefix
  * @param path - API path (e.g., "/models", "/skills")
  * @returns Full API URL (e.g., "http://localhost:8088/api/models" or "/api/models")
  */
 export function getApiUrl(path: string): string {
-  const base = VITE_API_BASE_URL || "";
+  const base = getApiBaseUrl();
   const apiPrefix = "/api";
   const normalizedPath = path.startsWith("/") ? path : `/${path}`;
   return `${base}${apiPrefix}${normalizedPath}`;

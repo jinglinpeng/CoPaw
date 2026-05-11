@@ -1,7 +1,17 @@
-import { useState, useEffect, useRef, useCallback, type ReactNode } from "react";
+import {
+  useState,
+  useEffect,
+  useRef,
+  useCallback,
+  type ReactNode,
+} from "react";
 import BackendLoadingPage from "./BackendLoadingPage";
+import {
+  getApiBaseUrl,
+  initRuntimeApiBaseUrl,
+  isTauriRuntime,
+} from "../api/config";
 
-const API_BASE_URL = typeof import.meta.env.VITE_API_BASE_URL !== "undefined" ? import.meta.env.VITE_API_BASE_URL : "";
 const POLL_INTERVAL = 1000;
 const POLL_TIMEOUT = 120;
 const REQUEST_TIMEOUT = 5000;
@@ -11,12 +21,17 @@ interface Props {
 }
 
 export default function BackendReadyGate({ children }: Props) {
-  const [status, setStatus] = useState<"checking" | "ready" | "timeout">("checking");
+  const [status, setStatus] = useState<"checking" | "ready" | "timeout">(
+    "checking",
+  );
+  const [shouldGate, setShouldGate] = useState(
+    () => !!getApiBaseUrl() || isTauriRuntime(),
+  );
   const [elapsed, setElapsed] = useState(0);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const mountedRef = useRef(true);
 
-  const startPolling = useCallback(() => {
+  const startPolling = useCallback((apiBaseUrl: string) => {
     setStatus("checking");
     setElapsed(0);
 
@@ -26,7 +41,7 @@ export default function BackendReadyGate({ children }: Props) {
       try {
         const controller = new AbortController();
         const tid = setTimeout(() => controller.abort(), REQUEST_TIMEOUT);
-        const res = await fetch(`${API_BASE_URL}/api/version`, {
+        const res = await fetch(`${apiBaseUrl}/api/version`, {
           signal: controller.signal,
         });
         clearTimeout(tid);
@@ -51,12 +66,25 @@ export default function BackendReadyGate({ children }: Props) {
     poll();
   }, []);
 
+  const retry = useCallback(() => {
+    const apiBaseUrl = getApiBaseUrl();
+    if (apiBaseUrl) startPolling(apiBaseUrl);
+  }, [startPolling]);
+
   useEffect(() => {
     // Browser mode: pass through immediately
-    if (!API_BASE_URL) return;
+    if (!shouldGate) return;
 
     mountedRef.current = true;
-    startPolling();
+    initRuntimeApiBaseUrl()
+      .then((apiBaseUrl) => {
+        if (!mountedRef.current) return;
+        if (apiBaseUrl) startPolling(apiBaseUrl);
+        else setShouldGate(false);
+      })
+      .catch(() => {
+        if (mountedRef.current) setStatus("timeout");
+      });
 
     return () => {
       mountedRef.current = false;
@@ -64,18 +92,14 @@ export default function BackendReadyGate({ children }: Props) {
         clearTimeout(timerRef.current);
       }
     };
-  }, [startPolling]);
+  }, [shouldGate, startPolling]);
 
   // Browser mode or backend ready
-  if (!API_BASE_URL || status === "ready") {
+  if (!shouldGate || status === "ready") {
     return <>{children}</>;
   }
 
   return (
-    <BackendLoadingPage
-      status={status}
-      elapsed={elapsed}
-      onRetry={startPolling}
-    />
+    <BackendLoadingPage status={status} elapsed={elapsed} onRetry={retry} />
   );
 }
