@@ -1,4 +1,5 @@
-"""Desktop entry point for Tauri sidecar — auto-init + start backend."""
+# -*- coding: utf-8 -*-
+"""Desktop entry point for Tauri sidecar auto-init + start backend."""
 import os
 import sys
 
@@ -7,7 +8,14 @@ os.environ.setdefault("COPAW_DESKTOP_APP", "1")
 os.environ.setdefault("QWENPAW_DISABLE_MEMORY_MANAGER", "1")
 os.environ.setdefault(
     "QWENPAW_CORS_ORIGINS",
-    "tauri://localhost,https://tauri.localhost,http://tauri.localhost,http://localhost:1420",
+    ",".join(
+        [
+            "tauri://localhost",
+            "https://tauri.localhost",
+            "http://tauri.localhost",
+            "http://localhost:1420",
+        ],
+    ),
 )
 
 
@@ -20,12 +28,14 @@ def main() -> None:
     if not config_path.exists():
         sys.argv = ["qwenpaw", "init", "--defaults", "--accept-security"]
         try:
+            # pylint: disable-next=no-value-for-parameter
             cli(standalone_mode=False)
         except SystemExit:
             pass
 
     # Start the backend server
     sys.argv = ["qwenpaw", "app", "--host", "127.0.0.1", "--port", "8088"]
+    # pylint: disable-next=no-value-for-parameter
     cli()
 
 
