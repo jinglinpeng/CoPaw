@@ -47,7 +47,16 @@
       "nsis": {
         "installerIcon": "icons/icon.ico",
         "sidebarImage": "icons/nsis-sidebar.bmp",
-        "headerImage": "icons/nsis-header.bmp"
+        "headerImage": "icons/nsis-header.bmp",
+        "languages": [
+          "English",
+          "SimpChinese",
+          "TradChinese",
+          "Japanese",
+          "Russian",
+          "PortugueseBR"
+        ],
+        "displayLanguageSelector": false
       }
     }
   }
