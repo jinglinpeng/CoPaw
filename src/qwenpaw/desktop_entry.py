@@ -1,3 +1,4 @@
+# -*- coding: utf-8 -*-
 """Desktop entry point for Tauri sidecar auto-init + start backend."""
 import os
 import sys
