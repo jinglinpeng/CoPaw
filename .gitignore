@@ -112,6 +112,5 @@ src/.hypothesis/
 # Worktrees
 .worktrees/
 
-*.lock
 .gitnexus
 console/src-tauri/binaries

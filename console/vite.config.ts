@@ -21,6 +21,29 @@ export default defineConfig(({ mode }) => {
   // Empty = same-origin; frontend and backend served together, no hardcoded host.
   // Use a dedicated Vite-prefixed key so unrelated shell BASE_URL values don't leak into the build.
   const apiBaseUrl = env.VITE_API_BASE_URL ?? "";
+  const isTauriDev =
+    mode === "tauri" ||
+    Boolean(process.env.TAURI_ENV_PLATFORM || process.env.TAURI_DEV_HOST);
+  const server = isTauriDev
+    ? {
+        port: 1420,
+        strictPort: true,
+        host: host || false,
+        hmr: host
+          ? {
+              protocol: "ws",
+              host,
+              port: 1421,
+            }
+          : undefined,
+        watch: {
+          ignored: ["**/src-tauri/**"],
+        },
+      }
+    : {
+        host: "0.0.0.0",
+        port: 5173,
+      };
 
   return {
     define: {
@@ -45,25 +68,8 @@ export default defineConfig(({ mode }) => {
         "@": path.resolve(__dirname, "./src"),
       },
     },
-    // 1. prevent Vite from obscuring rust errors
     clearScreen: false,
-    // 2. tauri expects a fixed port, fail if that port is not available
-    server: {
-      port: 1420,
-      strictPort: true,
-      host: host || false,
-      hmr: host
-        ? {
-            protocol: "ws",
-            host,
-            port: 1421,
-          }
-        : undefined,
-      watch: {
-        // 3. tell Vite to ignore watching `src-tauri`
-        ignored: ["**/src-tauri/**"],
-      },
-    },
+    server,
     test: {
       globals: true,
       environment: "jsdom",

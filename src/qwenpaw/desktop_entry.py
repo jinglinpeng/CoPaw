@@ -4,8 +4,6 @@ import os
 import sys
 
 os.environ.setdefault("COPAW_DESKTOP_APP", "1")
-# Disable heavy optional services that may fail in PyInstaller bundle
-os.environ.setdefault("QWENPAW_DISABLE_MEMORY_MANAGER", "1")
 os.environ.setdefault(
     "QWENPAW_CORS_ORIGINS",
     (
