@@ -169,6 +169,7 @@ def test_extract_agent_ids_normalizes_values():
 
 
 def test_resolve_agent_api_base_url_uses_last_api(monkeypatch):
+    monkeypatch.setattr(agent_management, "read_runtime_api", lambda: None)
     monkeypatch.setattr(
         agent_management,
         "read_last_api",
@@ -180,7 +181,25 @@ def test_resolve_agent_api_base_url_uses_last_api(monkeypatch):
     assert result == "http://192.168.1.8:18088"
 
 
+def test_resolve_agent_api_base_url_prefers_runtime_api(monkeypatch):
+    monkeypatch.setattr(
+        agent_management,
+        "read_runtime_api",
+        lambda: ("127.0.0.1", 19088),
+    )
+    monkeypatch.setattr(
+        agent_management,
+        "read_last_api",
+        lambda: ("192.168.1.8", 18088),
+    )
+
+    result = agent_management.resolve_agent_api_base_url()
+
+    assert result == "http://127.0.0.1:19088"
+
+
 def test_resolve_agent_api_base_url_falls_back_to_default(monkeypatch):
+    monkeypatch.setattr(agent_management, "read_runtime_api", lambda: None)
     monkeypatch.setattr(agent_management, "read_last_api", lambda: None)
 
     result = agent_management.resolve_agent_api_base_url()

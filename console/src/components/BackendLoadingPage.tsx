@@ -62,15 +62,10 @@ export default function BackendLoadingPage({
             animation: "backend-loading-fadein 0.6s ease-out",
           }}
         >
-          {/* Logo */}
           <img
-            src={
-              isDark
-                ? "https://gw.alicdn.com/imgextra/i4/O1CN01L7e39724RlGeJYJ7l_!!6000000007388-55-tps-771-132.svg"
-                : "https://gw.alicdn.com/imgextra/i1/O1CN01sens5C1TuwioeGexL_!!6000000002443-55-tps-771-132.svg"
-            }
+            src="/qwenpaw.png"
             alt="QwenPaw"
-            style={{ height: 48, marginBottom: 32 }}
+            style={{ height: 72, marginBottom: 28 }}
           />
 
           {/* Progress Arc */}

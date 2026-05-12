@@ -8,7 +8,7 @@ import click
 import uvicorn
 
 from ..constant import LOG_LEVEL_ENV
-from ..config.utils import write_last_api
+from ..config.utils import set_runtime_api, write_last_api
 from ..utils.logging import setup_logger, SuppressPathAccessLogFilter
 
 
@@ -45,6 +45,13 @@ from ..utils.logging import setup_logger, SuppressPathAccessLogFilter
     help="Path substrings to hide from uvicorn access log (repeatable).",
 )
 @click.option(
+    "--write-last-api/--no-write-last-api",
+    "persist_last_api",
+    default=True,
+    show_default=True,
+    help="Persist API host/port for later CLI commands.",
+)
+@click.option(
     "--workers",
     type=int,
     default=None,
@@ -59,6 +66,7 @@ def app_cmd(
     workers: int,  # pylint: disable=unused-argument
     log_level: str,
     hide_access_paths: tuple[str, ...],
+    persist_last_api: bool,
 ) -> None:
     """Run QwenPaw FastAPI app."""
     # Handle deprecated --workers parameter
@@ -75,11 +83,10 @@ def app_cmd(
         )
         click.echo(err=True)
 
-    # Persist last used host/port for other terminals
-    if host == "0.0.0.0":
-        write_last_api("127.0.0.1", port)
-    else:
-        write_last_api(host, port)
+    api_host = "127.0.0.1" if host == "0.0.0.0" else host
+    set_runtime_api(api_host, port)
+    if persist_last_api:
+        write_last_api(api_host, port)
     os.environ[LOG_LEVEL_ENV] = log_level
 
     # Signal reload mode to browser_control.py for Windows

@@ -3,16 +3,29 @@
 import os
 import sys
 
-os.environ.setdefault("COPAW_DESKTOP_APP", "1")
-os.environ.setdefault(
-    "QWENPAW_CORS_ORIGINS",
-    (
-        "tauri://localhost,"
-        "https://tauri.localhost,"
-        "http://tauri.localhost,"
-        "http://localhost:1420"
-    ),
+DESKTOP_CORS_ORIGINS = (
+    "tauri://localhost",
+    "https://tauri.localhost",
+    "http://tauri.localhost",
+    "http://localhost:1420",
+    "http://127.0.0.1:1420",
 )
+
+
+def _ensure_desktop_cors_origins() -> None:
+    origins = [
+        origin.strip()
+        for origin in os.environ.get("QWENPAW_CORS_ORIGINS", "").split(",")
+        if origin.strip()
+    ]
+    for origin in DESKTOP_CORS_ORIGINS:
+        if origin not in origins:
+            origins.append(origin)
+    os.environ["QWENPAW_CORS_ORIGINS"] = ",".join(origins)
+
+
+os.environ.setdefault("QWENPAW_DESKTOP_APP", "1")
+_ensure_desktop_cors_origins()
 
 
 def main() -> None:
@@ -32,7 +45,15 @@ def main() -> None:
             pass
 
     # Start the backend server
-    sys.argv = ["qwenpaw", "app", "--host", "127.0.0.1", "--port", port]
+    sys.argv = [
+        "qwenpaw",
+        "app",
+        "--host",
+        "127.0.0.1",
+        "--port",
+        port,
+        "--no-write-last-api",
+    ]
     # pylint: disable-next=no-value-for-parameter
     cli()
 

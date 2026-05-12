@@ -38,6 +38,9 @@ from .config import (
 
 logger = logging.getLogger(__name__)
 
+RUNTIME_API_HOST_ENV = "QWENPAW_RUNTIME_API_HOST"
+RUNTIME_API_PORT_ENV = "QWENPAW_RUNTIME_API_PORT"
+
 # Config cache with mtime tracking for reducing disk IO
 _config_cache: Optional[Config] = None
 _config_mtime: Optional[float] = None
@@ -776,6 +779,25 @@ def read_last_api() -> Optional[Tuple[str, int]]:
     host = config.last_api.host
     port = config.last_api.port
     if not host or port is None:
+        return None
+    return host, port
+
+
+def set_runtime_api(host: str, port: int) -> None:
+    """Set the current process API host/port without persisting it."""
+    os.environ[RUNTIME_API_HOST_ENV] = host
+    os.environ[RUNTIME_API_PORT_ENV] = str(port)
+
+
+def read_runtime_api() -> Optional[Tuple[str, int]]:
+    """Read the current process API host/port when available."""
+    host = os.environ.get(RUNTIME_API_HOST_ENV)
+    port_raw = os.environ.get(RUNTIME_API_PORT_ENV)
+    if not host or not port_raw:
+        return None
+    try:
+        port = int(port_raw)
+    except ValueError:
         return None
     return host, port
 

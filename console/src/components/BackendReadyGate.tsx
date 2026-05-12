@@ -24,9 +24,7 @@ export default function BackendReadyGate({ children }: Props) {
   const [status, setStatus] = useState<"checking" | "ready" | "timeout">(
     "checking",
   );
-  const [shouldGate, setShouldGate] = useState(
-    () => !!getApiBaseUrl() || isTauriRuntime(),
-  );
+  const [shouldGate, setShouldGate] = useState(() => isTauriRuntime());
   const [elapsed, setElapsed] = useState(0);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const mountedRef = useRef(true);
@@ -72,7 +70,7 @@ export default function BackendReadyGate({ children }: Props) {
   }, [startPolling]);
 
   useEffect(() => {
-    // Browser mode: pass through immediately
+    // Browser mode: pass through immediately.
     if (!shouldGate) return;
 
     mountedRef.current = true;
@@ -94,7 +92,7 @@ export default function BackendReadyGate({ children }: Props) {
     };
   }, [shouldGate, startPolling]);
 
-  // Browser mode or backend ready
+  // Browser mode or backend ready.
   if (!shouldGate || status === "ready") {
     return <>{children}</>;
   }
