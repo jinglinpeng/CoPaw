@@ -57,7 +57,8 @@ fn command_exists(command: &str) -> bool {
         .stdout(Stdio::null())
         .stderr(Stdio::null())
         .status()
-        .is_ok()
+        .map(|status| status.success())
+        .unwrap_or(false)
 }
 
 fn local_python(repo_root: &Path) -> Option<String> {

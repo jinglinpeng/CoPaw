@@ -1,12 +1,12 @@
 {
   "$schema": "../node_modules/@tauri-apps/cli/config.schema.json",
   "productName": "QwenPaw Desktop",
-  "version": "../package.json",
+  "version": "version/package.json",
   "identifier": "com.qwenpaw.desktop",
   "build": {
     "frontendDist": "../dist",
     "devUrl": "http://localhost:1420",
-    "beforeDevCommand": "bun dev:tauri",
+    "beforeDevCommand": "bun run sync:tauri-version && bun dev:tauri",
     "beforeBuildCommand": "bun build:prod"
   },
   "app": {

@@ -5,10 +5,13 @@ import { fileURLToPath } from "node:url";
 const scriptDir = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(scriptDir, "../..");
 const versionFile = path.join(repoRoot, "src/qwenpaw/__version__.py");
-const packageFile = path.join(repoRoot, "console/package.json");
 const tauriConfigFile = path.join(
   repoRoot,
   "console/src-tauri/tauri.conf.json",
+);
+const tauriVersionPackageFile = path.join(
+  repoRoot,
+  "console/src-tauri/version/package.json",
 );
 
 function readPythonVersion() {
@@ -43,7 +46,9 @@ function toSemver(version) {
 }
 
 function updateJson(file, update) {
-  const data = JSON.parse(fs.readFileSync(file, "utf8"));
+  const data = fs.existsSync(file)
+    ? JSON.parse(fs.readFileSync(file, "utf8"))
+    : {};
   update(data);
   fs.writeFileSync(file, `${JSON.stringify(data, null, 2)}\n`);
 }
@@ -52,9 +57,9 @@ function updateTauriConfigVersion() {
   const text = fs.readFileSync(tauriConfigFile, "utf8");
   const updated = text.replace(
     /("version"\s*:\s*)"[^"]+"/,
-    '$1"../package.json"',
+    '$1"version/package.json"',
   );
-  if (updated === text && !text.includes('"version": "../package.json"')) {
+  if (updated === text && !text.includes('"version": "version/package.json"')) {
     throw new Error(`Could not update version in ${tauriConfigFile}`);
   }
   fs.writeFileSync(tauriConfigFile, updated);
@@ -62,7 +67,8 @@ function updateTauriConfigVersion() {
 
 const semver = toSemver(readPythonVersion());
 
-updateJson(packageFile, (data) => {
+fs.mkdirSync(path.dirname(tauriVersionPackageFile), { recursive: true });
+updateJson(tauriVersionPackageFile, (data) => {
   data.version = semver;
 });
 
