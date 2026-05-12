@@ -449,10 +449,10 @@ async def lifespan(  # pylint: disable=too-many-statements,too-many-branches
             )
 
             # Print server URL again so it's visible after background logs
-            from ..config.utils import read_last_api, read_runtime_api
+            from ..config.utils import read_last_api
             from ..utils.startup_display import print_ready_banner
 
-            api_info = read_runtime_api() or read_last_api()
+            api_info = read_last_api()
             print_ready_banner(api_info, startup_elapsed)
         except Exception:
             logger.error(

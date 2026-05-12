@@ -128,10 +128,10 @@ class VoiceChannel(BaseChannel):
 
         # Start Cloudflare tunnel pointing at the app's serving port
         from qwenpaw.tunnel import CloudflareTunnelDriver
-        from qwenpaw.config.utils import read_last_api, read_runtime_api
+        from qwenpaw.config.utils import read_last_api
 
         self.tunnel_mgr = CloudflareTunnelDriver()
-        api_info = read_runtime_api() or read_last_api()
+        api_info = read_last_api()
         local_port = api_info[1] if api_info else 8088
 
         try:

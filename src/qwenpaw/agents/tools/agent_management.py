@@ -12,7 +12,7 @@ import httpx
 from agentscope.message import TextBlock
 from agentscope.tool import ToolResponse
 
-from ...config.utils import read_last_api, read_runtime_api
+from ...config.utils import read_last_api
 from ...utils.http import trust_env_for_url
 
 
@@ -25,14 +25,13 @@ def resolve_agent_api_base_url(base_url: Optional[str] = None) -> str:
 
     Priority:
     1. Explicit ``base_url`` argument
-    2. Current process API host/port
-    3. Last recorded API host/port from config
-    4. Built-in localhost fallback
+    2. Last recorded API host/port from config
+    3. Built-in localhost fallback
     """
     if base_url:
         return base_url.rstrip("/")
 
-    last_api = read_runtime_api() or read_last_api()
+    last_api = read_last_api()
     if last_api:
         host, port = last_api
         return f"http://{host}:{port}"

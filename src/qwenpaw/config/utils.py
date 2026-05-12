@@ -774,7 +774,11 @@ def update_last_dispatch(
 
 
 def read_last_api() -> Optional[Tuple[str, int]]:
-    """Read last API host/port from config (via config load/save)."""
+    """Read current runtime API host/port, falling back to saved config."""
+    runtime_api = read_runtime_api()
+    if runtime_api:
+        return runtime_api
+
     config = load_config()
     host = config.last_api.host
     port = config.last_api.port

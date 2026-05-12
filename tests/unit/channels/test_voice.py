@@ -313,9 +313,6 @@ class TestVoiceChannelLifecycle:
             return_value=mock_tunnel_manager,
         ):
             with patch(
-                "qwenpaw.config.utils.read_runtime_api",
-                return_value=None,
-            ), patch(
                 "qwenpaw.config.utils.read_last_api",
                 return_value=("127.0.0.1", 8088),
             ):
@@ -353,9 +350,6 @@ class TestVoiceChannelLifecycle:
             return_value=mock_tunnel_manager,
         ):
             with patch(
-                "qwenpaw.config.utils.read_runtime_api",
-                return_value=None,
-            ), patch(
                 "qwenpaw.config.utils.read_last_api",
                 return_value=("127.0.0.1", 8088),
             ):
@@ -388,9 +382,6 @@ class TestVoiceChannelLifecycle:
             return_value=mock_tunnel_manager,
         ):
             with patch(
-                "qwenpaw.config.utils.read_runtime_api",
-                return_value=None,
-            ), patch(
                 "qwenpaw.config.utils.read_last_api",
                 return_value=("127.0.0.1", 8088),
             ):

@@ -2,6 +2,7 @@
 from click.testing import CliRunner
 
 from qwenpaw.cli import app_cmd as app_cmd_module
+from qwenpaw.config import utils as config_utils
 
 
 def test_app_cmd_sets_runtime_api_without_persisting_last_api(monkeypatch):
@@ -61,3 +62,15 @@ def test_app_cmd_persists_last_api_by_default(monkeypatch):
     assert result.exit_code == 0
     assert runtime_calls == [("127.0.0.1", 18088)]
     assert last_api_calls == [("127.0.0.1", 18088)]
+
+
+def test_read_last_api_prefers_runtime_api(monkeypatch):
+    monkeypatch.setenv(config_utils.RUNTIME_API_HOST_ENV, "127.0.0.1")
+    monkeypatch.setenv(config_utils.RUNTIME_API_PORT_ENV, "19088")
+    monkeypatch.setattr(
+        config_utils,
+        "load_config",
+        lambda: (_ for _ in ()).throw(AssertionError("load_config called")),
+    )
+
+    assert config_utils.read_last_api() == ("127.0.0.1", 19088)
