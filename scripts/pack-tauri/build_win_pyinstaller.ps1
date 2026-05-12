@@ -109,7 +109,6 @@ Write-Host ""
 # Note: Tauri caches NSIS/Wix tools in target/.tauri/ via useLocalToolsDir
 # in tauri.conf.json — no LOCALAPPDATA redirect needed.
 Write-Host "== Step 2: Building Tauri App ==" -ForegroundColor Yellow
-node scripts/pack-tauri/sync_tauri_version.mjs
 Set-Location console
 
 Write-Host "Installing frontend dependencies..."
