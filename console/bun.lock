@@ -3,7 +3,7 @@
   "configVersion": 0,
   "workspaces": {
     "": {
-      "name": "qwenpaw-desktop",
+      "name": "qwenpaw-console",
       "dependencies": {
         "@agentscope-ai/chat": "^1.1.62",
         "@agentscope-ai/design": "^1.0.14",

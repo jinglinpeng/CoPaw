@@ -67,6 +67,7 @@ echo ""
 
 # Step 2: Build Tauri app
 echo "== Step 2: Building Tauri App =="
+node scripts/pack-tauri/sync_tauri_version.mjs
 cd console
 
 bun install

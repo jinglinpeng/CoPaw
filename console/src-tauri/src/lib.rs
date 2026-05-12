@@ -1,5 +1,6 @@
 use std::net::TcpListener;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
+use std::process::{Command as StdCommand, Stdio};
 use std::sync::Mutex;
 use tauri::{Manager, RunEvent, WindowEvent};
 use tauri_plugin_shell::process::{CommandChild, CommandEvent};
@@ -50,6 +51,44 @@ fn pick_backend_port() -> std::io::Result<(u16, TcpListener)> {
     Ok((listener.local_addr()?.port(), listener))
 }
 
+fn command_exists(command: &str) -> bool {
+    StdCommand::new(command)
+        .arg("--version")
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .status()
+        .is_ok()
+}
+
+fn local_python(repo_root: &Path) -> Option<String> {
+    let candidates = if cfg!(windows) {
+        vec![
+            repo_root.join(".venv/Scripts/python.exe"),
+            repo_root.join("venv/Scripts/python.exe"),
+        ]
+    } else {
+        vec![
+            repo_root.join(".venv/bin/python"),
+            repo_root.join("venv/bin/python"),
+        ]
+    };
+
+    candidates
+        .into_iter()
+        .find(|path| path.is_file())
+        .map(|path| path.display().to_string())
+}
+
+fn python_command(repo_root: &Path) -> String {
+    local_python(repo_root).unwrap_or_else(|| {
+        if command_exists("python3") {
+            "python3".to_string()
+        } else {
+            "python".to_string()
+        }
+    })
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -72,11 +111,20 @@ pub fn run() {
             let command = (if cfg!(debug_assertions) {
                 let repo_root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
                 let source_path = repo_root.join("src");
-                app.shell()
-                    .command("uv")
-                    .args(["run", "python", "-m", "qwenpaw.desktop_entry"])
-                    .current_dir(repo_root)
-                    .env("PYTHONPATH", source_path.display().to_string())
+                if command_exists("uv") {
+                    app.shell()
+                        .command("uv")
+                        .args(["run", "python", "-m", "qwenpaw.desktop_entry"])
+                        .current_dir(repo_root)
+                        .env("PYTHONPATH", source_path.display().to_string())
+                } else {
+                    let python = python_command(&repo_root);
+                    app.shell()
+                        .command(python)
+                        .args(["-m", "qwenpaw.desktop_entry"])
+                        .current_dir(repo_root)
+                        .env("PYTHONPATH", source_path.display().to_string())
+                }
             } else {
                 app.shell()
                     .sidecar("qwenpaw-backend")
