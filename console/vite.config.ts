@@ -24,6 +24,7 @@ export default defineConfig(({ mode }) => {
   const isTauriDev =
     mode === "tauri" ||
     Boolean(process.env.TAURI_ENV_PLATFORM || process.env.TAURI_DEV_HOST);
+  const isTauriBuild = Boolean(process.env.TAURI_ENV_PLATFORM);
   const server = isTauriDev
     ? {
         port: 1420,
@@ -184,11 +185,14 @@ export default defineConfig(({ mode }) => {
           },
         },
       },
-      // Tauri uses Chromium on Windows and WebKit on macOS and Linux
-      target:
-        process.env.TAURI_ENV_PLATFORM === "windows" ? "chrome105" : "safari15",
-      // don't minify for debug builds
-      minify: mode === "production" ? "esbuild" : false,
+      // These settings apply only when building inside the Tauri toolchain.
+      // Tauri uses Chromium on Windows and WebKit on macOS/Linux; web builds use Vite defaults.
+      ...(isTauriBuild && {
+        target:
+          process.env.TAURI_ENV_PLATFORM === "windows" ? "chrome105" : "safari15",
+        // don't minify for debug (non-production tauri) builds
+        minify: mode === "production" ? ("esbuild" as const) : (false as const),
+      }),
     },
   };
 });

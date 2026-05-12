@@ -1,7 +1,6 @@
 # -*- coding: utf-8 -*-
 """Desktop entry point for Tauri sidecar auto-init + start backend."""
 import os
-import sys
 
 DESKTOP_CORS_ORIGINS = (
     "tauri://localhost",
@@ -29,33 +28,31 @@ _ensure_desktop_cors_origins()
 
 
 def main() -> None:
-    from qwenpaw.cli.main import cli
+    from qwenpaw.cli.init_cmd import init_cmd
+    from qwenpaw.cli.app_cmd import app_cmd
     from qwenpaw.constant import WORKING_DIR
 
-    port = os.environ.get("QWENPAW_DESKTOP_PORT", "8088")
+    port = os.environ.get("QWENPAW_DESKTOP_PORT")
+    if not port:
+        raise RuntimeError(
+            "QWENPAW_DESKTOP_PORT not set; this entry must be launched by the Tauri shell."
+        )
 
     # Auto-initialize if no config exists
     config_path = WORKING_DIR / "config.json"
     if not config_path.exists():
-        sys.argv = ["qwenpaw", "init", "--defaults", "--accept-security"]
-        try:
-            # pylint: disable-next=no-value-for-parameter
-            cli(standalone_mode=False)
-        except SystemExit:
-            pass
+        # pylint: disable-next=no-value-for-parameter
+        init_cmd.main(
+            args=["--defaults", "--accept-security"],
+            standalone_mode=False,
+        )
 
     # Start the backend server
-    sys.argv = [
-        "qwenpaw",
-        "app",
-        "--host",
-        "127.0.0.1",
-        "--port",
-        port,
-        "--no-write-last-api",
-    ]
     # pylint: disable-next=no-value-for-parameter
-    cli()
+    app_cmd.main(
+        args=["--host", "127.0.0.1", "--port", port, "--no-write-last-api"],
+        standalone_mode=True,
+    )
 
 
 if __name__ == "__main__":

@@ -26,7 +26,7 @@ export default function BackendReadyGate({ children }: Props) {
   );
   const [shouldGate, setShouldGate] = useState(() => isTauriRuntime());
   const [elapsed, setElapsed] = useState(0);
-  const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const mountedRef = useRef(true);
 
   const startPolling = useCallback((apiBaseUrl: string) => {

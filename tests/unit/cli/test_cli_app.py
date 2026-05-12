@@ -64,7 +64,8 @@ def test_app_cmd_persists_last_api_by_default(monkeypatch):
     )
 
     assert result.exit_code == 0
-    assert runtime_calls == [("127.0.0.1", 18088)]
+    # Default path: persist to disk, do NOT write env
+    assert not runtime_calls
     assert last_api_calls == [("127.0.0.1", 18088)]
 
 
@@ -78,3 +79,13 @@ def test_read_last_api_prefers_runtime_api(monkeypatch):
     )
 
     assert config_utils.read_last_api() == ("127.0.0.1", 19088)
+
+
+def test_set_runtime_api_overwrites_previous_env(monkeypatch):
+    """set_runtime_api should overwrite any existing env value with the new address."""
+    monkeypatch.setenv(config_utils.RUNTIME_API_HOST_ENV, "127.0.0.1")
+    monkeypatch.setenv(config_utils.RUNTIME_API_PORT_ENV, "8000")
+
+    config_utils.set_runtime_api("127.0.0.1", 9999)
+
+    assert config_utils.read_last_api() == ("127.0.0.1", 9999)

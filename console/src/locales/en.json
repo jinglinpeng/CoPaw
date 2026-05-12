@@ -1943,7 +1943,7 @@
     "checking": "Connecting to backend...",
     "elapsed": "Elapsed: {{seconds}}s",
     "timeout": "Backend failed to start within {{seconds}} seconds.",
-    "timeoutHint": "Please check that the application has permission to run, then try again.",
+    "timeoutHint": "Backend failed to start. Please retry, or check application logs for details.",
     "error": "Backend connection failed.",
     "retry": "Retry"
   }

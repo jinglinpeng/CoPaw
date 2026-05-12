@@ -139,7 +139,7 @@ export interface WindowNamespace {
 
 declare global {
   interface Window {
-    QwenPaw: WindowNamespace;
+    QwenPaw?: WindowNamespace;
   }
 }
 
@@ -149,7 +149,7 @@ declare global {
 
 export function installHostExternals(): void {
   if (!window.QwenPaw) {
-    (window as any).QwenPaw = {} as WindowNamespace;
+    window.QwenPaw = {} as WindowNamespace;
   }
 
   if (!window.QwenPaw.host) {

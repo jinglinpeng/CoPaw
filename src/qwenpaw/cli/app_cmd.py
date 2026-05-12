@@ -84,9 +84,12 @@ def app_cmd(
         click.echo(err=True)
 
     api_host = "127.0.0.1" if host == "0.0.0.0" else host
-    set_runtime_api(api_host, port)
     if persist_last_api:
         write_last_api(api_host, port)
+    else:
+        # Desktop / sidecar mode: keep the address in-process only so child
+        # processes (channels, tools) can discover it without touching disk.
+        set_runtime_api(api_host, port)
     os.environ[LOG_LEVEL_ENV] = log_level
 
     # Signal reload mode to browser_control.py for Windows

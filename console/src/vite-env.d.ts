@@ -1,5 +1,10 @@
 /// <reference types="vite/client" />
 
+// Vite build-time constants injected via define in vite.config.ts
+declare const VITE_API_BASE_URL: string;
+declare const TOKEN: string;
+declare const MOBILE: boolean;
+
 declare module "dayjs" {
   interface Dayjs {
     fromNow(withoutSuffix?: boolean): string;

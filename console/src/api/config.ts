@@ -1,5 +1,4 @@
-declare const VITE_API_BASE_URL: string;
-declare const TOKEN: string;
+// VITE_API_BASE_URL and TOKEN are declared globally in src/vite-env.d.ts.
 
 const AUTH_TOKEN_KEY = "qwenpaw_auth_token";
 
@@ -38,8 +37,11 @@ export async function initRuntimeApiBaseUrl(): Promise<string> {
   const port = await invoke<number>("backend_port");
   runtimeApiBaseUrl = `http://127.0.0.1:${port}`;
 
-  const host = (window as any).QwenPaw?.host;
-  if (host) host.apiBaseUrl = runtimeApiBaseUrl;
+  // Propagate the resolved URL into the already-installed host externals so
+  // plugin bundles that cached window.QwenPaw.host.apiBaseUrl at startup get
+  // the correct address.
+  const qwenPaw = window.QwenPaw;
+  if (qwenPaw?.host) qwenPaw.host.apiBaseUrl = runtimeApiBaseUrl;
 
   return runtimeApiBaseUrl;
 }
