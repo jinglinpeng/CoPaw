@@ -12,7 +12,7 @@
   "app": {
     "windows": [
       {
-        "title": "qwenpaw-console",
+        "title": "QwenPaw Desktop",
         "width": 800,
         "height": 600,
         "resizable": true,
