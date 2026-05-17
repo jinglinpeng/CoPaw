@@ -28,6 +28,9 @@ console/build
 console/dist-macos-x64
 
 
+# Docs bundled at build time (copied from website/public/docs/)
+src/qwenpaw/docs/
+
 # frontend (website)
 website/node_modules/
 website/.vite/

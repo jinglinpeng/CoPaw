@@ -43,10 +43,36 @@ from ..base import (
     OutgoingContentPart,
     ProcessHandler,
 )
+from .cards import WecomCardHandler
 from .utils import compress_image_for_wecom, format_markdown_tables
 from ..utils import file_url_to_local_path, split_text
 
 logger = logging.getLogger(__name__)
+
+# Bridge aibot SDK logs to Python standard logging so that the
+# level is controlled by the project's logging configuration.
+_sdk_logger = logging.getLogger("aibot")
+
+
+class _SdkLoggerAdapter:
+    """Adapter that satisfies the aibot SDK ``Logger`` protocol
+    and delegates to a standard ``logging.Logger``."""
+
+    def __init__(self, std_logger: logging.Logger) -> None:
+        self._log = std_logger
+
+    def debug(self, message: str, *args: object) -> None:
+        self._log.debug(message, *args)
+
+    def info(self, message: str, *args: object) -> None:
+        self._log.info(message, *args)
+
+    def warn(self, message: str, *args: object) -> None:
+        self._log.warning(message, *args)
+
+    def error(self, message: str, *args: object) -> None:
+        self._log.error(message, *args)
+
 
 # Max number of processed message_ids to keep for dedup.
 _WECOM_PROCESSED_IDS_MAX = 2000
@@ -124,6 +150,7 @@ class WecomChannel(BaseChannel):
         allow_from: Optional[List[str]] = None,
         deny_message: str = "",
         max_reconnect_attempts: int = -1,
+        streaming_enabled: bool = False,
     ):
         super().__init__(
             process,
@@ -135,6 +162,7 @@ class WecomChannel(BaseChannel):
             group_policy=group_policy,
             allow_from=allow_from,
             deny_message=deny_message,
+            streaming_enabled=streaming_enabled,
         )
         self.enabled = enabled
         self.bot_id = bot_id
@@ -163,6 +191,10 @@ class WecomChannel(BaseChannel):
         # payload stays JSON-serializable).
         self._keepalive_tasks: Dict[str, "asyncio.Task[None]"] = {}
 
+        # Sessions with in-flight model responses (suppress extra
+        # "Thinking…" indicators).
+        self._processing_sessions: set[str] = set()
+
         # message_id dedup (ordered dict, trimmed when over limit)
         self._processed_message_ids: OrderedDict[str, None] = OrderedDict()
         self._processed_ids_lock = threading.Lock()
@@ -170,6 +202,9 @@ class WecomChannel(BaseChannel):
         # pending upload-ack futures: req_id -> Future[WsFrame]
         self._upload_ack_futures: Dict[str, "asyncio.Future[Any]"] = {}
         self._upload_lock: Optional[asyncio.Lock] = None  # init in start()
+
+        # Interactive card handler (tool-guard approval cards).
+        self._card_handler = WecomCardHandler(self)
 
     @classmethod
     def from_env(
@@ -242,6 +277,9 @@ class WecomChannel(BaseChannel):
                     if getattr(config, "max_reconnect_attempts", None) is None
                     else getattr(config, "max_reconnect_attempts")
                 ),
+            ),
+            streaming_enabled=bool(
+                getattr(config, "streaming_enabled", False),
             ),
         )
 
@@ -323,15 +361,43 @@ class WecomChannel(BaseChannel):
         return request
 
     def merge_native_items(self, items: List[Any]) -> Any:
-        """Merge same-session native payloads: concat content_parts."""
+        """Merge same-session native payloads: concat content_parts.
+
+        Reuses the first processing_stream_id so the existing
+        "Thinking…" bubble is taken over by the real reply.
+        """
         if not items:
             return None
         first = items[0] if isinstance(items[0], dict) else {}
         merged_parts: List[Any] = []
+
+        # Reuse the first processing_stream_id; cancel extras.
+        reuse_sid = ""
+        reuse_frame = None
+        for item in items:
+            meta = (item if isinstance(item, dict) else {}).get("meta") or {}
+            sid = meta.get("wecom_processing_stream_id", "")
+            if sid and not reuse_sid:
+                reuse_sid = sid
+                reuse_frame = meta.get("wecom_frame")
+            elif sid:
+                # Extra processing indicator — cancel its keepalive.
+                task = self._keepalive_tasks.pop(sid, None)
+                if task is not None and not task.done():
+                    task.cancel()
+
         for it in items:
             p = it if isinstance(it, dict) else {}
             merged_parts.extend(p.get("content_parts") or [])
         last = items[-1] if isinstance(items[-1], dict) else {}
+
+        merged_meta = dict(last.get("meta") or {})
+
+        if reuse_sid:
+            merged_meta["wecom_processing_stream_id"] = reuse_sid
+            if reuse_frame is not None:
+                merged_meta["wecom_frame"] = reuse_frame
+
         return {
             "channel_id": first.get("channel_id") or self.channel,
             "sender_id": last.get(
@@ -344,7 +410,7 @@ class WecomChannel(BaseChannel):
                 first.get("session_id", ""),
             ),
             "content_parts": merged_parts,
-            "meta": dict(last.get("meta") or {}),
+            "meta": merged_meta,
         }
 
     # ------------------------------------------------------------------
@@ -645,9 +711,12 @@ class WecomChannel(BaseChannel):
                 )
                 return
 
-            # Send "processing" indicator only if message has text content
+            session_id = self.resolve_session_id(sender_id, meta)
+
+            # Only show "Thinking…" when session is idle.
             processing_stream_id = ""
-            if text_parts and self._client:
+            session_is_busy = session_id in self._processing_sessions
+            if text_parts and self._client and not session_is_busy:
                 processing_stream_id = generate_req_id("stream")
                 try:
                     await self._client.reply_stream(
@@ -659,8 +728,6 @@ class WecomChannel(BaseChannel):
                 except Exception:
                     logger.debug("wecom failed to send processing indicator")
                     processing_stream_id = ""
-
-            session_id = self.resolve_session_id(sender_id, meta)
             if processing_stream_id:
                 meta["wecom_processing_stream_id"] = processing_stream_id
                 # Keep stream alive while agent is generating.
@@ -1057,6 +1124,198 @@ class WecomChannel(BaseChannel):
         except Exception:
             logger.exception("wecom _send_text_via_frame failed")
 
+    # ------------------------------------------------------------------
+    # Streaming hooks (real-time delta push via reply_stream)
+    # ------------------------------------------------------------------
+
+    async def _cancel_keepalive_and_get_stream_id(
+        self,
+        send_meta: Dict[str, Any],
+    ) -> str:
+        """Cancel keepalive and reuse its stream_id, or create a new one."""
+        processing_sid = send_meta.pop(
+            "wecom_processing_stream_id",
+            "",
+        )
+        keepalive_task = self._keepalive_tasks.pop(processing_sid, None)
+        if keepalive_task is not None and not keepalive_task.done():
+            keepalive_task.cancel()
+            try:
+                await keepalive_task
+            except (asyncio.CancelledError, Exception):
+                pass
+            return processing_sid
+        return generate_req_id("stream")
+
+    def _get_streaming_sids(
+        self,
+        send_meta: Dict[str, Any],
+    ) -> Dict[str, str]:
+        """Return the per-stream_type sid mapping, lazily initialized."""
+        sids = send_meta.get("wecom_streaming_sids")
+        if sids is None:
+            sids = {}
+            send_meta["wecom_streaming_sids"] = sids
+        return sids
+
+    def _build_display_text(
+        self,
+        stream_type: str,
+        text: str,
+        send_meta: Dict[str, Any],
+    ) -> str:
+        """Format text for display based on stream_type."""
+        if stream_type == "reasoning":
+            return f"💭 {text}"
+        prefix = send_meta.get("bot_prefix", "") or self.bot_prefix or ""
+        if prefix:
+            return f"{prefix}  {text}"
+        return text
+
+    async def on_streaming_start(
+        self,
+        request: "AgentRequest",
+        to_handle: str,
+        event: Any,
+        send_meta: Dict[str, Any],
+        stream_type: str,
+        accumulated_text: str = "",
+    ) -> None:
+        """Allocate a stream_id for this stream_type."""
+        frame = send_meta.get("wecom_frame")
+        if not frame or not self._client:
+            return
+
+        sids = self._get_streaming_sids(send_meta)
+
+        if not sids:
+            stream_id = await self._cancel_keepalive_and_get_stream_id(
+                send_meta,
+            )
+        else:
+            stream_id = generate_req_id("stream")
+
+        sids[stream_type] = stream_id
+
+    async def on_streaming_delta(
+        self,
+        request: "AgentRequest",
+        to_handle: str,
+        event: Any,
+        send_meta: Dict[str, Any],
+        stream_type: str,
+        accumulated_text: str = "",
+    ) -> None:
+        """Push an incremental update by overwriting the current bubble."""
+        frame = send_meta.get("wecom_frame")
+        sids = self._get_streaming_sids(send_meta)
+        stream_id = sids.get(stream_type, "")
+        if not frame or not self._client or not stream_id:
+            return
+
+        display_text = self._build_display_text(
+            stream_type,
+            accumulated_text,
+            send_meta,
+        )
+
+        try:
+            await self._client.reply_stream(
+                frame,
+                stream_id=stream_id,
+                content=display_text,
+                finish=False,
+            )
+        except Exception:
+            logger.debug(
+                "wecom streaming delta failed stream_id=%s",
+                stream_id[:20],
+            )
+
+    async def on_streaming_end(
+        self,
+        request: "AgentRequest",
+        to_handle: str,
+        event: Any,
+        send_meta: Dict[str, Any],
+        stream_type: str,
+        accumulated_text: str = "",
+    ) -> None:
+        """Finish a single streaming segment without affecting others."""
+        frame = send_meta.get("wecom_frame")
+        sids = self._get_streaming_sids(send_meta)
+        stream_id = sids.pop(stream_type, "")
+        if not frame or not self._client or not stream_id:
+            return
+
+        display_text = self._build_display_text(
+            stream_type,
+            accumulated_text,
+            send_meta,
+        )
+
+        try:
+            await self._client.reply_stream(
+                frame,
+                stream_id=stream_id,
+                content=display_text,
+                finish=True,
+            )
+        except Exception:
+            logger.debug(
+                "wecom streaming end failed stream_id=%s",
+                stream_id[:20],
+            )
+
+        await self._card_handler.try_send_card_for_event(
+            to_handle,
+            event,
+            send_meta,
+            skip_stream_detail=True,
+        )
+
+    # ------------------------------------------------------------------
+    # Session processing state management
+    # ------------------------------------------------------------------
+
+    async def _consume_with_tracker(
+        self,
+        request: "AgentRequest",
+        payload: Any,
+    ) -> None:
+        """Override to track per-session busy state (TaskTracker path)."""
+        session_id = getattr(request, "session_id", "") or ""
+        self._processing_sessions.add(session_id)
+        try:
+            await super()._consume_with_tracker(request, payload)
+        finally:
+            self._processing_sessions.discard(session_id)
+
+    # ------------------------------------------------------------------
+    # Interactive cards (tool_guard approval, etc.)
+    # ------------------------------------------------------------------
+
+    async def on_event_message_completed(
+        self,
+        request: "AgentRequest",
+        to_handle: str,
+        event: Any,
+        send_meta: Dict[str, Any],
+    ) -> None:
+        """Render card-flagged events via the card handler; else default."""
+        if await self._card_handler.try_send_card_for_event(
+            to_handle,
+            event,
+            send_meta,
+        ):
+            return
+        await super().on_event_message_completed(
+            request,
+            to_handle,
+            event,
+            send_meta,
+        )
+
     async def send_content_parts(  # pylint: disable=too-many-locals
         self,
         to_handle: str,
@@ -1322,6 +1581,7 @@ class WecomChannel(BaseChannel):
             bot_id=self.bot_id,
             secret=self.secret,
             max_reconnect_attempts=self._max_reconnect_attempts,
+            logger=_SdkLoggerAdapter(_sdk_logger),
         )
         self._client = WSClient(options)
 
@@ -1344,6 +1604,10 @@ class WecomChannel(BaseChannel):
         # Register event handlers
         self._client.on("message", self._on_message_sync)
         self._client.on("event.enter_chat", self._on_enter_chat_sync)
+        self._client.on(
+            "event.template_card_event",
+            self._card_handler.handle_template_card_event_sync,
+        )
 
         # On pong timeout just close the ws; let SDK's _receive_loop
         # ConnectionClosed branch handle stop_heartbeat + reconnect,
