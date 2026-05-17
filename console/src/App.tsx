@@ -222,7 +222,6 @@ function App() {
           <AppInner />
         </BackendReadyGate>
       </PluginProvider>
-     
     </ThemeProvider>
   );
 }

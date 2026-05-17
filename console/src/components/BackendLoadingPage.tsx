@@ -28,7 +28,7 @@ export default function BackendLoadingPage({
       ? elapsed === 0
         ? t("startup.starting")
         : t("startup.checking")
-      : t("startup.timeout", {seconds: elapsed});
+      : t("startup.timeout", { seconds: elapsed });
 
   const percent = Math.min(Math.round((elapsed / 120) * 100), 100);
 
@@ -79,11 +79,11 @@ export default function BackendLoadingPage({
             percent={percent}
             status={status === "timeout" ? "exception" : "active"}
             strokeColor="#ff7f16"
-            trailColor={
-              isDark ? "rgba(255,255,255,0.06)" : "rgba(0,0,0,0.04)"
-            }
+            trailColor={isDark ? "rgba(255,255,255,0.06)" : "rgba(0,0,0,0.04)"}
             gapPosition="bottom"
-            format={() => <div style={{ color: textColor }}>{`${elapsed}s`}</div>}
+            format={() => (
+              <div style={{ color: textColor }}>{`${elapsed}s`}</div>
+            )}
             size={160}
             strokeWidth={8}
           />

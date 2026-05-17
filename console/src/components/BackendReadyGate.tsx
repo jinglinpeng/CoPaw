@@ -1,7 +1,16 @@
-import { useState, useEffect, useRef, useCallback, type ReactNode } from "react";
+import {
+  useState,
+  useEffect,
+  useRef,
+  useCallback,
+  type ReactNode,
+} from "react";
 import BackendLoadingPage from "./BackendLoadingPage";
 
-const API_BASE_URL = typeof import.meta.env.VITE_API_BASE_URL !== "undefined" ? import.meta.env.VITE_API_BASE_URL : "http://localhost:8088";
+const API_BASE_URL =
+  typeof import.meta.env.VITE_API_BASE_URL !== "undefined"
+    ? import.meta.env.VITE_API_BASE_URL
+    : "http://localhost:8088";
 const POLL_INTERVAL = 1000;
 const POLL_TIMEOUT = 120;
 const REQUEST_TIMEOUT = 5000;
@@ -11,7 +20,9 @@ interface Props {
 }
 
 export default function BackendReadyGate({ children }: Props) {
-  const [status, setStatus] = useState<"checking" | "ready" | "timeout">("checking");
+  const [status, setStatus] = useState<"checking" | "ready" | "timeout">(
+    "checking",
+  );
   const [elapsed, setElapsed] = useState(0);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const mountedRef = useRef(true);
