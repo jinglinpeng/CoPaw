@@ -21,13 +21,17 @@ def main() -> None:
     if not config_path.exists():
         sys.argv = ["qwenpaw", "init", "--defaults", "--accept-security"]
         try:
-            cli(standalone_mode=False)  # pylint: disable=no-value-for-parameter
+            # pylint: disable=no-value-for-parameter
+            cli(standalone_mode=False)
+            # pylint: enable=no-value-for-parameter
         except SystemExit:
             pass
 
     # Start the backend server
     sys.argv = ["qwenpaw", "app", "--host", "127.0.0.1", "--port", "8088"]
-    cli()  # pylint: disable=no-value-for-parameter
+    # pylint: disable=no-value-for-parameter
+    cli()
+    # pylint: enable=no-value-for-parameter
 
 
 if __name__ == "__main__":
