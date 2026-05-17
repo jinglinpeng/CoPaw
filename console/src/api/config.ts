@@ -9,7 +9,7 @@ const AUTH_TOKEN_KEY = "qwenpaw_auth_token";
  * @returns Full API URL (e.g., "http://localhost:8088/api/models" or "/api/models")
  */
 export function getApiUrl(path: string): string {
-  const base = VITE_API_BASE_URL || "";
+  const base = VITE_API_BASE_URL || "http://localhost:8088";
   const apiPrefix = "/api";
   const normalizedPath = path.startsWith("/") ? path : `/${path}`;
   return `${base}${apiPrefix}${normalizedPath}`;

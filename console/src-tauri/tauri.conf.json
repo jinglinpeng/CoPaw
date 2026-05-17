@@ -1,6 +1,6 @@
 {
   "$schema": "../node_modules/@tauri-apps/cli/config.schema.json",
-  "productName": "qwenpaw-console",
+  "productName": "qwenpaw-desktop",
   "version": "0.1.0",
   "identifier": "com.qwenpaw.desktop",
   "build": {

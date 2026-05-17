@@ -64,7 +64,7 @@ export function invalidateSkillCache(options?: {
 }
 
 function getStreamApiUrl(): string {
-  const base = typeof VITE_API_BASE_URL === "string" ? VITE_API_BASE_URL : "";
+  const base = typeof VITE_API_BASE_URL === "string" ? VITE_API_BASE_URL : "http://localhost:8088";
   return `${base}/api`;
 }
 
