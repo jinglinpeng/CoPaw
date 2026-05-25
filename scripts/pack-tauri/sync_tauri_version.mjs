@@ -12,6 +12,14 @@ const tauriVersionConfigFile = path.join(
   repoRoot,
   "console/src-tauri/tauri.version.conf.json",
 );
+const defaultUpdaterEndpoint =
+  "https://github.com/agentscope-ai/QwenPaw/releases/latest/download/qwenpaw-tauri-latest.json";
+const defaultUpdaterPublicKey =
+  "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IEE0MkMxRjE4MUM4Njc0RjAKUldUd2RJWWNHQjhzcEhoZ2FWWkxVRXp0bFMyS1JEand6YXZURCs5YnlNcFlzRCtNalhRcjJwamMK";
+
+function envValue(name, fallback = "") {
+  return process.env[name]?.trim() || fallback;
+}
 
 function readPythonVersion() {
   const text = fs.readFileSync(versionFile, "utf8");
@@ -47,6 +55,18 @@ function toSemver(version) {
 function writeTauriVersionConfig(file, version) {
   const config = {
     version,
+    bundle: {
+      createUpdaterArtifacts: true,
+    },
+    plugins: {
+      updater: {
+        pubkey: envValue("TAURI_UPDATER_PUBLIC_KEY", defaultUpdaterPublicKey),
+        endpoints: [envValue("TAURI_UPDATER_ENDPOINT", defaultUpdaterEndpoint)],
+        windows: {
+          installMode: "passive",
+        },
+      },
+    },
   };
   fs.writeFileSync(file, `${JSON.stringify(config, null, 2)}\n`);
 }

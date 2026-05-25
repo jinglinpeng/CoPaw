@@ -11,7 +11,7 @@ on:
   workflow_dispatch:
     inputs:
       upload_to_oss:
-        description: 'Upload to OSS'
+        description: "Upload to OSS"
         required: false
         type: boolean
         default: false
@@ -196,6 +196,10 @@ jobs:
           # Authenticate the python-build-standalone release lookup in
           # stage_python_runtime.py to avoid anonymous API rate limits.
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+          TAURI_UPDATER_PUBLIC_KEY: ${{ vars.TAURI_UPDATER_PUBLIC_KEY }}
+          TAURI_UPDATER_ENDPOINT: ${{ vars.TAURI_UPDATER_ENDPOINT }}
         run: ./scripts/pack-tauri/build_win_pyinstaller.ps1
 
       - name: Stage Tauri Windows installer
@@ -207,13 +211,38 @@ jobs:
           }
           $target = "dist/QwenPaw-Tauri-${{ steps.version.outputs.version }}-Windows-setup.exe"
           Copy-Item -Force $installer.FullName $target
+          $signature = "$($installer.FullName).sig"
+          if (-not (Test-Path $signature)) {
+            throw "No Tauri Windows updater signature found at $signature"
+          }
+          $signatureTarget = "$target.sig"
+          Copy-Item -Force $signature $signatureTarget
+
+          $hostTuple = (& rustc -vV | Select-String '^host:' | ForEach-Object { $_.ToString().Substring(6).Trim() })
+          if ($hostTuple -match 'x86_64-pc-windows') {
+            $updaterTarget = "windows-x86_64"
+          } elseif ($hostTuple -match 'i686-pc-windows') {
+            $updaterTarget = "windows-i686"
+          } elseif ($hostTuple -match 'aarch64-pc-windows') {
+            $updaterTarget = "windows-aarch64"
+          } else {
+            throw "Unsupported Windows updater host triple: $hostTuple"
+          }
+          [ordered]@{
+            target = $updaterTarget
+            artifact = Split-Path -Leaf $target
+            signature = Split-Path -Leaf $signatureTarget
+          } | ConvertTo-Json | Set-Content -Encoding utf8 dist/tauri-windows-updater.json
           Write-Host "Staged Tauri Windows installer: $target"
 
       - name: Upload Tauri Windows artifact
         uses: actions/upload-artifact@v4
         with:
           name: QwenPaw-Desktop-Tauri-Windows-${{ steps.version.outputs.version }}
-          path: dist/QwenPaw-Tauri-*-Windows-setup.exe
+          path: |
+            dist/QwenPaw-Tauri-*-Windows-setup.exe
+            dist/QwenPaw-Tauri-*-Windows-setup.exe.sig
+            dist/tauri-windows-updater.json
 
   build-tauri-macos:
     runs-on: macos-14
@@ -261,6 +290,10 @@ jobs:
           # Authenticate the python-build-standalone release lookup in
           # stage_python_runtime.py to avoid anonymous API rate limits.
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+          TAURI_UPDATER_PUBLIC_KEY: ${{ vars.TAURI_UPDATER_PUBLIC_KEY }}
+          TAURI_UPDATER_ENDPOINT: ${{ vars.TAURI_UPDATER_ENDPOINT }}
         run: |
           chmod +x scripts/pack-tauri/build_macos_pyinstaller.sh
           bash scripts/pack-tauri/build_macos_pyinstaller.sh
@@ -269,7 +302,11 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: QwenPaw-Desktop-Tauri-macOS-${{ steps.version.outputs.version }}
-          path: dist/QwenPaw-Tauri-*-macOS.zip
+          path: |
+            dist/QwenPaw-Tauri-*-macOS.zip
+            dist/QwenPaw-Tauri-*-macOS.app.tar.gz
+            dist/QwenPaw-Tauri-*-macOS.app.tar.gz.sig
+            dist/tauri-macos-updater.json
 
   upload-release:
     needs: [build-windows, build-macos, build-tauri-windows, build-tauri-macos]
@@ -278,6 +315,13 @@ jobs:
     permissions:
       contents: write
     steps:
+      - name: Checkout (for scripts)
+        uses: actions/checkout@v4
+
+      - name: Get version
+        id: version
+        run: echo "version=$(sed -n 's/^__version__[[:space:]]*=[[:space:]]*"\([^"]*\)".*/\1/p' src/qwenpaw/__version__.py)" >> $GITHUB_OUTPUT
+
       - name: Download all artifacts
         uses: actions/download-artifact@v4
 
@@ -285,8 +329,21 @@ jobs:
         run: |
           mv QwenPaw-Desktop-Windows-*/QwenPaw-Setup-*.exe . 2>/dev/null || true
           mv QwenPaw-Desktop-macOS-*/QwenPaw-*.zip . 2>/dev/null || true
-          mv QwenPaw-Desktop-Tauri-Windows-*/QwenPaw-Tauri-*-Windows-setup.exe . 2>/dev/null || true
+          mv QwenPaw-Desktop-Tauri-Windows-*/QwenPaw-Tauri-*-Windows-setup.exe* . 2>/dev/null || true
+          mv QwenPaw-Desktop-Tauri-Windows-*/tauri-windows-updater.json . 2>/dev/null || true
           mv QwenPaw-Desktop-Tauri-macOS-*/QwenPaw-Tauri-*-macOS.zip . 2>/dev/null || true
+          mv QwenPaw-Desktop-Tauri-macOS-*/QwenPaw-Tauri-*-macOS.app.tar.gz* . 2>/dev/null || true
+          mv QwenPaw-Desktop-Tauri-macOS-*/tauri-macos-updater.json . 2>/dev/null || true
+
+      - name: Generate Tauri updater manifest
+        run: |
+          python scripts/pack-tauri/generate_update_manifest.py \
+            --version "${{ steps.version.outputs.version }}" \
+            --base-url "https://github.com/${{ github.repository }}/releases/download/${{ github.event.release.tag_name }}" \
+            --metadata tauri-windows-updater.json \
+            --metadata tauri-macos-updater.json \
+            --notes "QwenPaw Desktop ${{ steps.version.outputs.version }}" \
+            --output qwenpaw-tauri-latest.json
 
       - name: Upload to Release
         uses: softprops/action-gh-release@v2
@@ -295,7 +352,11 @@ jobs:
             QwenPaw-Setup-*.exe
             QwenPaw-[0-9]*-macOS.zip
             QwenPaw-Tauri-*-Windows-setup.exe
+            QwenPaw-Tauri-*-Windows-setup.exe.sig
             QwenPaw-Tauri-*-macOS.zip
+            QwenPaw-Tauri-*-macOS.app.tar.gz
+            QwenPaw-Tauri-*-macOS.app.tar.gz.sig
+            qwenpaw-tauri-latest.json
           fail-on-unmatched-files: false
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
