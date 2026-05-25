@@ -24,6 +24,13 @@ import { useTheme } from "../contexts/ThemeContext";
 import { useState, useEffect } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
+import { useAppMessage } from "../hooks/useAppMessage";
+import {
+  checkDesktopUpdate,
+  installDesktopUpdate,
+  type DesktopUpdateInfo,
+} from "../tauri/desktopUpdate";
+import { isTauriRuntime } from "../tauri/backendRuntime";
 import {
   CopyOutlined,
   CheckOutlined,
@@ -66,10 +73,15 @@ function UpdateCodeBlock({ code }: { code: string }) {
 export default function Header() {
   const { t, i18n } = useTranslation();
   const { isDark } = useTheme();
+  const { message } = useAppMessage();
   const [version, setVersion] = useState<string>("");
   const [latestVersion, setLatestVersion] = useState<string>("");
   const [updateModalOpen, setUpdateModalOpen] = useState(false);
   const [updateMarkdown, setUpdateMarkdown] = useState<string>("");
+  const [desktopUpdate, setDesktopUpdate] = useState<DesktopUpdateInfo | null>(
+    null,
+  );
+  const [installingDesktopUpdate, setInstallingDesktopUpdate] = useState(false);
 
   useEffect(() => {
     api
@@ -79,6 +91,16 @@ export default function Header() {
   }, []);
 
   useEffect(() => {
+    if (isTauriRuntime()) {
+      checkDesktopUpdate()
+        .then((update) => {
+          setDesktopUpdate(update);
+          setLatestVersion(update?.version ?? "");
+        })
+        .catch(() => {});
+      return;
+    }
+
     fetch(PYPI_URL)
       .then((res) => res.json())
       .then((data) => {
@@ -123,7 +145,10 @@ export default function Header() {
   }, []);
 
   const hasUpdate =
-    !!version && !!latestVersion && compareVersions(latestVersion, version) > 0;
+    !!desktopUpdate ||
+    (!!version &&
+      !!latestVersion &&
+      compareVersions(latestVersion, version) > 0);
 
   const handleOpenUpdateModal = () => {
     setUpdateMarkdown("");
@@ -133,6 +158,16 @@ export default function Header() {
       : i18n.language?.startsWith("ru")
       ? "ru"
       : "en";
+    if (desktopUpdate) {
+      setUpdateMarkdown(
+        desktopUpdate.body?.trim() ||
+          t("sidebar.updateModal.desktopInstallHint", {
+            version: desktopUpdate.version,
+          }),
+      );
+      return;
+    }
+
     const faqLang = lang === "zh" ? "zh" : "en";
     const url = `https://qwenpaw.agentscope.io/docs/faq.${faqLang}.md`;
     fetch(url, { cache: "no-cache" })
@@ -150,6 +185,18 @@ export default function Header() {
       .catch(() => {
         setUpdateMarkdown(UPDATE_MD[lang] ?? UPDATE_MD.en);
       });
+  };
+
+  const handleInstallDesktopUpdate = () => {
+    setInstallingDesktopUpdate(true);
+    installDesktopUpdate().catch((err) => {
+      setInstallingDesktopUpdate(false);
+      message.error(
+        err instanceof Error
+          ? err.message
+          : t("sidebar.updateModal.desktopInstallFailed"),
+      );
+    });
   };
 
   const handleNavClick = (url: string) => {
@@ -243,19 +290,42 @@ export default function Header() {
         title={null}
         open={updateModalOpen}
         onCancel={() => setUpdateModalOpen(false)}
-        footer={[
-          <Button key="close" onClick={() => setUpdateModalOpen(false)}>
-            {t("common.close")}
-          </Button>,
-          <Button
-            key="releases"
-            type="primary"
-            className={styles.updateViewReleasesBtn}
-            onClick={() => handleNavClick(getReleaseNotesUrl(i18n.language))}
-          >
-            {t("sidebar.updateModal.viewReleases")}
-          </Button>,
-        ]}
+        footer={
+          desktopUpdate
+            ? [
+                <Button
+                  key="close"
+                  disabled={installingDesktopUpdate}
+                  onClick={() => setUpdateModalOpen(false)}
+                >
+                  {t("common.close")}
+                </Button>,
+                <Button
+                  key="install"
+                  type="primary"
+                  loading={installingDesktopUpdate}
+                  className={styles.updateViewReleasesBtn}
+                  onClick={handleInstallDesktopUpdate}
+                >
+                  {t("sidebar.updateModal.installDesktopUpdate")}
+                </Button>,
+              ]
+            : [
+                <Button key="close" onClick={() => setUpdateModalOpen(false)}>
+                  {t("common.close")}
+                </Button>,
+                <Button
+                  key="releases"
+                  type="primary"
+                  className={styles.updateViewReleasesBtn}
+                  onClick={() =>
+                    handleNavClick(getReleaseNotesUrl(i18n.language))
+                  }
+                >
+                  {t("sidebar.updateModal.viewReleases")}
+                </Button>,
+              ]
+        }
         width={960}
         className={styles.updateModal}
       >
