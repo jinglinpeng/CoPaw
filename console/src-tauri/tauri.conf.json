@@ -34,6 +34,7 @@
   },
   "bundle": {
     "active": true,
+    "createUpdaterArtifacts": true,
     "targets": ["app", "nsis"],
     "icon": [
       "../../scripts/pack/assets/icon.icns",
@@ -67,6 +68,17 @@
           "PortugueseBR": "nsis-languages/PortugueseBR.nsh"
         },
         "displayLanguageSelector": false
+      }
+    }
+  },
+  "plugins": {
+    "updater": {
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IEE0MkMxRjE4MUM4Njc0RjAKUldUd2RJWWNHQjhzcEhoZ2FWWkxVRXp0bFMyS1JEand6YXZURCs5YnlNcFlzRCtNalhRcjJwamMK",
+      "endpoints": [
+        "https://github.com/agentscope-ai/QwenPaw/releases/latest/download/qwenpaw-tauri-latest.json"
+      ],
+      "windows": {
+        "installMode": "passive"
       }
     }
   }

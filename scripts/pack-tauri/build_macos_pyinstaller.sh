@@ -168,39 +168,12 @@ else
 fi
 echo ""
 
-UPDATER_ARCHIVE=$(find "${BUNDLE_DIR}/macos" -maxdepth 1 -name "*.app.tar.gz" -print -quit)
-if [ -z "${UPDATER_ARCHIVE}" ] || [ ! -f "${UPDATER_ARCHIVE}" ]; then
-    echo "ERROR: No Tauri macOS updater archive found in ${BUNDLE_DIR}/macos"
-    exit 1
-fi
-if [ ! -f "${UPDATER_ARCHIVE}.sig" ]; then
-    echo "ERROR: No Tauri macOS updater signature found at ${UPDATER_ARCHIVE}.sig"
-    exit 1
-fi
-
 UPDATER_NAME="${DIST_ROOT}/QwenPaw-Tauri-${VERSION}-macOS.app.tar.gz"
-cp "${UPDATER_ARCHIVE}" "${UPDATER_NAME}"
-cp "${UPDATER_ARCHIVE}.sig" "${UPDATER_NAME}.sig"
-echo "Updater archive: ${UPDATER_NAME}"
-
-HOST_TRIPLE=$(rustc -vV | sed -n 's/^host: //p')
-case "${HOST_TRIPLE}" in
-    x86_64-apple-darwin) UPDATER_TARGET="darwin-x86_64" ;;
-    aarch64-apple-darwin) UPDATER_TARGET="darwin-aarch64" ;;
-    *)
-        echo "ERROR: Unsupported macOS updater host triple: ${HOST_TRIPLE}"
-        exit 1
-        ;;
-esac
-cat > "${DIST_ROOT}/tauri-macos-updater.json" <<EOF
-{
-  "target": "${UPDATER_TARGET}",
-  "artifact": "$(basename "${UPDATER_NAME}")",
-  "signature": "$(basename "${UPDATER_NAME}").sig"
-}
-EOF
-echo "Updater metadata: ${DIST_ROOT}/tauri-macos-updater.json"
-echo ""
+python "${REPO_ROOT}/scripts/pack-tauri/generate_update_manifest.py" stage \
+    --bundle-dir "${BUNDLE_DIR}/macos" \
+    --pattern '*.app.tar.gz' \
+    --target auto \
+    --output "${UPDATER_NAME}"
 
 echo ""
 echo "========================================="

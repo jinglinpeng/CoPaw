@@ -198,42 +198,16 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
-          TAURI_UPDATER_PUBLIC_KEY: ${{ vars.TAURI_UPDATER_PUBLIC_KEY }}
-          TAURI_UPDATER_ENDPOINT: ${{ vars.TAURI_UPDATER_ENDPOINT }}
         run: ./scripts/pack-tauri/build_win_pyinstaller.ps1
 
       - name: Stage Tauri Windows installer
         shell: pwsh
         run: |
-          $installer = Get-ChildItem "console/src-tauri/target/release/bundle/nsis/*.exe" | Select-Object -First 1
-          if (-not $installer) {
-            throw "No Tauri Windows installer found"
-          }
-          $target = "dist/QwenPaw-Tauri-${{ steps.version.outputs.version }}-Windows-setup.exe"
-          Copy-Item -Force $installer.FullName $target
-          $signature = "$($installer.FullName).sig"
-          if (-not (Test-Path $signature)) {
-            throw "No Tauri Windows updater signature found at $signature"
-          }
-          $signatureTarget = "$target.sig"
-          Copy-Item -Force $signature $signatureTarget
-
-          $hostTuple = (& rustc -vV | Select-String '^host:' | ForEach-Object { $_.ToString().Substring(6).Trim() })
-          if ($hostTuple -match 'x86_64-pc-windows') {
-            $updaterTarget = "windows-x86_64"
-          } elseif ($hostTuple -match 'i686-pc-windows') {
-            $updaterTarget = "windows-i686"
-          } elseif ($hostTuple -match 'aarch64-pc-windows') {
-            $updaterTarget = "windows-aarch64"
-          } else {
-            throw "Unsupported Windows updater host triple: $hostTuple"
-          }
-          [ordered]@{
-            target = $updaterTarget
-            artifact = Split-Path -Leaf $target
-            signature = Split-Path -Leaf $signatureTarget
-          } | ConvertTo-Json | Set-Content -Encoding utf8 dist/tauri-windows-updater.json
-          Write-Host "Staged Tauri Windows installer: $target"
+          python scripts/pack-tauri/generate_update_manifest.py stage `
+            --bundle-dir console/src-tauri/target/release/bundle/nsis `
+            --pattern '*-setup.exe' `
+            --target windows-x86_64 `
+            --output "dist/QwenPaw-Tauri-${{ steps.version.outputs.version }}-Windows-setup.exe"
 
       - name: Upload Tauri Windows artifact
         uses: actions/upload-artifact@v4
@@ -242,7 +216,7 @@ jobs:
           path: |
             dist/QwenPaw-Tauri-*-Windows-setup.exe
             dist/QwenPaw-Tauri-*-Windows-setup.exe.sig
-            dist/tauri-windows-updater.json
+            dist/tauri-windows-x86_64-updater.json
 
   build-tauri-macos:
     runs-on: macos-14
@@ -292,8 +266,6 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
-          TAURI_UPDATER_PUBLIC_KEY: ${{ vars.TAURI_UPDATER_PUBLIC_KEY }}
-          TAURI_UPDATER_ENDPOINT: ${{ vars.TAURI_UPDATER_ENDPOINT }}
         run: |
           chmod +x scripts/pack-tauri/build_macos_pyinstaller.sh
           bash scripts/pack-tauri/build_macos_pyinstaller.sh
@@ -306,7 +278,7 @@ jobs:
             dist/QwenPaw-Tauri-*-macOS.zip
             dist/QwenPaw-Tauri-*-macOS.app.tar.gz
             dist/QwenPaw-Tauri-*-macOS.app.tar.gz.sig
-            dist/tauri-macos-updater.json
+            dist/tauri-darwin-*-updater.json
 
   upload-release:
     needs: [build-windows, build-macos, build-tauri-windows, build-tauri-macos]
@@ -330,18 +302,21 @@ jobs:
           mv QwenPaw-Desktop-Windows-*/QwenPaw-Setup-*.exe . 2>/dev/null || true
           mv QwenPaw-Desktop-macOS-*/QwenPaw-*.zip . 2>/dev/null || true
           mv QwenPaw-Desktop-Tauri-Windows-*/QwenPaw-Tauri-*-Windows-setup.exe* . 2>/dev/null || true
-          mv QwenPaw-Desktop-Tauri-Windows-*/tauri-windows-updater.json . 2>/dev/null || true
+          mv QwenPaw-Desktop-Tauri-Windows-*/tauri-windows-*-updater.json . 2>/dev/null || true
           mv QwenPaw-Desktop-Tauri-macOS-*/QwenPaw-Tauri-*-macOS.zip . 2>/dev/null || true
           mv QwenPaw-Desktop-Tauri-macOS-*/QwenPaw-Tauri-*-macOS.app.tar.gz* . 2>/dev/null || true
-          mv QwenPaw-Desktop-Tauri-macOS-*/tauri-macos-updater.json . 2>/dev/null || true
+          mv QwenPaw-Desktop-Tauri-macOS-*/tauri-darwin-*-updater.json . 2>/dev/null || true
 
       - name: Generate Tauri updater manifest
         run: |
-          python scripts/pack-tauri/generate_update_manifest.py \
+          metadata_args=()
+          for f in tauri-windows-*-updater.json tauri-darwin-*-updater.json; do
+            [ -f "$f" ] && metadata_args+=(--metadata "$f")
+          done
+          python scripts/pack-tauri/generate_update_manifest.py manifest \
             --version "${{ steps.version.outputs.version }}" \
             --base-url "https://github.com/${{ github.repository }}/releases/download/${{ github.event.release.tag_name }}" \
-            --metadata tauri-windows-updater.json \
-            --metadata tauri-macos-updater.json \
+            "${metadata_args[@]}" \
             --notes "QwenPaw Desktop ${{ steps.version.outputs.version }}" \
             --output qwenpaw-tauri-latest.json
 
