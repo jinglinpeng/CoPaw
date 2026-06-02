@@ -1,15 +1,101 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""Generate a Tauri updater manifest from staged release artifacts."""
+"""Tauri updater helper: stage per-platform artifacts and build the manifest.
+
+Subcommands:
+  stage     Copy a Tauri-built updater archive (and its .sig) into the dist
+            tree, then write a small JSON sidecar describing it.
+  manifest  Aggregate one or more stage-produced sidecar JSON files into the
+            unified `qwenpaw-tauri-latest.json` consumed by tauri-plugin-updater.
+"""
 
 from __future__ import annotations
 
 import argparse
-from datetime import datetime, timezone
 import json
-from pathlib import Path
+import platform as _platform
 import re
+import shutil
+import sys
+from datetime import datetime, timezone
+from pathlib import Path
 from urllib.parse import quote
+
+
+_PEP440_RE = re.compile(
+    r"^(\d+)\.(\d+)\.(\d+)(?:(a|b|rc)(\d+))?(?:\.post(\d+))?(?:\.dev(\d+))?$",
+)
+
+
+def to_semver(version: str) -> str:
+    match = _PEP440_RE.match(version)
+    if not match:
+        raise SystemExit(f"unsupported Python version for Tauri: {version}")
+    major, minor, patch, prerelease, prerelease_n, post, dev = match.groups()
+    prerelease_map = {"a": "alpha", "b": "beta", "rc": "rc"}
+    labels: list[str] = []
+    if prerelease:
+        labels.append(f"{prerelease_map[prerelease]}.{prerelease_n}")
+    if post:
+        labels.append(f"post.{post}")
+    if dev:
+        labels.append(f"dev.{dev}")
+    suffix = f"-{'.'.join(labels)}" if labels else ""
+    return f"{major}.{minor}.{patch}{suffix}"
+
+
+def auto_target() -> str:
+    arch_map = {
+        "amd64": "x86_64",
+        "x86_64": "x86_64",
+        "arm64": "aarch64",
+        "aarch64": "aarch64",
+    }
+    arch = arch_map.get(_platform.machine().lower(), _platform.machine().lower())
+    if sys.platform == "darwin":
+        return f"darwin-{arch}"
+    if sys.platform == "win32":
+        return f"windows-{arch}"
+    return f"linux-{arch}"
+
+
+# ─────────────────────────── stage ───────────────────────────
+
+
+def _find_source(bundle_dir: Path, pattern: str) -> Path:
+    matches = sorted(bundle_dir.glob(pattern))
+    if not matches:
+        raise SystemExit(f"no artifact matching {pattern!r} under {bundle_dir}")
+    return matches[0]
+
+
+def cmd_stage(args: argparse.Namespace) -> None:
+    bundle_dir = Path(args.bundle_dir)
+    source = _find_source(bundle_dir, args.pattern)
+    sig_source = source.with_suffix(source.suffix + ".sig")
+    if not sig_source.is_file():
+        raise SystemExit(f"no updater signature found at {sig_source}")
+
+    output = Path(args.output)
+    output.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copyfile(source, output)
+    shutil.copyfile(sig_source, output.with_suffix(output.suffix + ".sig"))
+
+    target = args.target if args.target != "auto" else auto_target()
+    metadata = {
+        "target": target,
+        "artifact": output.name,
+        "signature": output.name + ".sig",
+    }
+    sidecar = output.parent / f"tauri-{target}-updater.json"
+    sidecar.write_text(
+        json.dumps(metadata, indent=2, ensure_ascii=False) + "\n",
+        encoding="utf-8",
+    )
+    print(f"staged {output.name} ({target}); sidecar {sidecar.name}")
+
+
+# ─────────────────────────── manifest ───────────────────────────
 
 
 def _read_metadata(path: Path) -> dict[str, str]:
@@ -24,106 +110,97 @@ def _read_metadata(path: Path) -> dict[str, str]:
     return {key: str(data[key]) for key in required}
 
 
-def _artifact_url(base_url: str, filename: str) -> str:
-    return f"{base_url.rstrip('/')}/{quote(filename)}"
+def _signature_text(path: Path) -> str:
+    if not path.is_file():
+        raise SystemExit(f"signature file not found: {path}")
+    return path.read_text(encoding="utf-8-sig").strip()
 
 
-def _signature_text(workdir: Path, filename: str) -> str:
-    signature_path = workdir / filename
-    if not signature_path.is_file():
-        raise SystemExit(f"signature file not found: {signature_path}")
-    return signature_path.read_text(encoding="utf-8-sig").strip()
-
-
-def to_semver(version: str) -> str:
-    match = re.match(
-        r"^(\d+)\.(\d+)\.(\d+)(?:(a|b|rc)(\d+))?(?:\.post(\d+))?(?:\.dev(\d+))?$",
-        version,
-    )
-    if not match:
-        raise SystemExit(f"unsupported Python version for Tauri: {version}")
-    (
-        major,
-        minor,
-        patch,
-        prerelease,
-        prerelease_number,
-        post,
-        dev,
-    ) = match.groups()
-    prerelease_map = {"a": "alpha", "b": "beta", "rc": "rc"}
-    labels = []
-    if prerelease:
-        labels.append(f"{prerelease_map[prerelease]}.{prerelease_number}")
-    if post:
-        labels.append(f"post.{post}")
-    if dev:
-        labels.append(f"dev.{dev}")
-    suffix = f"-{'.'.join(labels)}" if labels else ""
-    return f"{major}.{minor}.{patch}{suffix}"
-
-
-def build_manifest(
-    version: str,
-    base_url: str,
-    metadata_files: list[Path],
-    notes: str,
-    pub_date: str,
-) -> dict[str, object]:
+def cmd_manifest(args: argparse.Namespace) -> None:
     platforms: dict[str, dict[str, str]] = {}
-    for metadata_file in metadata_files:
-        metadata = _read_metadata(metadata_file)
-        workdir = metadata_file.parent
-        artifact = metadata["artifact"]
-        artifact_path = workdir / artifact
+    for raw in args.metadata:
+        meta_path = Path(raw)
+        meta = _read_metadata(meta_path)
+        workdir = meta_path.parent
+        artifact_path = workdir / meta["artifact"]
         if not artifact_path.is_file():
             raise SystemExit(f"artifact file not found: {artifact_path}")
-        platforms[metadata["target"]] = {
-            "url": _artifact_url(base_url, artifact),
-            "signature": _signature_text(workdir, metadata["signature"]),
+        platforms[meta["target"]] = {
+            "url": f"{args.base_url.rstrip('/')}/{quote(meta['artifact'])}",
+            "signature": _signature_text(workdir / meta["signature"]),
         }
-
     if not platforms:
         raise SystemExit("no updater platforms were provided")
 
-    return {
-        "version": to_semver(version),
-        "notes": notes,
-        "pub_date": pub_date,
+    manifest = {
+        "version": to_semver(args.version),
+        "notes": args.notes,
+        "pub_date": args.pub_date,
         "platforms": platforms,
     }
+    output = Path(args.output)
+    output.parent.mkdir(parents=True, exist_ok=True)
+    with output.open("w", encoding="utf-8") as f:
+        json.dump(manifest, f, indent=2, ensure_ascii=False)
+        f.write("\n")
+    print(f"wrote manifest {output} (platforms: {', '.join(sorted(platforms))})")
+
+
+# ─────────────────────────── cli ───────────────────────────
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(
-        description="Generate the static JSON consumed by tauri-plugin-updater",
+    parser = argparse.ArgumentParser(description=__doc__)
+    sub = parser.add_subparsers(dest="cmd", required=True)
+
+    p_stage = sub.add_parser(
+        "stage",
+        help="Copy a Tauri updater archive + .sig into dist and write a sidecar.",
     )
-    parser.add_argument("--version", required=True)
-    parser.add_argument("--base-url", required=True)
-    parser.add_argument(
+    p_stage.add_argument(
+        "--bundle-dir",
+        required=True,
+        help="Tauri bundle output dir (e.g., target/release/bundle/nsis).",
+    )
+    p_stage.add_argument(
+        "--pattern",
+        required=True,
+        help="Glob to find the artifact (e.g., '*-setup.exe', '*.app.tar.gz').",
+    )
+    p_stage.add_argument(
+        "--target",
+        default="auto",
+        help="Updater target (e.g., windows-x86_64, darwin-aarch64) or 'auto'.",
+    )
+    p_stage.add_argument(
+        "--output",
+        required=True,
+        help="Destination artifact path; .sig is staged alongside.",
+    )
+    p_stage.set_defaults(func=cmd_stage)
+
+    p_manifest = sub.add_parser(
+        "manifest",
+        help="Aggregate per-platform sidecars into the updater manifest JSON.",
+    )
+    p_manifest.add_argument("--version", required=True)
+    p_manifest.add_argument("--base-url", required=True)
+    p_manifest.add_argument(
         "--metadata",
         action="append",
         default=[],
-        help="Path to a JSON file with target, artifact, and signature keys",
+        help="Path to a sidecar JSON file (repeatable).",
     )
-    parser.add_argument("--notes", default="")
-    parser.add_argument(
+    p_manifest.add_argument("--notes", default="")
+    p_manifest.add_argument(
         "--pub-date",
         default=datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
     )
-    parser.add_argument("--output", required=True)
-    args = parser.parse_args()
+    p_manifest.add_argument("--output", required=True)
+    p_manifest.set_defaults(func=cmd_manifest)
 
-    manifest = build_manifest(
-        version=args.version,
-        base_url=args.base_url,
-        metadata_files=[Path(path) for path in args.metadata],
-        notes=args.notes,
-        pub_date=args.pub_date,
-    )
-    with Path(args.output).open("w", encoding="utf-8") as f:
-        json.dump(manifest, f, indent=2, ensure_ascii=False)
-        f.write("\n")
+    args = parser.parse_args()
+    args.func(args)
 
 
 if __name__ == "__main__":
