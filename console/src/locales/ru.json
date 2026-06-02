@@ -1584,6 +1584,9 @@
     "updateModal": {
       "title": "Доступна новая версия: v{{version}}",
       "viewReleases": "Открыть релизы",
+      "installDesktopUpdate": "Установить и перезапустить",
+      "desktopInstallHint": "QwenPaw Desktop {{version}} готов к установке. Приложение перезапустится после обновления.",
+      "desktopInstallFailed": "Не удалось установить обновление десктопного приложения",
       "close": "Закрыть"
     }
   },

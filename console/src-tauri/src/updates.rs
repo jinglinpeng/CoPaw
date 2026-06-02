@@ -12,15 +12,6 @@ pub(crate) struct DesktopUpdate {
     body: Option<String>,
 }
 
-impl From<tauri_plugin_updater::Update> for DesktopUpdate {
-    fn from(update: tauri_plugin_updater::Update) -> Self {
-        Self {
-            version: update.version,
-            body: update.body,
-        }
-    }
-}
-
 #[tauri::command]
 pub(crate) async fn check_desktop_update(
     app: tauri::AppHandle,
@@ -32,11 +23,18 @@ pub(crate) async fn check_desktop_update(
         .await
         .map_err(updater_error)?;
 
-    Ok(update.map(DesktopUpdate::from))
+    Ok(update.map(|u| DesktopUpdate {
+        version: u.version,
+        body: u.body,
+    }))
 }
 
 #[tauri::command]
 pub(crate) async fn install_desktop_update(app: tauri::AppHandle) -> Result<(), String> {
+    // `on_before_exit` covers platforms where the updater itself triggers exit
+    // (Windows passive install). For macOS the call returns with the new bundle
+    // in place and the app keeps running until `app.restart()` below, so we
+    // stop the backend explicitly there.
     let update = app
         .updater_builder()
         .on_before_exit({
@@ -74,8 +72,8 @@ pub(crate) async fn install_desktop_update(app: tauri::AppHandle) -> Result<(), 
         .map_err(updater_error)?;
 
     log::info!("[updates] installing desktop update version={version}");
-    backend::stop(&app);
     update.install(bytes).map_err(updater_error)?;
+    backend::stop(&app);
     app.restart();
 }
 

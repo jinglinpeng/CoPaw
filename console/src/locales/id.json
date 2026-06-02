@@ -87,6 +87,9 @@
     "updateModal": {
       "title": "Versi baru tersedia: v{{version}}",
       "viewReleases": "Lihat Rilis",
+      "installDesktopUpdate": "Pasang dan Mulai Ulang",
+      "desktopInstallHint": "QwenPaw Desktop {{version}} siap dipasang. Aplikasi akan dimulai ulang setelah pembaruan.",
+      "desktopInstallFailed": "Gagal memasang pembaruan desktop",
       "close": "Tutup"
     }
   },
