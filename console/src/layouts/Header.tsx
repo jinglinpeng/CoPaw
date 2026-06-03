@@ -131,14 +131,13 @@ export default function Header() {
       .catch(() => {});
   }, [onDesktop]);
 
-  const desktopVersion = desktop.version;
   const hasUpdate = onDesktop
     ? desktop.hasUpdate
     : !!version &&
       !!latestVersion &&
       compareVersions(latestVersion, version) > 0;
 
-  const modalVersion = onDesktop ? desktopVersion : latestVersion;
+  const modalVersion = onDesktop ? desktop.version : latestVersion;
 
   const handleOpenUpdateModal = () => {
     setUpdateMarkdown("");
@@ -150,11 +149,10 @@ export default function Header() {
       : "en";
 
     if (onDesktop) {
-      const body = desktop.body?.trim();
       setUpdateMarkdown(
-        body ||
+        desktop.body ||
           t("sidebar.updateModal.desktopInstallHint", {
-            version: desktopVersion,
+            version: desktop.version,
           }),
       );
       return;
