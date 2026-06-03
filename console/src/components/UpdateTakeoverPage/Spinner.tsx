@@ -80,7 +80,9 @@ export default function Spinner({
           strokeWidth={STROKE}
           strokeLinecap="round"
           strokeDasharray={
-            determinate ? `${CIRCUMFERENCE} ${CIRCUMFERENCE}` : `${CIRCUMFERENCE * 0.25} ${CIRCUMFERENCE}`
+            determinate
+              ? `${CIRCUMFERENCE} ${CIRCUMFERENCE}`
+              : `${CIRCUMFERENCE * 0.25} ${CIRCUMFERENCE}`
           }
           strokeDashoffset={determinate ? dashOffset : 0}
           className={styles.arc}
