@@ -1,0 +1,118 @@
+.takeover {
+  position: fixed;
+  inset: 0;
+  z-index: 9999;
+  background: var(--color-bg-base, #fff);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 32px;
+}
+
+.center {
+  width: 100%;
+  max-width: 480px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+}
+
+.title {
+  margin: 24px 0 8px;
+  font-size: 22px;
+  font-weight: 600;
+  color: var(--color-text, rgba(0, 0, 0, 0.88));
+}
+
+.subtitle {
+  margin: 0 0 4px;
+  font-size: 14px;
+  color: var(--color-text-secondary, rgba(0, 0, 0, 0.65));
+}
+
+.willRestart {
+  margin: 8px 0 24px;
+  font-size: 13px;
+  color: var(--color-text-tertiary, rgba(0, 0, 0, 0.45));
+}
+
+.steps {
+  margin: 16px 0 12px;
+  width: 100%;
+  max-width: 360px;
+}
+
+.progressLine {
+  margin: 4px 0 16px;
+  font-size: 13px;
+  color: var(--color-text-secondary, rgba(0, 0, 0, 0.65));
+  font-variant-numeric: tabular-nums;
+}
+
+.hints {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 16px;
+}
+
+.hint {
+  font-size: 13px;
+  color: var(--color-text-tertiary, rgba(0, 0, 0, 0.5));
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.detailsWrapper {
+  width: 100%;
+  margin: 16px 0 8px;
+  text-align: left;
+}
+
+.detailsToggle {
+  background: none;
+  border: none;
+  padding: 4px 0;
+  cursor: pointer;
+  font-size: 13px;
+  color: var(--color-text-secondary, rgba(0, 0, 0, 0.65));
+  font-family: inherit;
+}
+
+.detailsBox {
+  position: relative;
+  margin-top: 6px;
+  padding: 10px 12px;
+  background: rgba(0, 0, 0, 0.04);
+  border-radius: 6px;
+  border: 1px solid rgba(0, 0, 0, 0.06);
+}
+
+.detailsText {
+  margin: 0;
+  font-size: 12px;
+  font-family: ui-monospace, "Cascadia Code", Consolas, monospace;
+  white-space: pre-wrap;
+  word-break: break-all;
+  color: var(--color-text, rgba(0, 0, 0, 0.85));
+}
+
+.copyBtn {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  background: rgba(255, 255, 255, 0.85);
+  border: 1px solid rgba(0, 0, 0, 0.1);
+  border-radius: 4px;
+  padding: 2px 8px;
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.actions {
+  margin-top: 20px;
+  display: flex;
+  gap: 12px;
+}
