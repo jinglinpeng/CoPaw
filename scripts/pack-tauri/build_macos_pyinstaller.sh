@@ -169,10 +169,14 @@ fi
 echo ""
 
 UPDATER_NAME="${DIST_ROOT}/QwenPaw-Tauri-${VERSION}-macOS.app.tar.gz"
+case "$(uname -m)" in
+    arm64 | aarch64) UPDATER_TARGET="darwin-aarch64" ;;
+    *) UPDATER_TARGET="darwin-x86_64" ;;
+esac
 python "${REPO_ROOT}/scripts/pack-tauri/generate_update_manifest.py" stage \
     --bundle-dir "${BUNDLE_DIR}/macos" \
     --pattern '*.app.tar.gz' \
-    --target auto \
+    --target "${UPDATER_TARGET}" \
     --output "${UPDATER_NAME}"
 
 echo ""
