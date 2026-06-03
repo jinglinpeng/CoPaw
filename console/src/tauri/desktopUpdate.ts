@@ -51,36 +51,41 @@ export async function onUpdateEvent(
 
   if (handlers.onCheckStart) {
     unlisteners.push(
-      await listen<unknown>("update:check-start", () =>
-        handlers.onCheckStart?.(),
+      await listen<unknown>(
+        "update:check-start",
+        () => handlers.onCheckStart?.(),
       ),
     );
   }
   if (handlers.onDownloadProgress) {
     unlisteners.push(
-      await listen<UpdateProgress>("update:download-progress", (event) =>
-        handlers.onDownloadProgress?.(event.payload),
+      await listen<UpdateProgress>(
+        "update:download-progress",
+        (event) => handlers.onDownloadProgress?.(event.payload),
       ),
     );
   }
   if (handlers.onInstallStart) {
     unlisteners.push(
-      await listen<unknown>("update:install-start", () =>
-        handlers.onInstallStart?.(),
+      await listen<unknown>(
+        "update:install-start",
+        () => handlers.onInstallStart?.(),
       ),
     );
   }
   if (handlers.onInstallDone) {
     unlisteners.push(
-      await listen<unknown>("update:install-done", () =>
-        handlers.onInstallDone?.(),
+      await listen<unknown>(
+        "update:install-done",
+        () => handlers.onInstallDone?.(),
       ),
     );
   }
   if (handlers.onError) {
     unlisteners.push(
-      await listen<UpdateError>("update:error", (event) =>
-        handlers.onError?.(event.payload),
+      await listen<UpdateError>(
+        "update:error",
+        (event) => handlers.onError?.(event.payload),
       ),
     );
   }
