@@ -7,17 +7,14 @@ export interface DesktopUpdateInfo {
   body?: string | null;
 }
 
-export type UpdateStage = "check" | "download" | "install";
-export type UpdateErrorKind = "network" | "signature" | "other";
-
 export interface UpdateProgress {
   downloaded: number;
   total: number | null;
 }
 
 export interface UpdateError {
-  stage: UpdateStage;
-  kind: UpdateErrorKind;
+  stage: "check" | "download" | "install";
+  kind: "network" | "signature" | "other";
   message: string;
 }
 
@@ -26,10 +23,6 @@ export async function checkDesktopUpdate(): Promise<DesktopUpdateInfo | null> {
   return invoke<DesktopUpdateInfo | null>("check_desktop_update");
 }
 
-/**
- * Kick off the install flow. Resolves immediately; progress and outcome are
- * delivered through `update:*` events (see {@link onUpdateEvent}).
- */
 export async function installDesktopUpdate(): Promise<void> {
   if (!isDesktopApp()) return;
   await invoke<void>("install_desktop_update");
@@ -39,11 +32,9 @@ export interface UpdateEventHandlers {
   onCheckStart?: () => void;
   onDownloadProgress?: (progress: UpdateProgress) => void;
   onInstallStart?: () => void;
-  onInstallDone?: () => void;
   onError?: (error: UpdateError) => void;
 }
 
-/** Subscribe to all `update:*` events. Returns a function that unsubscribes. */
 export async function onUpdateEvent(
   handlers: UpdateEventHandlers,
 ): Promise<UnlistenFn> {
@@ -70,14 +61,6 @@ export async function onUpdateEvent(
       await listen<unknown>(
         "update:install-start",
         () => handlers.onInstallStart?.(),
-      ),
-    );
-  }
-  if (handlers.onInstallDone) {
-    unlisteners.push(
-      await listen<unknown>(
-        "update:install-done",
-        () => handlers.onInstallDone?.(),
       ),
     );
   }

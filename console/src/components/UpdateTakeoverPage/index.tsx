@@ -1,16 +1,10 @@
-import { Steps } from "antd";
+import { Progress, Spin, Steps } from "antd";
 import { Button } from "@agentscope-ai/design";
-import { CopyOutlined } from "@ant-design/icons";
-import { useMemo, useState, type ReactNode } from "react";
+import { type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import { useDesktopUpdate } from "../../contexts/DesktopUpdateContext";
-import Spinner from "./Spinner";
 import styles from "./index.module.less";
 
-/**
- * Wrap the normal app. When the desktop update flow is active in a non-Idle
- * non-Confirming phase, the takeover replaces the entire console UI.
- */
 export function UpdateTakeoverGate({ children }: { children: ReactNode }) {
   const { phase } = useDesktopUpdate();
   const isActive =
@@ -35,147 +29,23 @@ function formatBytes(bytes: number): string {
   return `${v.toFixed(v >= 100 || i === 0 ? 0 : 1)} ${units[i]}`;
 }
 
-function formatRate(bps: number): string {
-  if (!Number.isFinite(bps) || bps <= 0) return "0 B/s";
-  return `${formatBytes(bps)}/s`;
-}
-
 function UpdateTakeoverPage() {
   const { t } = useTranslation();
   const update = useDesktopUpdate();
-  const [detailsOpen, setDetailsOpen] = useState(false);
-  const [copied, setCopied] = useState(false);
-
-  const stepIndex = useMemo(() => {
-    switch (update.phase) {
-      case "checking":
-        return 0;
-      case "downloading":
-        return 1;
-      case "installing":
-        return 2;
-      default:
-        return 0;
-    }
-  }, [update.phase]);
 
   if (update.phase === "failed") {
-    return <FailedView />;
-  }
-
-  const isDownloading = update.phase === "downloading";
-  const isStalled = isDownloading && update.stalled;
-  const total = update.total ?? null;
-  const progress =
-    isDownloading && total && total > 0
-      ? Math.min(1, update.downloaded / total)
-      : null;
-
-  const tone = isStalled ? "warn" : "default";
-
-  const title = (() => {
-    if (update.phase === "checking") return t(`${KEY_PREFIX}.checking`);
-    if (isStalled) return t(`${KEY_PREFIX}.stalledTitle`);
-    if (update.phase === "downloading") return t(`${KEY_PREFIX}.downloading`);
-    if (update.phase === "installing") return t(`${KEY_PREFIX}.installing`);
-    return "";
-  })();
-
-  const subtitle = (() => {
-    if (update.phase === "checking") return t(`${KEY_PREFIX}.checkingHint`);
-    if (isStalled) return t(`${KEY_PREFIX}.stalledHint`);
-    if (update.phase === "downloading" || update.phase === "installing") {
-      return t(`${KEY_PREFIX}.downloadingTo`, { version: update.version });
-    }
-    return "";
-  })();
-
-  const progressLine = (() => {
-    if (!isDownloading) return null;
-    const done = formatBytes(update.downloaded);
-    const totalLabel = total ? formatBytes(total) : "—";
-    const rate = isStalled ? formatRate(0) : formatRate(update.throughputBps);
-    return t(`${KEY_PREFIX}.downloadProgress`, {
-      done,
-      total: totalLabel,
-      rate,
-    });
-  })();
-
-  const handleCopy = () => {
-    if (!update.error) return;
-    navigator.clipboard.writeText(update.error.message).then(() => {
-      setCopied(true);
-      window.setTimeout(() => setCopied(false), 1500);
-    });
-  };
-
-  return (
-    <div className={styles.takeover}>
-      <div className={styles.center}>
-        <Spinner progress={progress} tone={tone} />
-
-        <h1 className={styles.title}>{title}</h1>
-        {subtitle && <p className={styles.subtitle}>{subtitle}</p>}
-        {(update.phase === "downloading" || update.phase === "installing") && (
-          <p className={styles.willRestart}>{t(`${KEY_PREFIX}.willRestart`)}</p>
-        )}
-
-        <Steps
-          size="small"
-          current={stepIndex}
-          className={styles.steps}
-          items={[
-            { title: t(`${KEY_PREFIX}.stepPrepare`) },
-            { title: t(`${KEY_PREFIX}.stepDownloading`) },
-            { title: t(`${KEY_PREFIX}.stepInstalling`) },
-          ]}
-        />
-
-        {progressLine && <p className={styles.progressLine}>{progressLine}</p>}
-      </div>
-    </div>
-  );
-
-  function FailedView(): ReactNode {
     const errorKind = update.error?.kind ?? "other";
-    const errorTitle = t(`${KEY_PREFIX}.failedTitle`);
-    const errorMessage = t(`${KEY_PREFIX}.errors.${errorKind}`);
-
     return (
       <div className={styles.takeover}>
         <div className={styles.center}>
-          <Spinner progress={null} errorMark />
-          <h1 className={styles.title}>{errorTitle}</h1>
-          <p className={styles.subtitle}>{errorMessage}</p>
-
-          {update.error && (
-            <div className={styles.detailsWrapper}>
-              <button
-                type="button"
-                className={styles.detailsToggle}
-                onClick={() => setDetailsOpen((v) => !v)}
-              >
-                {detailsOpen ? "▾" : "▸"} {t(`${KEY_PREFIX}.details`)}
-              </button>
-              {detailsOpen && (
-                <div className={styles.detailsBox}>
-                  <pre className={styles.detailsText}>
-                    {`stage=${update.error.stage} kind=${update.error.kind}\n${update.error.message}`}
-                  </pre>
-                  <button
-                    type="button"
-                    className={styles.copyBtn}
-                    onClick={handleCopy}
-                  >
-                    <CopyOutlined />{" "}
-                    {copied ? "✓" : t(`${KEY_PREFIX}.copyDetails`)}
-                  </button>
-                </div>
-              )}
-            </div>
+          <Progress type="circle" percent={100} status="exception" size={96} />
+          <h1 className={styles.title}>{t(`${KEY_PREFIX}.failedTitle`)}</h1>
+          <p className={styles.subtitle}>
+            {t(`${KEY_PREFIX}.errors.${errorKind}`)}
+          </p>
+          {update.error?.message && (
+            <pre className={styles.errorMessage}>{update.error.message}</pre>
           )}
-
           <div className={styles.actions}>
             <Button onClick={update.dismissFailure}>
               {t(`${KEY_PREFIX}.back`)}
@@ -188,4 +58,57 @@ function UpdateTakeoverPage() {
       </div>
     );
   }
+
+  const stepIndex =
+    update.phase === "downloading" ? 1 : update.phase === "installing" ? 2 : 0;
+
+  const isDownloading = update.phase === "downloading";
+  const total = update.total ?? null;
+  const percent =
+    isDownloading && total && total > 0
+      ? Math.min(100, Math.round((update.downloaded / total) * 100))
+      : null;
+
+  const title = t(`${KEY_PREFIX}.${update.phase}`);
+  const subtitle =
+    update.phase === "checking"
+      ? t(`${KEY_PREFIX}.checkingHint`)
+      : t(`${KEY_PREFIX}.downloadingTo`, { version: update.version });
+
+  return (
+    <div className={styles.takeover}>
+      <div className={styles.center}>
+        {percent !== null ? (
+          <Progress type="circle" percent={percent} size={96} />
+        ) : (
+          <Spin size="large" />
+        )}
+
+        <h1 className={styles.title}>{title}</h1>
+        <p className={styles.subtitle}>{subtitle}</p>
+        <p className={styles.willRestart}>{t(`${KEY_PREFIX}.willRestart`)}</p>
+
+        <Steps
+          size="small"
+          current={stepIndex}
+          className={styles.steps}
+          items={[
+            { title: t(`${KEY_PREFIX}.stepPrepare`) },
+            { title: t(`${KEY_PREFIX}.stepDownloading`) },
+            { title: t(`${KEY_PREFIX}.stepInstalling`) },
+          ]}
+        />
+
+        {isDownloading && (
+          <p className={styles.progressLine}>
+            {t(`${KEY_PREFIX}.downloadProgress`, {
+              done: formatBytes(update.downloaded),
+              total: total ? formatBytes(total) : "—",
+              rate: `${formatBytes(update.throughputBps)}/s`,
+            })}
+          </p>
+        )}
+      </div>
+    </div>
+  );
 }
