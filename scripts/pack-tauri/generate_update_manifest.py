@@ -51,7 +51,10 @@ def auto_target() -> str:
         "arm64": "aarch64",
         "aarch64": "aarch64",
     }
-    arch = arch_map.get(_platform.machine().lower(), _platform.machine().lower())
+    arch = arch_map.get(
+        _platform.machine().lower(),
+        _platform.machine().lower(),
+    )
     if sys.platform == "darwin":
         return f"darwin-{arch}"
     if sys.platform == "win32":
@@ -65,7 +68,9 @@ def auto_target() -> str:
 def _find_source(bundle_dir: Path, pattern: str) -> Path:
     matches = sorted(bundle_dir.glob(pattern))
     if not matches:
-        raise SystemExit(f"no artifact matching {pattern!r} under {bundle_dir}")
+        raise SystemExit(
+            f"no artifact matching {pattern!r} under {bundle_dir}",
+        )
     return matches[0]
 
 
@@ -143,7 +148,9 @@ def cmd_manifest(args: argparse.Namespace) -> None:
     with output.open("w", encoding="utf-8") as f:
         json.dump(manifest, f, indent=2, ensure_ascii=False)
         f.write("\n")
-    print(f"wrote manifest {output} (platforms: {', '.join(sorted(platforms))})")
+    print(
+        f"wrote manifest {output} (platforms: {', '.join(sorted(platforms))})",
+    )
 
 
 # ─────────────────────────── cli ───────────────────────────

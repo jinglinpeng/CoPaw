@@ -1,6 +1,6 @@
 import { Steps } from "antd";
 import { Button } from "@agentscope-ai/design";
-import { CopyOutlined, ClockCircleOutlined, ExclamationCircleOutlined } from "@ant-design/icons";
+import { CopyOutlined } from "@ant-design/icons";
 import { useMemo, useState, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import { useDesktopUpdate } from "../../contexts/DesktopUpdateContext";
@@ -38,13 +38,6 @@ function formatBytes(bytes: number): string {
 function formatRate(bps: number): string {
   if (!Number.isFinite(bps) || bps <= 0) return "0 B/s";
   return `${formatBytes(bps)}/s`;
-}
-
-function formatEta(sec: number, t: (key: string, opts?: any) => string): string {
-  if (!Number.isFinite(sec) || sec <= 0) return t(`${KEY_PREFIX}.etaUnknown`);
-  if (sec < 1) return t(`${KEY_PREFIX}.etaDynamic`, { sec: 1 });
-  if (sec >= 60) return t(`${KEY_PREFIX}.etaOverMinute`);
-  return t(`${KEY_PREFIX}.etaDynamic`, { sec: Math.round(sec) });
 }
 
 function UpdateTakeoverPage() {
@@ -109,16 +102,6 @@ function UpdateTakeoverPage() {
     });
   })();
 
-  const etaLine = (() => {
-    if (update.phase === "checking") return t(`${KEY_PREFIX}.etaCheckingHint`);
-    if (update.phase === "installing") return t(`${KEY_PREFIX}.etaInstallingHint`);
-    if (isDownloading)
-      return isStalled
-        ? t(`${KEY_PREFIX}.etaUnknown`)
-        : formatEta(update.etaSec, t);
-    return "";
-  })();
-
   const handleCopy = () => {
     if (!update.error) return;
     navigator.clipboard.writeText(update.error.message).then(() => {
@@ -135,9 +118,7 @@ function UpdateTakeoverPage() {
         <h1 className={styles.title}>{title}</h1>
         {subtitle && <p className={styles.subtitle}>{subtitle}</p>}
         {(update.phase === "downloading" || update.phase === "installing") && (
-          <p className={styles.willRestart}>
-            {t(`${KEY_PREFIX}.willRestart`)}
-          </p>
+          <p className={styles.willRestart}>{t(`${KEY_PREFIX}.willRestart`)}</p>
         )}
 
         <Steps
@@ -152,17 +133,6 @@ function UpdateTakeoverPage() {
         />
 
         {progressLine && <p className={styles.progressLine}>{progressLine}</p>}
-
-        <div className={styles.hints}>
-          <span className={styles.hint}>
-            <ExclamationCircleOutlined /> {t(`${KEY_PREFIX}.dontClose`)}
-          </span>
-          {etaLine && (
-            <span className={styles.hint}>
-              <ClockCircleOutlined /> {etaLine}
-            </span>
-          )}
-        </div>
       </div>
     </div>
   );
