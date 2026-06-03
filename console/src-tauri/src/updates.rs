@@ -1,6 +1,16 @@
 //! Desktop update commands backed by Tauri's updater plugin.
+//!
+//! `check_desktop_update` is a synchronous probe used by the Header to decide
+//! whether to surface an update affordance.
+//!
+//! `install_desktop_update` returns immediately and runs the actual flow on a
+//! background tokio task, pushing progress to the frontend through `update:*`
+//! events so the takeover UI can render an accurate state machine.
+
+use std::time::{Duration, Instant};
 
 use serde::Serialize;
+use tauri::{AppHandle, Emitter};
 use tauri_plugin_updater::UpdaterExt;
 
 use crate::backend;
@@ -14,14 +24,14 @@ pub(crate) struct DesktopUpdate {
 
 #[tauri::command]
 pub(crate) async fn check_desktop_update(
-    app: tauri::AppHandle,
+    app: AppHandle,
 ) -> Result<Option<DesktopUpdate>, String> {
     let update = app
         .updater()
-        .map_err(updater_error)?
+        .map_err(stringify)?
         .check()
         .await
-        .map_err(updater_error)?;
+        .map_err(stringify)?;
 
     Ok(update.map(|u| DesktopUpdate {
         version: u.version,
@@ -30,12 +40,17 @@ pub(crate) async fn check_desktop_update(
 }
 
 #[tauri::command]
-pub(crate) async fn install_desktop_update(app: tauri::AppHandle) -> Result<(), String> {
-    // `on_before_exit` covers platforms where the updater itself triggers exit
-    // (Windows passive install). For macOS the call returns with the new bundle
-    // in place and the app keeps running until `app.restart()` below, so we
-    // stop the backend explicitly there.
-    let update = app
+pub(crate) fn install_desktop_update(app: AppHandle) -> Result<(), String> {
+    tauri::async_runtime::spawn(async move {
+        run_install(app).await;
+    });
+    Ok(())
+}
+
+async fn run_install(app: AppHandle) {
+    emit(&app, "update:check-start", &serde_json::json!({}));
+
+    let update = match app
         .updater_builder()
         .on_before_exit({
             let app = app.clone();
@@ -45,38 +60,111 @@ pub(crate) async fn install_desktop_update(app: tauri::AppHandle) -> Result<(), 
             }
         })
         .build()
-        .map_err(updater_error)?
-        .check()
-        .await
-        .map_err(updater_error)?
-        .ok_or_else(|| "no desktop update available".to_string())?;
+    {
+        Ok(b) => b,
+        Err(err) => return emit_error(&app, "check", &err),
+    };
+
+    let update = match update.check().await {
+        Ok(Some(u)) => u,
+        Ok(None) => return emit_error(&app, "check", &"no desktop update available"),
+        Err(err) => return emit_error(&app, "check", &err),
+    };
 
     let version = update.version.clone();
     log::info!("[updates] downloading desktop update version={version}");
+
+    let mut last_emit = Instant::now()
+        .checked_sub(Duration::from_secs(1))
+        .unwrap_or_else(Instant::now);
+    let mut downloaded: u64 = 0;
+
     let bytes = update
         .download(
             |chunk_len, content_len| {
-                log::debug!(
-                    "[updates] downloaded chunk bytes={} total={}",
-                    chunk_len,
-                    content_len
-                        .map(|len| len.to_string())
-                        .unwrap_or_else(|| "unknown".to_string())
-                );
+                downloaded = downloaded.saturating_add(chunk_len as u64);
+                if last_emit.elapsed() >= Duration::from_millis(200) {
+                    let _ = app.emit(
+                        "update:download-progress",
+                        serde_json::json!({
+                            "downloaded": downloaded,
+                            "total": content_len,
+                        }),
+                    );
+                    last_emit = Instant::now();
+                }
             },
             || {
                 log::info!("[updates] desktop update download complete");
             },
         )
-        .await
-        .map_err(updater_error)?;
+        .await;
+
+    let bytes = match bytes {
+        Ok(b) => b,
+        Err(err) => return emit_error(&app, "download", &err),
+    };
+
+    // Final progress frame (forces UI to land on 100%).
+    let _ = app.emit(
+        "update:download-progress",
+        serde_json::json!({
+            "downloaded": downloaded,
+            "total": Some(downloaded),
+        }),
+    );
 
     log::info!("[updates] installing desktop update version={version}");
-    update.install(bytes).map_err(updater_error)?;
+    emit(&app, "update:install-start", &serde_json::json!({}));
+
+    if let Err(err) = update.install(bytes) {
+        return emit_error(&app, "install", &err);
+    }
+
+    emit(&app, "update:install-done", &serde_json::json!({}));
     backend::stop(&app);
     app.restart();
 }
 
-fn updater_error(err: impl std::fmt::Display) -> String {
+fn emit<S: Serialize>(app: &AppHandle, name: &str, payload: &S) {
+    if let Err(err) = app.emit(name, payload) {
+        log::warn!("[updates] failed to emit {name}: {err}");
+    }
+}
+
+fn emit_error(app: &AppHandle, stage: &'static str, err: &dyn std::fmt::Display) {
+    let message = err.to_string();
+    let kind = classify(&message);
+    log::warn!("[updates] error stage={stage} kind={kind} message={message}");
+    let _ = app.emit(
+        "update:error",
+        serde_json::json!({
+            "stage": stage,
+            "kind": kind,
+            "message": message,
+        }),
+    );
+}
+
+fn classify(message: &str) -> &'static str {
+    let s = message.to_lowercase();
+    if s.contains("timed out")
+        || s.contains("timeout")
+        || s.contains("connection")
+        || s.contains("dns")
+        || s.contains("tls")
+        || s.contains("network")
+        || s.contains("unreachable")
+        || s.contains("resolve")
+    {
+        "network"
+    } else if s.contains("signature") || s.contains("verify") {
+        "signature"
+    } else {
+        "other"
+    }
+}
+
+fn stringify(err: impl std::fmt::Display) -> String {
     err.to_string()
 }

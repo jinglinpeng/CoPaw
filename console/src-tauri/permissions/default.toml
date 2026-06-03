@@ -1,0 +1,18 @@
+"$schema" = "schemas/schema.json"
+
+[default]
+description = "Default permissions for QwenPaw Desktop's updater IPC commands"
+permissions = [
+    "allow-check-desktop-update",
+    "allow-install-desktop-update",
+]
+
+[[permission]]
+identifier = "allow-check-desktop-update"
+description = "Allow the frontend to check for desktop updates via tauri-plugin-updater."
+commands.allow = ["check_desktop_update"]
+
+[[permission]]
+identifier = "allow-install-desktop-update"
+description = "Allow the frontend to start the desktop update install task."
+commands.allow = ["install_desktop_update"]

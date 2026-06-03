@@ -24,12 +24,8 @@ import { useTheme } from "../contexts/ThemeContext";
 import { useState, useEffect } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
-import { useAppMessage } from "../hooks/useAppMessage";
-import {
-  checkDesktopUpdate,
-  installDesktopUpdate,
-} from "../tauri/desktopUpdate";
-import { isTauriRuntime } from "../tauri/backendRuntime";
+import { useDesktopUpdate } from "../contexts/DesktopUpdateContext";
+import { isDesktopApp } from "../tauri/backendRuntime";
 import {
   CopyOutlined,
   CheckOutlined,
@@ -72,16 +68,13 @@ function UpdateCodeBlock({ code }: { code: string }) {
 export default function Header() {
   const { t, i18n } = useTranslation();
   const { isDark } = useTheme();
-  const { message } = useAppMessage();
+  const desktop = useDesktopUpdate();
+  const onDesktop = isDesktopApp();
+
   const [version, setVersion] = useState<string>("");
   const [latestVersion, setLatestVersion] = useState<string>("");
   const [updateModalOpen, setUpdateModalOpen] = useState(false);
   const [updateMarkdown, setUpdateMarkdown] = useState<string>("");
-  const [desktopUpdateBody, setDesktopUpdateBody] = useState<string | null>(
-    null,
-  );
-  const [installingDesktopUpdate, setInstallingDesktopUpdate] = useState(false);
-  const isDesktopUpdate = desktopUpdateBody !== null;
 
   useEffect(() => {
     api
@@ -90,19 +83,9 @@ export default function Header() {
       .catch(() => {});
   }, []);
 
+  // Web-only PyPI fallback: desktop path is owned by DesktopUpdateContext.
   useEffect(() => {
-    if (isTauriRuntime()) {
-      checkDesktopUpdate()
-        .then((update) => {
-          if (!update) return;
-          setLatestVersion(update.version);
-          setDesktopUpdateBody(update.body?.trim() ?? "");
-        })
-        .catch((err) => {
-          console.warn("[updates] desktop update check failed", err);
-        });
-      return;
-    }
+    if (onDesktop) return;
 
     fetch(PYPI_URL)
       .then((res) => res.json())
@@ -145,13 +128,16 @@ export default function Header() {
         }
       })
       .catch(() => {});
-  }, []);
+  }, [onDesktop]);
 
-  const hasUpdate =
-    isDesktopUpdate ||
-    (!!version &&
+  const desktopVersion = desktop.version;
+  const hasUpdate = onDesktop
+    ? desktop.hasUpdate
+    : !!version &&
       !!latestVersion &&
-      compareVersions(latestVersion, version) > 0);
+      compareVersions(latestVersion, version) > 0;
+
+  const modalVersion = onDesktop ? desktopVersion : latestVersion;
 
   const handleOpenUpdateModal = () => {
     setUpdateMarkdown("");
@@ -161,11 +147,13 @@ export default function Header() {
       : i18n.language?.startsWith("ru")
       ? "ru"
       : "en";
-    if (isDesktopUpdate) {
+
+    if (onDesktop) {
+      const body = desktop.body?.trim();
       setUpdateMarkdown(
-        desktopUpdateBody ||
+        body ||
           t("sidebar.updateModal.desktopInstallHint", {
-            version: latestVersion,
+            version: desktopVersion,
           }),
       );
       return;
@@ -190,16 +178,9 @@ export default function Header() {
       });
   };
 
-  const handleInstallDesktopUpdate = () => {
-    setInstallingDesktopUpdate(true);
-    installDesktopUpdate().catch((err) => {
-      setInstallingDesktopUpdate(false);
-      message.error(
-        err instanceof Error
-          ? err.message
-          : t("sidebar.updateModal.desktopInstallFailed"),
-      );
-    });
+  const handleStartInstall = () => {
+    setUpdateModalOpen(false);
+    void desktop.startInstall();
   };
 
   const handleNavClick = (url: string) => {
@@ -294,20 +275,15 @@ export default function Header() {
         open={updateModalOpen}
         onCancel={() => setUpdateModalOpen(false)}
         footer={[
-          <Button
-            key="close"
-            disabled={installingDesktopUpdate}
-            onClick={() => setUpdateModalOpen(false)}
-          >
+          <Button key="close" onClick={() => setUpdateModalOpen(false)}>
             {t("common.close")}
           </Button>,
-          isDesktopUpdate ? (
+          onDesktop ? (
             <Button
               key="install"
               type="primary"
-              loading={installingDesktopUpdate}
               className={styles.updateViewReleasesBtn}
-              onClick={handleInstallDesktopUpdate}
+              onClick={handleStartInstall}
             >
               {t("sidebar.updateModal.installDesktopUpdate")}
             </Button>
@@ -330,11 +306,11 @@ export default function Header() {
           <div className={styles.updateModalBannerLeft}>
             <span className={styles.updateModalVersionTag}>
               <TagOutlined />
-              Version {latestVersion || version}
+              Version {modalVersion || version}
             </span>
             <div className={styles.updateModalBannerTitle}>
               {t("sidebar.updateModal.title", {
-                version: latestVersion || version,
+                version: modalVersion || version,
               })}
             </div>
           </div>
