@@ -308,16 +308,20 @@ jobs:
           mv QwenPaw-Desktop-Tauri-macOS-*/tauri-darwin-*-updater.json . 2>/dev/null || true
 
       - name: Generate Tauri updater manifest
+        env:
+          # Pass release.body via env so quotes/newlines/$ in markdown are safe.
+          RELEASE_BODY: ${{ github.event.release.body }}
         run: |
           metadata_args=()
           for f in tauri-windows-*-updater.json tauri-darwin-*-updater.json; do
             [ -f "$f" ] && metadata_args+=(--metadata "$f")
           done
+          NOTES="${RELEASE_BODY:-QwenPaw Desktop ${{ steps.version.outputs.version }}}"
           python scripts/pack-tauri/generate_update_manifest.py manifest \
             --version "${{ steps.version.outputs.version }}" \
             --base-url "https://github.com/${{ github.repository }}/releases/download/${{ github.event.release.tag_name }}" \
             "${metadata_args[@]}" \
-            --notes "QwenPaw Desktop ${{ steps.version.outputs.version }}" \
+            --notes "$NOTES" \
             --output qwenpaw-tauri-latest.json
 
       - name: Upload to Release
@@ -327,10 +331,8 @@ jobs:
             QwenPaw-Setup-*.exe
             QwenPaw-[0-9]*-macOS.zip
             QwenPaw-Tauri-*-Windows-setup.exe
-            QwenPaw-Tauri-*-Windows-setup.exe.sig
             QwenPaw-Tauri-*-macOS.zip
             QwenPaw-Tauri-*-macOS.app.tar.gz
-            QwenPaw-Tauri-*-macOS.app.tar.gz.sig
             qwenpaw-tauri-latest.json
           fail-on-unmatched-files: false
         env:
@@ -527,6 +529,55 @@ jobs:
             "QwenPaw-Tauri-${VERSION}-macOS.zip" \
             "QwenPaw-Tauri-latest-macOS.zip" \
             "mac-tauri-metadata.json"
+
+      - name: Upload Tauri macOS updater archive to OSS
+        # The .zip is for first-install; the auto-updater pulls .app.tar.gz.
+        if: hashFiles('QwenPaw-Desktop-Tauri-macOS-*/*.app.tar.gz') != ''
+        run: |
+          VERSION="${{ steps.version.outputs.version }}"
+          APP_TAR_GZ=$(find QwenPaw-Desktop-Tauri-macOS-* -name "QwenPaw-Tauri-*-macOS.app.tar.gz" | head -1)
+          if [ -z "$APP_TAR_GZ" ]; then
+            echo "No macOS .app.tar.gz found, skipping"
+            exit 0
+          fi
+          ossutil cp "$APP_TAR_GZ" \
+            "oss://qwenpaw-download/files/apps/desktop/mac-tauri/QwenPaw-Tauri-${VERSION}-macOS.app.tar.gz" \
+            --acl public-read \
+            --force
+
+      - name: Generate and upload OSS updater manifest
+        # Mirror the GitHub-pointing manifest with one whose URLs point at
+        # OSS, so mainland users can hit a CN-fast endpoint first and fall
+        # back to GitHub if OSS is unreachable.
+        if: hashFiles('QwenPaw-Desktop-Tauri-*/tauri-*-updater.json') != ''
+        env:
+          # Pass release.body via env so quotes/newlines/$ in markdown are safe.
+          RELEASE_BODY: ${{ github.event.release.body }}
+        run: |
+          VERSION="${{ steps.version.outputs.version }}"
+          OSS_BASE="https://download.qwenpaw.agentscope.io/files/apps/desktop"
+          metadata_args=()
+          for f in QwenPaw-Desktop-Tauri-Windows-*/tauri-windows-*-updater.json \
+                   QwenPaw-Desktop-Tauri-macOS-*/tauri-darwin-*-updater.json; do
+            [ -f "$f" ] && metadata_args+=(--metadata "$f")
+          done
+          if [ ${#metadata_args[@]} -eq 0 ]; then
+            echo "No Tauri updater sidecars found, skipping OSS manifest"
+            exit 0
+          fi
+          NOTES="${RELEASE_BODY:-QwenPaw Desktop ${VERSION}}"
+          python scripts/pack-tauri/generate_update_manifest.py manifest \
+            --version "$VERSION" \
+            --base-url "$OSS_BASE" \
+            --target-base "windows-x86_64=${OSS_BASE}/win-tauri" \
+            --target-base "darwin-aarch64=${OSS_BASE}/mac-tauri" \
+            "${metadata_args[@]}" \
+            --notes "$NOTES" \
+            --output qwenpaw-tauri-latest-oss.json
+          ossutil cp qwenpaw-tauri-latest-oss.json \
+            "oss://qwenpaw-download/metadata/qwenpaw-tauri-latest.json" \
+            --acl public-read \
+            --force
 
       - name: Update desktop index
         run: |

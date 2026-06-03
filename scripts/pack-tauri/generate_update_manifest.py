@@ -13,10 +13,8 @@ from __future__ import annotations
 
 import argparse
 import json
-import platform as _platform
 import re
 import shutil
-import sys
 from datetime import datetime, timezone
 from pathlib import Path
 from urllib.parse import quote
@@ -44,24 +42,6 @@ def to_semver(version: str) -> str:
     return f"{major}.{minor}.{patch}{suffix}"
 
 
-def auto_target() -> str:
-    arch_map = {
-        "amd64": "x86_64",
-        "x86_64": "x86_64",
-        "arm64": "aarch64",
-        "aarch64": "aarch64",
-    }
-    arch = arch_map.get(
-        _platform.machine().lower(),
-        _platform.machine().lower(),
-    )
-    if sys.platform == "darwin":
-        return f"darwin-{arch}"
-    if sys.platform == "win32":
-        return f"windows-{arch}"
-    return f"linux-{arch}"
-
-
 # ─────────────────────────── stage ───────────────────────────
 
 
@@ -86,18 +66,17 @@ def cmd_stage(args: argparse.Namespace) -> None:
     shutil.copyfile(source, output)
     shutil.copyfile(sig_source, output.with_suffix(output.suffix + ".sig"))
 
-    target = args.target if args.target != "auto" else auto_target()
     metadata = {
-        "target": target,
+        "target": args.target,
         "artifact": output.name,
         "signature": output.name + ".sig",
     }
-    sidecar = output.parent / f"tauri-{target}-updater.json"
+    sidecar = output.parent / f"tauri-{args.target}-updater.json"
     sidecar.write_text(
         json.dumps(metadata, indent=2, ensure_ascii=False) + "\n",
         encoding="utf-8",
     )
-    print(f"staged {output.name} ({target}); sidecar {sidecar.name}")
+    print(f"staged {output.name} ({args.target}); sidecar {sidecar.name}")
 
 
 # ─────────────────────────── manifest ───────────────────────────
@@ -122,6 +101,15 @@ def _signature_text(path: Path) -> str:
 
 
 def cmd_manifest(args: argparse.Namespace) -> None:
+    target_overrides: dict[str, str] = {}
+    for entry in args.target_base or []:
+        target, _, url = entry.partition("=")
+        if not target or not url:
+            raise SystemExit(
+                f"--target-base expects 'target=URL', got {entry!r}",
+            )
+        target_overrides[target] = url
+
     platforms: dict[str, dict[str, str]] = {}
     for raw in args.metadata:
         meta_path = Path(raw)
@@ -130,8 +118,11 @@ def cmd_manifest(args: argparse.Namespace) -> None:
         artifact_path = workdir / meta["artifact"]
         if not artifact_path.is_file():
             raise SystemExit(f"artifact file not found: {artifact_path}")
+        base = target_overrides.get(meta["target"], args.base_url).rstrip(
+            "/",
+        )
         platforms[meta["target"]] = {
-            "url": f"{args.base_url.rstrip('/')}/{quote(meta['artifact'])}",
+            "url": f"{base}/{quote(meta['artifact'])}",
             "signature": _signature_text(workdir / meta["signature"]),
         }
     if not platforms:
@@ -176,8 +167,8 @@ def main() -> None:
     )
     p_stage.add_argument(
         "--target",
-        default="auto",
-        help="Updater target (e.g., windows-x86_64, darwin-aarch64) or 'auto'.",
+        required=True,
+        help="Updater target (e.g., windows-x86_64, darwin-aarch64).",
     )
     p_stage.add_argument(
         "--output",
@@ -191,7 +182,21 @@ def main() -> None:
         help="Aggregate per-platform sidecars into the updater manifest JSON.",
     )
     p_manifest.add_argument("--version", required=True)
-    p_manifest.add_argument("--base-url", required=True)
+    p_manifest.add_argument(
+        "--base-url",
+        required=True,
+        help="Default URL prefix for platforms without --target-base override.",
+    )
+    p_manifest.add_argument(
+        "--target-base",
+        action="append",
+        default=[],
+        help=(
+            "Per-target URL prefix override 'target=URL', repeatable. "
+            "Used when platforms live under different paths "
+            "(e.g., OSS lays win-tauri/ and mac-tauri/ separately)."
+        ),
+    )
     p_manifest.add_argument(
         "--metadata",
         action="append",

@@ -1,11 +1,4 @@
-//! Desktop update commands backed by Tauri's updater plugin.
-//!
-//! `check_desktop_update` is a synchronous probe used by the Header to decide
-//! whether to surface an update affordance.
-//!
-//! `install_desktop_update` returns immediately and runs the actual flow on a
-//! background tokio task, pushing progress to the frontend through `update:*`
-//! events so the takeover UI can render an accurate state machine.
+//! Tauri commands for desktop auto-updates via tauri-plugin-updater.
 
 use std::time::{Duration, Instant};
 
@@ -28,10 +21,10 @@ pub(crate) async fn check_desktop_update(
 ) -> Result<Option<DesktopUpdate>, String> {
     let update = app
         .updater()
-        .map_err(stringify)?
+        .map_err(|e| e.to_string())?
         .check()
         .await
-        .map_err(stringify)?;
+        .map_err(|e| e.to_string())?;
 
     Ok(update.map(|u| DesktopUpdate {
         version: u.version,
@@ -74,16 +67,17 @@ async fn run_install(app: AppHandle) {
     let version = update.version.clone();
     log::info!("[updates] downloading desktop update version={version}");
 
-    let mut last_emit = Instant::now()
-        .checked_sub(Duration::from_secs(1))
-        .unwrap_or_else(Instant::now);
+    let mut last_emit: Option<Instant> = None;
     let mut downloaded: u64 = 0;
 
     let bytes = update
         .download(
             |chunk_len, content_len| {
                 downloaded = downloaded.saturating_add(chunk_len as u64);
-                if last_emit.elapsed() >= Duration::from_millis(200) {
+                let should_emit = last_emit
+                    .map(|t| t.elapsed() >= Duration::from_millis(200))
+                    .unwrap_or(true);
+                if should_emit {
                     let _ = app.emit(
                         "update:download-progress",
                         serde_json::json!({
@@ -91,7 +85,7 @@ async fn run_install(app: AppHandle) {
                             "total": content_len,
                         }),
                     );
-                    last_emit = Instant::now();
+                    last_emit = Some(Instant::now());
                 }
             },
             || {
@@ -121,7 +115,6 @@ async fn run_install(app: AppHandle) {
         return emit_error(&app, "install", &err);
     }
 
-    emit(&app, "update:install-done", &serde_json::json!({}));
     backend::stop(&app);
     app.restart();
 }
@@ -163,8 +156,4 @@ fn classify(message: &str) -> &'static str {
     } else {
         "other"
     }
-}
-
-fn stringify(err: impl std::fmt::Display) -> String {
-    err.to_string()
 }
