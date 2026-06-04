@@ -228,6 +228,19 @@ jobs:
             fi
           } > "${summary}"
 
+      - name: Fail on adapter API error
+        env:
+          QWEN_SUMMARY: ${{ steps.qwen.outputs.summary }}
+          QWEN_ERROR: ${{ steps.qwen.outputs.error }}
+        run: |
+          set -euo pipefail
+          combined="${QWEN_SUMMARY}
+          ${QWEN_ERROR}"
+          if [[ "${combined}" == *"[API Error:"* ]]; then
+            echo "::error::AI provider returned an API error. See agent-summary.md in the autofix artifact."
+            exit 1
+          fi
+
       - name: Create guarded patch
         id: diff
         run: |
