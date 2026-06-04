@@ -19,7 +19,7 @@ on:
       model:
         description: Provider model override
         required: false
-        default: qwen-coder-plus-latest
+        default: qwen3-coder-plus
         type: string
 
 permissions:
@@ -48,7 +48,7 @@ jobs:
       issue_url: ${{ steps.context.outputs.issue_url }}
     env:
       AI_PROVIDER: ${{ inputs.provider || vars.AI_AUTOFIX_PROVIDER || 'qwen' }}
-      AI_MODEL: ${{ inputs.model || vars.AI_AUTOFIX_MODEL || 'qwen-coder-plus-latest' }}
+      AI_MODEL: ${{ inputs.model || vars.AI_AUTOFIX_MODEL || 'qwen3-coder-plus' }}
       AI_BASE_URL: ${{ vars.AI_AUTOFIX_BASE_URL || 'https://dashscope.aliyuncs.com/compatible-mode/v1' }}
 
     steps:
@@ -182,6 +182,8 @@ jobs:
       - name: Run Qwen adapter
         id: qwen
         uses: QwenLM/qwen-code-action@main
+        env:
+          QWEN_CODE_SUPPRESS_YOLO_WARNING: "1"
         with:
           openai_api_key: ${{ secrets.QWEN_API_KEY }}
           openai_base_url: ${{ env.AI_BASE_URL }}
