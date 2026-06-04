@@ -95,7 +95,7 @@ pytest tests/contract/ -v
 | **Error Location** | Precise: Subclass X missing method Y | Vague: DingTalk send failed |
 | **Base Class Changes** | ✅ Auto-detect breakage | ⚠️ Probabilistic detection |
 
-## Current Status
+## Current Coverage Status
 
 | Component | Status |
 |-----------|--------|
