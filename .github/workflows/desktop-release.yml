@@ -374,25 +374,25 @@ jobs:
 
           # Upload file (versioned)
           ossutil cp "$WIN_EXE" \
-            "oss://qwenpaw-download/files/apps/desktop/win/QwenPaw-Setup-${VERSION}.exe" \
+            "oss://qwenpawtest/files/apps/desktop/win/QwenPaw-Setup-${VERSION}.exe" \
             --acl public-read \
             --force
 
           # Upload file (latest)
           ossutil cp "$WIN_EXE" \
-            "oss://qwenpaw-download/files/apps/desktop/win/QwenPaw-Setup-latest.exe" \
+            "oss://qwenpawtest/files/apps/desktop/win/QwenPaw-Setup-latest.exe" \
             --acl public-read \
             --force
 
           # Upload metadata (versioned)
           ossutil cp win-metadata.json \
-            "oss://qwenpaw-download/metadata/apps/desktop/win/QwenPaw-Setup-${VERSION}.exe.json" \
+            "oss://qwenpawtest/metadata/apps/desktop/win/QwenPaw-Setup-${VERSION}.exe.json" \
             --acl public-read \
             --force
 
           # Upload metadata (latest)
           ossutil cp win-metadata.json \
-            "oss://qwenpaw-download/metadata/apps/desktop/win/QwenPaw-Setup-latest.exe.json" \
+            "oss://qwenpawtest/metadata/apps/desktop/win/QwenPaw-Setup-latest.exe.json" \
             --acl public-read \
             --force
 
@@ -421,25 +421,25 @@ jobs:
 
           # Upload file (versioned)
           ossutil cp "$MAC_ZIP" \
-            "oss://qwenpaw-download/files/apps/desktop/mac/QwenPaw-${VERSION}-macOS.zip" \
+            "oss://qwenpawtest/files/apps/desktop/mac/QwenPaw-${VERSION}-macOS.zip" \
             --acl public-read \
             --force
 
           # Upload file (latest)
           ossutil cp "$MAC_ZIP" \
-            "oss://qwenpaw-download/files/apps/desktop/mac/QwenPaw-latest-macOS.zip" \
+            "oss://qwenpawtest/files/apps/desktop/mac/QwenPaw-latest-macOS.zip" \
             --acl public-read \
             --force
 
           # Upload metadata (versioned)
           ossutil cp mac-metadata.json \
-            "oss://qwenpaw-download/metadata/apps/desktop/mac/QwenPaw-${VERSION}-macOS.zip.json" \
+            "oss://qwenpawtest/metadata/apps/desktop/mac/QwenPaw-${VERSION}-macOS.zip.json" \
             --acl public-read \
             --force
 
           # Upload metadata (latest)
           ossutil cp mac-metadata.json \
-            "oss://qwenpaw-download/metadata/apps/desktop/mac/QwenPaw-latest-macOS.zip.json" \
+            "oss://qwenpawtest/metadata/apps/desktop/mac/QwenPaw-latest-macOS.zip.json" \
             --acl public-read \
             --force
 
@@ -474,19 +474,19 @@ jobs:
               --output "${metadata}"
 
             ossutil cp "${artifact}" \
-              "oss://qwenpaw-download/files/apps/desktop/${platform}/${versioned_name}" \
+              "oss://qwenpawtest/files/apps/desktop/${platform}/${versioned_name}" \
               --acl public-read \
               --force
             ossutil cp "${artifact}" \
-              "oss://qwenpaw-download/files/apps/desktop/${platform}/${latest_name}" \
+              "oss://qwenpawtest/files/apps/desktop/${platform}/${latest_name}" \
               --acl public-read \
               --force
             ossutil cp "${metadata}" \
-              "oss://qwenpaw-download/metadata/apps/desktop/${platform}/${versioned_name}.json" \
+              "oss://qwenpawtest/metadata/apps/desktop/${platform}/${versioned_name}.json" \
               --acl public-read \
               --force
             ossutil cp "${metadata}" \
-              "oss://qwenpaw-download/metadata/apps/desktop/${platform}/${latest_name}.json" \
+              "oss://qwenpawtest/metadata/apps/desktop/${platform}/${latest_name}.json" \
               --acl public-read \
               --force
           }
@@ -518,7 +518,7 @@ jobs:
             exit 0
           fi
           ossutil cp "$APP_TAR_GZ" \
-            "oss://qwenpaw-download/files/apps/desktop/mac-tauri/QwenPaw-Tauri-${VERSION}-macOS.app.tar.gz" \
+            "oss://qwenpawtest/files/apps/desktop/mac-tauri/QwenPaw-Tauri-${VERSION}-macOS.app.tar.gz" \
             --acl public-read \
             --force
 
@@ -532,7 +532,7 @@ jobs:
           RELEASE_BODY: ${{ github.event.release.body }}
         run: |
           VERSION="${{ steps.version.outputs.version }}"
-          OSS_BASE="https://download.qwenpaw.agentscope.io/files/apps/desktop"
+          OSS_BASE="https://qwenpawtest.oss-cn-beijing.aliyuncs.com/files/apps/desktop"
           metadata_args=()
           for f in QwenPaw-Desktop-Tauri-Windows-*/tauri-windows-*-updater.json \
                    QwenPaw-Desktop-Tauri-macOS-*/tauri-darwin-*-updater.json; do
@@ -552,7 +552,7 @@ jobs:
             --notes "$NOTES" \
             --output qwenpaw-tauri-latest-oss.json
           ossutil cp qwenpaw-tauri-latest-oss.json \
-            "oss://qwenpaw-download/metadata/qwenpaw-tauri-latest.json" \
+            "oss://qwenpawtest/metadata/qwenpaw-tauri-latest.json" \
             --acl public-read \
             --force
 
@@ -561,7 +561,7 @@ jobs:
           VERSION="${{ steps.version.outputs.version }}"
 
           # Download existing desktop/index.json if exists
-          ossutil cp "oss://qwenpaw-download/metadata/apps/desktop/index.json" \
+          ossutil cp "oss://qwenpawtest/metadata/apps/desktop/index.json" \
             desktop-index.json 2>/dev/null || cat > desktop-index.json << 'EOF'
           {
             "product": "desktop",
@@ -626,7 +626,7 @@ jobs:
 
           # Upload updated desktop/index.json
           ossutil cp desktop-index.json \
-            "oss://qwenpaw-download/metadata/apps/desktop/index.json" \
+            "oss://qwenpawtest/metadata/apps/desktop/index.json" \
             --acl public-read \
             --force
 
@@ -635,7 +635,7 @@ jobs:
       - name: Update main index
         run: |
           # Download main index if exists
-          ossutil cp "oss://qwenpaw-download/metadata/index.json" \
+          ossutil cp "oss://qwenpawtest/metadata/index.json" \
             main-index.json 2>/dev/null || cat > main-index.json << 'EOF'
           {
             "version": "1.0",
@@ -669,7 +669,7 @@ jobs:
 
           # Upload main index
           ossutil cp main-index.json \
-            "oss://qwenpaw-download/metadata/index.json" \
+            "oss://qwenpawtest/metadata/index.json" \
             --acl public-read \
             --force
 

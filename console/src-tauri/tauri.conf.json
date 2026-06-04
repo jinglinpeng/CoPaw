@@ -72,10 +72,10 @@
   },
   "plugins": {
     "updater": {
-      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IEE0MkMxRjE4MUM4Njc0RjAKUldUd2RJWWNHQjhzcEhoZ2FWWkxVRXp0bFMyS1JEand6YXZURCs5YnlNcFlzRCtNalhRcjJwamMK",
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IENGQUZCREZCOUI3OUMwNDIKUldSQ3dIbWIrNzJ2ejFRYzV1emtrZUorckdibkVZdWtIbWFSUVc2dG9aa01JNVlzNTdxSXpHWmMK",
       "endpoints": [
-        "https://download.qwenpaw.agentscope.io/metadata/qwenpaw-tauri-latest.json",
-        "https://github.com/agentscope-ai/QwenPaw/releases/latest/download/qwenpaw-tauri-latest.json"
+        "https://qwenpawtest.oss-cn-beijing.aliyuncs.com/metadata/qwenpaw-tauri-latest.json",
+        "https://github.com/jinglinpeng/CoPaw/releases/latest/download/qwenpaw-tauri-latest.json"
       ],
       "windows": {
         "installMode": "passive"
