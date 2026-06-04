@@ -438,7 +438,8 @@ jobs:
             gh pr edit "${EXISTING_PR_NUMBER}" \
               --title "${title}" \
               --body-file pr-body.md
-            gh issue comment "${ISSUE_NUMBER}" --body "AI Autofix updated the existing draft PR for this issue: ${EXISTING_PR_URL}"
+            pr_url="${EXISTING_PR_URL}"
+            status_text="Updated existing draft PR"
           else
             pr_url="$(gh pr create \
               --draft \
@@ -446,5 +447,46 @@ jobs:
               --head "${branch}" \
               --title "${title}" \
               --body-file pr-body.md)"
-            gh issue comment "${ISSUE_NUMBER}" --body "AI Autofix opened a draft PR for this issue: ${pr_url}"
+            status_text="Opened draft PR"
+          fi
+
+          marker="<!-- ai-autofix-status:${ISSUE_NUMBER} -->"
+          comments_json="${RUNNER_TEMP}/ai-autofix-comments.json"
+          payload_json="${RUNNER_TEMP}/ai-autofix-comment-payload.json"
+          comment_md="${RUNNER_TEMP}/ai-autofix-comment.md"
+          run_url="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
+
+          {
+            echo "${marker}"
+            echo "## AI Autofix"
+            echo
+            echo "**Status:** ${status_text}"
+            echo
+            echo "- Draft PR: ${pr_url}"
+            echo "- Workflow run: ${run_url}"
+            echo "- Branch: \`${branch}\`"
+            echo
+            echo "Re-run by removing and re-adding the \`ai-autofix\` label; this comment will be updated instead of adding a new bot comment."
+          } > "${comment_md}"
+
+          jq -n --rawfile body "${comment_md}" '{body: $body}' > "${payload_json}"
+          gh api "repos/${GITHUB_REPOSITORY}/issues/${ISSUE_NUMBER}/comments?per_page=100" > "${comments_json}"
+          comment_id="$(
+            jq -r --arg marker "${marker}" '
+              [.[] | select(.body | contains($marker))][0].id // ""
+            ' "${comments_json}"
+          )"
+
+          if [[ -n "${comment_id}" ]]; then
+            gh api \
+              --method PATCH \
+              "repos/${GITHUB_REPOSITORY}/issues/comments/${comment_id}" \
+              --input "${payload_json}" \
+              >/dev/null
+          else
+            gh api \
+              --method POST \
+              "repos/${GITHUB_REPOSITORY}/issues/${ISSUE_NUMBER}/comments" \
+              --input "${payload_json}" \
+              >/dev/null
           fi
