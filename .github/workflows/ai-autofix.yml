@@ -344,6 +344,10 @@ jobs:
       contents: write
       issues: write
       pull-requests: write
+    outputs:
+      pr_url: ${{ steps.pr.outputs.pr_url }}
+      status_text: ${{ steps.pr.outputs.status_text }}
+      branch: ${{ steps.pr.outputs.branch }}
 
     steps:
       - uses: actions/checkout@v4
@@ -373,6 +377,7 @@ jobs:
           git diff --cached --check
 
       - name: Commit, push, and open PR
+        id: pr
         env:
           GH_TOKEN: ${{ github.token }}
           BASE_BRANCH: ${{ github.event.repository.default_branch }}
@@ -450,11 +455,66 @@ jobs:
             status_text="Opened draft PR"
           fi
 
+          {
+            echo "pr_url=${pr_url}"
+            echo "status_text=${status_text}"
+            echo "branch=${branch}"
+          } >> "${GITHUB_OUTPUT}"
+
+  update-status-comment:
+    name: Update status comment
+    needs:
+      - generate-patch
+      - open-pr
+    if: always() && needs.generate-patch.result == 'success'
+    runs-on: ubuntu-latest
+    permissions:
+      issues: write
+
+    steps:
+      - name: Upsert issue status comment
+        env:
+          GH_TOKEN: ${{ github.token }}
+          ISSUE_NUMBER: ${{ needs.generate-patch.outputs.issue_number }}
+          HAS_PATCH: ${{ needs.generate-patch.outputs.has_patch }}
+          EXISTING_PR_FOUND: ${{ needs.generate-patch.outputs.existing_pr_found }}
+          EXISTING_PR_URL: ${{ needs.generate-patch.outputs.existing_pr_url }}
+          TARGET_BRANCH: ${{ needs.generate-patch.outputs.target_branch }}
+          OPEN_PR_RESULT: ${{ needs.open-pr.result }}
+          OPEN_PR_URL: ${{ needs.open-pr.outputs.pr_url }}
+          OPEN_PR_STATUS: ${{ needs.open-pr.outputs.status_text }}
+          OPEN_PR_BRANCH: ${{ needs.open-pr.outputs.branch }}
+        run: |
+          set -euo pipefail
+          pr_url="${OPEN_PR_URL}"
+          status_text="${OPEN_PR_STATUS}"
+          branch="${OPEN_PR_BRANCH:-${TARGET_BRANCH}}"
+          result_text="has_patch=${HAS_PATCH}, open_pr=${OPEN_PR_RESULT}"
+
+          if [[ "${HAS_PATCH}" != "true" ]]; then
+            if [[ "${EXISTING_PR_FOUND}" == "true" ]]; then
+              pr_url="${EXISTING_PR_URL}"
+              status_text="No new changes; existing draft PR is already up to date"
+            else
+              pr_url=""
+              status_text="No changes produced"
+            fi
+          elif [[ -z "${pr_url}" && "${EXISTING_PR_FOUND}" == "true" ]]; then
+            pr_url="${EXISTING_PR_URL}"
+            status_text="Updated existing draft PR"
+          elif [[ -z "${status_text}" ]]; then
+            status_text="Autofix PR step finished with ${OPEN_PR_RESULT}"
+          fi
+
           marker="<!-- ai-autofix-status:${ISSUE_NUMBER} -->"
           comments_json="${RUNNER_TEMP}/ai-autofix-comments.json"
           payload_json="${RUNNER_TEMP}/ai-autofix-comment-payload.json"
           comment_md="${RUNNER_TEMP}/ai-autofix-comment.md"
           run_url="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
+          pr_line="_none_"
+          if [[ -n "${pr_url}" ]]; then
+            pr_line="${pr_url}"
+          fi
 
           {
             echo "${marker}"
@@ -462,9 +522,10 @@ jobs:
             echo
             echo "**Status:** ${status_text}"
             echo
-            echo "- Draft PR: ${pr_url}"
-            echo "- Workflow run: ${run_url}"
+            echo "- Draft PR: ${pr_line}"
+            echo "- Latest workflow run: ${run_url}"
             echo "- Branch: \`${branch}\`"
+            echo "- Last result: \`${result_text}\`"
             echo
             echo "Re-run by removing and re-adding the \`ai-autofix\` label; this comment will be updated instead of adding a new bot comment."
           } > "${comment_md}"
