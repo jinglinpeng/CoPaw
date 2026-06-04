@@ -41,11 +41,16 @@ jobs:
     permissions:
       contents: read
       issues: read
+      pull-requests: read
     outputs:
       has_patch: ${{ steps.diff.outputs.has_patch }}
       issue_number: ${{ steps.context.outputs.issue_number }}
       issue_title: ${{ steps.context.outputs.issue_title }}
       issue_url: ${{ steps.context.outputs.issue_url }}
+      existing_pr_found: ${{ steps.target.outputs.existing_pr_found }}
+      existing_pr_number: ${{ steps.target.outputs.existing_pr_number }}
+      existing_pr_url: ${{ steps.target.outputs.existing_pr_url }}
+      target_branch: ${{ steps.target.outputs.target_branch }}
     env:
       AI_PROVIDER: ${{ inputs.provider || vars.AI_AUTOFIX_PROVIDER || 'qwen' }}
       AI_MODEL: ${{ inputs.model || vars.AI_AUTOFIX_MODEL || 'qwen3-coder-plus' }}
@@ -175,6 +180,63 @@ jobs:
             echo "${delimiter}"
           } >> "${GITHUB_OUTPUT}"
 
+      - name: Resolve autofix target
+        id: target
+        env:
+          GH_TOKEN: ${{ github.token }}
+          ISSUE_NUMBER: ${{ steps.context.outputs.issue_number }}
+        run: |
+          set -euo pipefail
+          prefix="ai/autofix-${ISSUE_NUMBER}"
+          prs_json="${RUNNER_TEMP}/ai-autofix-prs.json"
+          gh pr list \
+            --repo "${GITHUB_REPOSITORY}" \
+            --state open \
+            --limit 100 \
+            --json number,url,headRefName,createdAt \
+            > "${prs_json}"
+
+          existing="$(
+            jq -r --arg prefix "${prefix}" '
+              [
+                .[]
+                | select(.headRefName == $prefix or (.headRefName | startswith($prefix + "-")))
+              ]
+              | sort_by(.createdAt)
+              | .[0] // empty
+              | @base64
+            ' "${prs_json}"
+          )"
+
+          if [[ -n "${existing}" ]]; then
+            decode() {
+              printf '%s' "${existing}" | base64 -d | jq -r "$1"
+            }
+            existing_pr_number="$(decode '.number')"
+            existing_pr_url="$(decode '.url')"
+            target_branch="$(decode '.headRefName')"
+            echo "existing_pr_found=true" >> "${GITHUB_OUTPUT}"
+            echo "existing_pr_number=${existing_pr_number}" >> "${GITHUB_OUTPUT}"
+            echo "existing_pr_url=${existing_pr_url}" >> "${GITHUB_OUTPUT}"
+            echo "target_branch=${target_branch}" >> "${GITHUB_OUTPUT}"
+            echo "Updating existing AI Autofix PR #${existing_pr_number}: ${existing_pr_url}"
+          else
+            echo "existing_pr_found=false" >> "${GITHUB_OUTPUT}"
+            echo "existing_pr_number=" >> "${GITHUB_OUTPUT}"
+            echo "existing_pr_url=" >> "${GITHUB_OUTPUT}"
+            echo "target_branch=${prefix}" >> "${GITHUB_OUTPUT}"
+            echo "No existing AI Autofix PR found; new branch will be ${prefix}."
+          fi
+
+      - name: Checkout existing autofix branch
+        if: steps.target.outputs.existing_pr_found == 'true'
+        env:
+          TARGET_BRANCH: ${{ steps.target.outputs.target_branch }}
+        run: |
+          set -euo pipefail
+          git fetch origin "${TARGET_BRANCH}:refs/remotes/origin/${TARGET_BRANCH}"
+          git switch --detach "refs/remotes/origin/${TARGET_BRANCH}"
+
       - name: Record base commit
         id: base
         run: echo "sha=$(git rev-parse HEAD)" >> "${GITHUB_OUTPUT}"
@@ -293,8 +355,18 @@ jobs:
           path: autofix-result
 
       - name: Apply patch and re-run guard
+        env:
+          EXISTING_PR_FOUND: ${{ needs.generate-patch.outputs.existing_pr_found }}
+          TARGET_BRANCH: ${{ needs.generate-patch.outputs.target_branch }}
         run: |
           set -euo pipefail
+          if [[ "${EXISTING_PR_FOUND}" == "true" ]]; then
+            git fetch origin "${TARGET_BRANCH}:refs/remotes/origin/${TARGET_BRANCH}"
+            git switch -c "${TARGET_BRANCH}" "refs/remotes/origin/${TARGET_BRANCH}"
+          else
+            git switch -c "${TARGET_BRANCH}"
+          fi
+
           test -s autofix-result/autofix.patch
           git apply --index --whitespace=nowarn autofix-result/autofix.patch
           python scripts/autofix/check_patch.py --staged --report autofix-result/autofix-guard-after-apply.md
@@ -307,22 +379,33 @@ jobs:
           ISSUE_NUMBER: ${{ needs.generate-patch.outputs.issue_number }}
           ISSUE_TITLE: ${{ needs.generate-patch.outputs.issue_title }}
           ISSUE_URL: ${{ needs.generate-patch.outputs.issue_url }}
+          EXISTING_PR_FOUND: ${{ needs.generate-patch.outputs.existing_pr_found }}
+          EXISTING_PR_NUMBER: ${{ needs.generate-patch.outputs.existing_pr_number }}
+          EXISTING_PR_URL: ${{ needs.generate-patch.outputs.existing_pr_url }}
+          TARGET_BRANCH: ${{ needs.generate-patch.outputs.target_branch }}
         run: |
           set -euo pipefail
-          branch="ai/autofix-${ISSUE_NUMBER}-${GITHUB_RUN_ID}"
+          branch="${TARGET_BRANCH}"
           title="AI autofix for #${ISSUE_NUMBER}: ${ISSUE_TITLE}"
           title="${title:0:180}"
 
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git switch -c "${branch}"
-          git commit -m "AI autofix for issue #${ISSUE_NUMBER}"
-          git push --set-upstream origin "${branch}"
+          commit_message="AI autofix for issue #${ISSUE_NUMBER}"
+          if [[ "${EXISTING_PR_FOUND}" == "true" ]]; then
+            commit_message="AI autofix update for issue #${ISSUE_NUMBER}"
+          fi
+          git commit -m "${commit_message}"
+          git push --set-upstream origin "HEAD:${branch}"
 
           {
             echo "## Description"
             echo
-            echo "Generated by AI Autofix for ${ISSUE_URL}."
+            if [[ "${EXISTING_PR_FOUND}" == "true" ]]; then
+              echo "Updated by AI Autofix for ${ISSUE_URL}."
+            else
+              echo "Generated by AI Autofix for ${ISSUE_URL}."
+            fi
             echo
             echo "This is a draft PR. Please review carefully before merging."
             echo
@@ -351,11 +434,17 @@ jobs:
             echo "- [ ] Run any broader validation needed for the affected area"
           } > pr-body.md
 
-          pr_url="$(gh pr create \
-            --draft \
-            --base "${BASE_BRANCH}" \
-            --head "${branch}" \
-            --title "${title}" \
-            --body-file pr-body.md)"
-
-          gh issue comment "${ISSUE_NUMBER}" --body "AI Autofix opened a draft PR for this issue: ${pr_url}"
+          if [[ "${EXISTING_PR_FOUND}" == "true" ]]; then
+            gh pr edit "${EXISTING_PR_NUMBER}" \
+              --title "${title}" \
+              --body-file pr-body.md
+            gh issue comment "${ISSUE_NUMBER}" --body "AI Autofix updated the existing draft PR for this issue: ${EXISTING_PR_URL}"
+          else
+            pr_url="$(gh pr create \
+              --draft \
+              --base "${BASE_BRANCH}" \
+              --head "${branch}" \
+              --title "${title}" \
+              --body-file pr-body.md)"
+            gh issue comment "${ISSUE_NUMBER}" --body "AI Autofix opened a draft PR for this issue: ${pr_url}"
+          fi
