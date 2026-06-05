@@ -1,4 +1,4 @@
-import { Suspense } from "react";
+import { lazy, Suspense } from "react";
 import { Layout, Spin } from "antd";
 import { Routes, Route, useLocation, Navigate } from "react-router-dom";
 import { useTranslation } from "react-i18next";
@@ -12,10 +12,10 @@ import { useCodingMode } from "../../stores/codingModeStore";
 import { useSyncCodingMode } from "../../stores/useSyncCodingMode";
 import styles from "../index.module.less";
 
-// Chat is eagerly loaded (default landing page)
-import Chat from "../../pages/Chat";
-// Coding Mode IDE page
-import CodingPage from "../../pages/Coding";
+// Chat and CodingPage are lazy-loaded to reduce initial JS parse time.
+// @agentscope-ai/chat alone is ~2.3MB — deferring it saves ~1s of JS parsing.
+const Chat = lazy(() => import("../../pages/Chat"));
+const CodingPage = lazy(() => import("../../pages/Coding"));
 
 // All other pages are lazily loaded with automatic retry on chunk failure
 const ChannelsPage = lazyImportWithRetry("../../pages/Control/Channels");

@@ -8,6 +8,49 @@
       content="width=device-width, initial-scale=1.0, viewport-fit=cover"
     />
     <title>QwenPaw Console</title>
+    <script>
+      // --- API Prefetch ---
+      // Fire critical API requests while JS bundles are still loading/parsing.
+      // Components consume these via window.__PREFETCH__[key] promises.
+      (function () {
+        var AUTH_TOKEN_KEY = "qwenpaw_auth_token";
+        var AGENT_STORAGE_KEY = "qwenpaw-agent-storage";
+
+        function getToken() {
+          try { return localStorage.getItem(AUTH_TOKEN_KEY) || ""; }
+          catch (e) { return ""; }
+        }
+        function getAgentId() {
+          try {
+            var raw = sessionStorage.getItem(AGENT_STORAGE_KEY)
+              || localStorage.getItem(AGENT_STORAGE_KEY);
+            if (raw) {
+              var parsed = JSON.parse(raw);
+              return (parsed && parsed.state && parsed.state.selectedAgent) || "default";
+            }
+          } catch (e) { /* ignore */ }
+          return "default";
+        }
+
+        var token = getToken();
+        var agentId = getAgentId();
+        var headers = {};
+        if (token) headers["Authorization"] = "Bearer " + token;
+        if (agentId) headers["X-Agent-Id"] = agentId;
+
+        function prefetch(path) {
+          return fetch("/api" + path, { headers: headers, cache: "no-store" })
+            .then(function (r) { return r.ok ? r.json() : Promise.reject(r.status); });
+        }
+
+        window.__PREFETCH__ = {
+          authStatus: prefetch("/auth/status"),
+          providers: prefetch("/models"),
+          activeModels: prefetch("/models/active?scope=effective&agent_id=" + encodeURIComponent(agentId)),
+          codingMode: prefetch("/coding-mode"),
+        };
+      })();
+    </script>
   </head>
   <body>
     <div id="root"></div>

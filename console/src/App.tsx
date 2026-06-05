@@ -125,7 +125,7 @@ function AppInner() {
   const basename = getRouterBasename(window.location.pathname);
   const { i18n } = useTranslation();
   const { isDark } = useTheme();
-  const { loading: pluginsLoading } = usePlugins();
+  usePlugins(); // Subscribe to plugin system (routes/renderers arrive async)
   const selectedTheme = isDark ? bailianDarkTheme : bailianTheme;
   const lang = i18n.resolvedLanguage || i18n.language || "en";
   const [antdLocale, setAntdLocale] = useState<Locale>(
@@ -165,10 +165,9 @@ function AppInner() {
     };
   }, [i18n]);
 
-  // Wait for plugins to load before rendering routes that might be patched
-  if (pluginsLoading) {
-    return null;
-  }
+  // Plugins load in background — no longer blocks the entire app render.
+  // Plugin routes/renderers will hot-appear once loaded via subscribe().
+  // This avoids the blank screen while waiting for GET /frontend_plugin.
 
   return (
     <BrowserRouter basename={basename}>

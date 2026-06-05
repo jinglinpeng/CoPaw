@@ -6,6 +6,11 @@ mod external_link;
 
 use tauri::{Manager, RunEvent, WindowEvent};
 
+/// Maximum time (ms) to wait for the frontend to call `show()` before
+/// force-showing the window. Prevents a permanently hidden window if the
+/// WebView fails to load.
+const WINDOW_SHOW_SAFETY_TIMEOUT_MS: u64 = 5000;
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 /// Build the desktop app, wire native plugins/commands, and stop the backend on exit.
 pub fn run() {
@@ -20,7 +25,23 @@ pub fn run() {
             external_link::open_external_link,
         ])
         .manage(backend::BackendState::default())
-        .setup(backend::setup)
+        .setup(|app| {
+            // Safety timeout: force-show the main window if the frontend
+            // fails to call `appWindow.show()` within the timeout.
+            if let Some(window) = app.get_webview_window("main") {
+                let win = window.clone();
+                std::thread::spawn(move || {
+                    std::thread::sleep(std::time::Duration::from_millis(
+                        WINDOW_SHOW_SAFETY_TIMEOUT_MS,
+                    ));
+                    if !win.is_visible().unwrap_or(true) {
+                        log::warn!("[window] safety timeout reached, force-showing window");
+                        let _ = win.show();
+                    }
+                });
+            }
+            backend::setup(app)
+        })
         .on_window_event(|window, event| {
             // The app currently has a single "main" window, so closing it
             // is equivalent to quitting. If a multi-window mode is introduced,

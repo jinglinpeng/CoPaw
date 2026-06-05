@@ -1,4 +1,5 @@
 import { request } from "../request";
+import { consumePrefetch } from "../prefetch";
 
 export interface CodingModeState {
   enabled: boolean;
@@ -13,7 +14,14 @@ export interface CodingModeToggleResponse {
 
 export const codingModeApi = {
   /** Read Coding Mode state (enabled + project_dir) from agent.json. */
-  get: () => request<CodingModeState>("/coding-mode"),
+  get: () => {
+    // Try to consume the prefetched result from the inline script in index.html
+    const prefetched = consumePrefetch<CodingModeState>("codingMode");
+    if (prefetched) {
+      return prefetched.catch(() => request<CodingModeState>("/coding-mode"));
+    }
+    return request<CodingModeState>("/coding-mode");
+  },
 
   /** Enable or disable Coding Mode; backend reloads the agent. */
   toggle: (enabled: boolean) =>

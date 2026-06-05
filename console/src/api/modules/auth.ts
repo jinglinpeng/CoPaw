@@ -1,4 +1,5 @@
 import { getApiUrl } from "../config";
+import { consumePrefetch } from "../prefetch";
 
 export interface LoginResponse {
   token: string;
@@ -42,6 +43,16 @@ export const authApi = {
   },
 
   getStatus: async (): Promise<AuthStatusResponse> => {
+    // Try to consume prefetched auth status from the inline script
+    const prefetched = consumePrefetch<AuthStatusResponse>("authStatus");
+    if (prefetched) {
+      return prefetched.catch(async () => {
+        // Prefetch failed, fall back to normal fetch
+        const res = await fetch(getApiUrl("/auth/status"));
+        if (!res.ok) throw new Error("Failed to check auth status");
+        return res.json();
+      });
+    }
     const res = await fetch(getApiUrl("/auth/status"));
     if (!res.ok) throw new Error("Failed to check auth status");
     return res.json();

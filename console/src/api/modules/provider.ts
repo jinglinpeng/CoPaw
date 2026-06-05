@@ -1,4 +1,5 @@
 import { request } from "../request";
+import { consumePrefetch } from "../prefetch";
 import type {
   ProviderInfo,
   ProviderConfigRequest,
@@ -44,9 +45,20 @@ const activeModelPromises = new Map<string, Promise<ActiveModelsInfo>>();
 export const providerApi = {
   listProviders: () => {
     if (listProvidersPromise) return listProvidersPromise;
-    listProvidersPromise = request<ProviderInfo[]>("/models").finally(() => {
-      listProvidersPromise = null;
-    });
+    // Try to consume the prefetched result from the inline script
+    const prefetched = consumePrefetch<ProviderInfo[]>("providers");
+    if (prefetched) {
+      listProvidersPromise = prefetched.catch(() =>
+        // Prefetch failed (e.g. 401) — fall back to normal request
+        request<ProviderInfo[]>("/models"),
+      ).finally(() => {
+        listProvidersPromise = null;
+      });
+    } else {
+      listProvidersPromise = request<ProviderInfo[]>("/models").finally(() => {
+        listProvidersPromise = null;
+      });
+    }
     return listProvidersPromise;
   },
 
@@ -60,9 +72,18 @@ export const providerApi = {
     const key = buildActiveModelQuery(params);
     const cached = activeModelPromises.get(key);
     if (cached) return cached;
-    const promise = request<ActiveModelsInfo>(key).finally(() => {
-      activeModelPromises.delete(key);
-    });
+    // Try prefetch for the first call (effective scope with agent_id)
+    const prefetched = consumePrefetch<ActiveModelsInfo>("activeModels");
+    let promise: Promise<ActiveModelsInfo>;
+    if (prefetched && params?.scope === "effective") {
+      promise = prefetched.catch(() => request<ActiveModelsInfo>(key)).finally(() => {
+        activeModelPromises.delete(key);
+      });
+    } else {
+      promise = request<ActiveModelsInfo>(key).finally(() => {
+        activeModelPromises.delete(key);
+      });
+    }
     activeModelPromises.set(key, promise);
     return promise;
   },

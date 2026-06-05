@@ -3,6 +3,7 @@ import {
   backendConsoleUrl,
   getBackendStartupError,
   initRuntimeApiBaseUrl,
+  isTauriRuntime,
   restartBackend,
   shouldUseTauriStartupGate,
 } from "./backendRuntime";
@@ -22,6 +23,26 @@ interface BackendReadyPollingState {
   errorMessage: string;
   readyUrl: string;
   retry: () => void;
+}
+
+/**
+ * Listen for the `backend-ready` event from Rust and resolve with the port.
+ * Returns an unlisten function. If the event fires, `onReady(port)` is called.
+ */
+async function listenBackendReadyEvent(
+  onReady: (port: number) => void,
+): Promise<() => void> {
+  try {
+    // Dynamic import so the bootstrap bundle only pulls this in at runtime
+    const { listen } = await import("@tauri-apps/api/event");
+    const unlisten = await listen<number>("backend-ready", (event) => {
+      onReady(event.payload);
+    });
+    return unlisten;
+  } catch {
+    // If @tauri-apps/api/event is unavailable, return a no-op
+    return () => {};
+  }
 }
 
 export default function useBackendReadyPolling(): BackendReadyPollingState {
@@ -58,6 +79,7 @@ export default function useBackendReadyPolling(): BackendReadyPollingState {
     const runId = runRef.current;
     let timer: ReturnType<typeof setTimeout> | null = null;
     let controller: AbortController | null = null;
+    let unlistenPromise: Promise<() => void> | null = null;
 
     cancelPollingRef.current = () => {
       if (timer) {
@@ -66,6 +88,8 @@ export default function useBackendReadyPolling(): BackendReadyPollingState {
       }
       controller?.abort();
       controller = null;
+      // Clean up Tauri event listener
+      unlistenPromise?.then((unlisten) => unlisten()).catch(() => {});
     };
 
     setStatus("checking");
@@ -75,6 +99,37 @@ export default function useBackendReadyPolling(): BackendReadyPollingState {
 
     const start = Date.now();
     let lastStartupErrorCheckAt = 0;
+
+    // --- A1: Event-driven path ---
+    // Set up Tauri event listener. If the backend-ready event fires, we
+    // still verify with /api/version (because the event fires before uvicorn
+    // is accepting connections), but we start verifying immediately rather
+    // than waiting for the next poll interval.
+    if (isTauriRuntime()) {
+      unlistenPromise = listenBackendReadyEvent((port) => {
+        if (runRef.current !== runId) return;
+        const apiBaseUrl = `http://127.0.0.1:${port}`;
+        // Start rapid verification (100ms interval) since we know the port
+        const verifyReady = async () => {
+          try {
+            const res = await fetch(`${apiBaseUrl}/api/version`, {
+              cache: "no-store",
+            });
+            if (res.ok && runRef.current === runId) {
+              setReadyUrl(backendConsoleUrl(apiBaseUrl));
+              setStatus("ready");
+              return;
+            }
+          } catch {
+            // Not ready yet, retry quickly
+          }
+          if (runRef.current === runId) {
+            setTimeout(verifyReady, 100);
+          }
+        };
+        void verifyReady();
+      });
+    }
 
     const checkStartupError = async (): Promise<boolean> => {
       const startupError = await getBackendStartupError().catch(() => "");
@@ -86,6 +141,7 @@ export default function useBackendReadyPolling(): BackendReadyPollingState {
       return true;
     };
 
+    // --- Polling fallback (original mechanism, kept as safety net) ---
     const poll = async () => {
       const apiBaseUrl = await initRuntimeApiBaseUrl().catch(() => "");
       if (runRef.current !== runId) return;

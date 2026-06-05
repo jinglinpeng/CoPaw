@@ -1,7 +1,7 @@
 //! Sidecar process event handling and stderr capture.
 
 use serde::Deserialize;
-use tauri::Manager;
+use tauri::{Emitter, Manager};
 use tauri_plugin_shell::process::{CommandEvent, TerminatedPayload};
 
 use super::BackendState;
@@ -33,6 +33,9 @@ pub(super) fn watch(
                         log::info!("[backend:{generation}] ready port={port}");
                         app.state::<BackendState>()
                             .set_port_if_current(generation, port);
+                        // Push backend-ready event to the frontend so it can
+                        // react immediately instead of waiting for the next poll.
+                        let _ = app.emit("backend-ready", port);
                     }
                 }
                 CommandEvent::Stderr(line) => {
