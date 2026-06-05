@@ -6,13 +6,14 @@ import { useDesktopUpdate } from "../../contexts/DesktopUpdateContext";
 import styles from "./index.module.less";
 
 export function UpdateTakeoverGate({ children }: { children: ReactNode }) {
-  const { phase } = useDesktopUpdate();
+  const { phase, isBackground } = useDesktopUpdate();
   const isActive =
     phase === "checking" ||
     phase === "downloading" ||
     phase === "installing" ||
     phase === "failed";
-  return isActive ? <UpdateTakeoverPage /> : <>{children}</>;
+  const shouldTakeover = isActive && !isBackground;
+  return shouldTakeover ? <UpdateTakeoverPage /> : <>{children}</>;
 }
 
 const KEY_PREFIX = "sidebar.updateModal";

@@ -1580,7 +1580,13 @@
         "signature": "更新ファイルの署名検証に失敗しました。もう一度ダウンロードしてください。",
         "other": "更新に失敗しました。"
       },
-      "close": "閉じる"
+      "close": "閉じる",
+      "updateLater": "後で更新",
+      "backgroundDownloading": "バックグラウンドでダウンロード中…",
+      "readyToInstall": "更新準備完了",
+      "readyToInstallHint": "v{{version}} の準備ができました。再起動して適用します。",
+      "restartNow": "今すぐ再起動",
+      "backgroundFailed": "バックグラウンドダウンロード失敗"
     }
   },
   "chat": {

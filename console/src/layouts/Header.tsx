@@ -1,4 +1,4 @@
-import { Layout, Space, Badge, Spin, Tooltip, Dropdown } from "antd";
+import { Layout, Space, Badge, Spin, Tooltip, Dropdown, Popover } from "antd";
 import type { MenuProps } from "antd";
 import LanguageSwitcher from "../components/LanguageSwitcher/index";
 import ThemeToggleButton from "../components/ThemeToggleButton";
@@ -36,6 +36,9 @@ import {
   PlayCircleOutlined,
   QuestionCircleOutlined,
   DownOutlined,
+  SyncOutlined,
+  CheckCircleOutlined,
+  ExclamationCircleOutlined,
 } from "@ant-design/icons";
 
 const { Header: AntHeader } = Layout;
@@ -181,9 +184,27 @@ export default function Header() {
     void desktop.startInstall();
   };
 
+  const handleUpdateLater = () => {
+    setUpdateModalOpen(false);
+    void desktop.startBackgroundDownload();
+  };
+
+  const handleRestartNow = () => {
+    void desktop.installDownloaded();
+  };
+
   const handleNavClick = (url: string) => {
     openExternalLink(url);
   };
+
+  // Background download/ready state for inline header indicator.
+  const isBackgroundActive =
+    onDesktop &&
+    desktop.isBackground &&
+    (desktop.phase === "checking" || desktop.phase === "downloading");
+  const isReady = onDesktop && desktop.phase === "downloaded";
+  const isBackgroundFailed =
+    onDesktop && desktop.isBackground && desktop.phase === "failed";
 
   return (
     <>
@@ -197,21 +218,57 @@ export default function Header() {
           <div className={styles.logoDivider} />
           {version && (
             <Badge
-              dot={!!hasUpdate}
+              dot={!!hasUpdate && !isReady && !isBackgroundActive}
               color="rgba(255, 157, 77, 1)"
               offset={[4, 28]}
             >
               <span
                 className={`${styles.versionBadge} ${
-                  hasUpdate
+                  hasUpdate || isReady
                     ? styles.versionBadgeClickable
                     : styles.versionBadgeDefault
                 }`}
-                onClick={() => hasUpdate && handleOpenUpdateModal()}
+                onClick={() => {
+                  if (isReady) return; // handled by Popover
+                  if (hasUpdate) handleOpenUpdateModal();
+                }}
               >
                 v{version}
               </span>
             </Badge>
+          )}
+          {isBackgroundActive && (
+            <Tooltip title={t(`sidebar.updateModal.backgroundDownloading`)}>
+              <SyncOutlined spin style={{ marginLeft: 6, fontSize: 14, color: "rgba(255, 157, 77, 1)" }} />
+            </Tooltip>
+          )}
+          {isReady && (
+            <Popover
+              content={
+                <div style={{ textAlign: "center" }}>
+                  <p style={{ marginBottom: 12 }}>
+                    {t(`sidebar.updateModal.readyToInstallHint`, { version: desktop.version })}
+                  </p>
+                  <Button type="primary" size="small" onClick={handleRestartNow}>
+                    {t(`sidebar.updateModal.restartNow`)}
+                  </Button>
+                </div>
+              }
+              title={t(`sidebar.updateModal.readyToInstall`)}
+              trigger="click"
+            >
+              <Tooltip title={t(`sidebar.updateModal.readyToInstall`)}>
+                <CheckCircleOutlined style={{ marginLeft: 6, fontSize: 14, color: "#52c41a" }} />
+              </Tooltip>
+            </Popover>
+          )}
+          {isBackgroundFailed && (
+            <Tooltip title={t(`sidebar.updateModal.backgroundFailed`)}>
+              <ExclamationCircleOutlined
+                style={{ marginLeft: 6, fontSize: 14, color: "#ff4d4f", cursor: "pointer" }}
+                onClick={() => void desktop.startBackgroundDownload()}
+              />
+            </Tooltip>
           )}
         </div>
         <Space size="middle">
@@ -277,6 +334,11 @@ export default function Header() {
             {t("common.close")}
           </Button>,
           onDesktop ? (
+            <Button key="later" onClick={handleUpdateLater}>
+              {t("sidebar.updateModal.updateLater")}
+            </Button>
+          ) : null,
+          onDesktop ? (
             <Button
               key="install"
               type="primary"
@@ -295,7 +357,7 @@ export default function Header() {
               {t("sidebar.updateModal.viewReleases")}
             </Button>
           ),
-        ]}
+        ].filter(Boolean)}
         width={960}
         className={styles.updateModal}
       >

@@ -107,7 +107,13 @@
         "signature": "Tanda tangan file pembaruan tidak valid. Coba unduh lagi.",
         "other": "Pembaruan gagal."
       },
-      "close": "Tutup"
+      "close": "Tutup",
+      "updateLater": "Perbarui Nanti",
+      "backgroundDownloading": "Mengunduh di latar belakang…",
+      "readyToInstall": "Pembaruan siap",
+      "readyToInstallHint": "v{{version}} siap. Mulai ulang untuk menerapkan.",
+      "restartNow": "Mulai Ulang Sekarang",
+      "backgroundFailed": "Unduhan latar belakang gagal"
     }
   },
   "login": {

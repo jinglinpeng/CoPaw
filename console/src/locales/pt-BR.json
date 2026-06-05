@@ -1783,7 +1783,13 @@
         "signature": "Assinatura do arquivo de atualização inválida. Tente baixar novamente.",
         "other": "Falha na atualização."
       },
-      "close": "Fechar"
+      "close": "Fechar",
+      "updateLater": "Atualizar Depois",
+      "backgroundDownloading": "Baixando em segundo plano…",
+      "readyToInstall": "Atualização pronta",
+      "readyToInstallHint": "v{{version}} está pronto. Reinicie para aplicar.",
+      "restartNow": "Reiniciar Agora",
+      "backgroundFailed": "Falha no download em segundo plano"
     }
   },
   "chat": {

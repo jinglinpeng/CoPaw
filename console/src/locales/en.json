@@ -1908,7 +1908,13 @@
         "signature": "Update file signature invalid. Try downloading again.",
         "other": "Update failed."
       },
-      "close": "Close"
+      "close": "Close",
+      "updateLater": "Update Later",
+      "backgroundDownloading": "Downloading in background…",
+      "readyToInstall": "Update ready",
+      "readyToInstallHint": "v{{version}} is ready. Restart to apply.",
+      "restartNow": "Restart Now",
+      "backgroundFailed": "Background download failed"
     }
   },
   "chat": {
