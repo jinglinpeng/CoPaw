@@ -239,7 +239,7 @@ async fn run_background_download(app: AppHandle, cache: Arc<Mutex<Option<CachedU
         return emit_error(&app, "download", &err);
     }
 
-    let exe_path = match extract_installer(&bytes, &updates_dir) {
+    let exe_path = match extract_installer(&bytes, &updates_dir, &version) {
         Ok(p) => p,
         Err(err) => return emit_error(&app, "download", &format!("extract failed: {err}")),
     };
@@ -364,8 +364,18 @@ fn updates_dir(app: &AppHandle) -> Option<PathBuf> {
     app.path().app_local_data_dir().ok().map(|p| p.join("updates"))
 }
 
-fn extract_installer(zip_bytes: &[u8], dest_dir: &PathBuf) -> Result<PathBuf, String> {
-    let reader = std::io::Cursor::new(zip_bytes);
+fn extract_installer(bytes: &[u8], dest_dir: &PathBuf, version: &str) -> Result<PathBuf, String> {
+    // Detect if bytes are a raw PE executable (starts with "MZ") or a zip archive.
+    if bytes.len() >= 2 && bytes[0] == b'M' && bytes[1] == b'Z' {
+        // Raw exe — save directly.
+        let exe_name = format!("QwenPaw-Desktop_{version}_x64-setup.exe");
+        let exe_path = dest_dir.join(&exe_name);
+        std::fs::write(&exe_path, bytes).map_err(|e| e.to_string())?;
+        return Ok(exe_path);
+    }
+
+    // Try as zip archive.
+    let reader = std::io::Cursor::new(bytes);
     let mut archive = zip::ZipArchive::new(reader).map_err(|e| e.to_string())?;
 
     let mut exe_path: Option<PathBuf> = None;
