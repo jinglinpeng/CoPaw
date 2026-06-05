@@ -213,8 +213,13 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: QwenPaw-Desktop-Tauri-Windows-${{ steps.version.outputs.version }}
+          path: dist/QwenPaw-Tauri-*-Windows-setup.exe
+
+      - name: Upload Tauri Windows updater metadata
+        uses: actions/upload-artifact@v4
+        with:
+          name: tauri-updater-meta-windows
           path: |
-            dist/QwenPaw-Tauri-*-Windows-setup.exe
             dist/QwenPaw-Tauri-*-Windows-setup.exe.sig
             dist/tauri-windows-x86_64-updater.json
 
@@ -274,8 +279,13 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: QwenPaw-Desktop-Tauri-macOS-${{ steps.version.outputs.version }}
+          path: dist/QwenPaw-Tauri-*-macOS.zip
+
+      - name: Upload Tauri macOS updater metadata
+        uses: actions/upload-artifact@v4
+        with:
+          name: tauri-updater-meta-macos
           path: |
-            dist/QwenPaw-Tauri-*-macOS.zip
             dist/QwenPaw-Tauri-*-macOS.app.tar.gz
             dist/QwenPaw-Tauri-*-macOS.app.tar.gz.sig
             dist/tauri-darwin-*-updater.json
@@ -301,11 +311,14 @@ jobs:
         run: |
           mv QwenPaw-Desktop-Windows-*/QwenPaw-Setup-*.exe . 2>/dev/null || true
           mv QwenPaw-Desktop-macOS-*/QwenPaw-*.zip . 2>/dev/null || true
-          mv QwenPaw-Desktop-Tauri-Windows-*/QwenPaw-Tauri-*-Windows-setup.exe* . 2>/dev/null || true
-          mv QwenPaw-Desktop-Tauri-Windows-*/tauri-windows-*-updater.json . 2>/dev/null || true
+          mv QwenPaw-Desktop-Tauri-Windows-*/QwenPaw-Tauri-*-Windows-setup.exe . 2>/dev/null || true
           mv QwenPaw-Desktop-Tauri-macOS-*/QwenPaw-Tauri-*-macOS.zip . 2>/dev/null || true
-          mv QwenPaw-Desktop-Tauri-macOS-*/QwenPaw-Tauri-*-macOS.app.tar.gz* . 2>/dev/null || true
-          mv QwenPaw-Desktop-Tauri-macOS-*/tauri-darwin-*-updater.json . 2>/dev/null || true
+          # Updater metadata from internal artifacts
+          mv tauri-updater-meta-windows/QwenPaw-Tauri-*-Windows-setup.exe.sig . 2>/dev/null || true
+          mv tauri-updater-meta-windows/tauri-windows-*-updater.json . 2>/dev/null || true
+          mv tauri-updater-meta-macos/QwenPaw-Tauri-*-macOS.app.tar.gz . 2>/dev/null || true
+          mv tauri-updater-meta-macos/QwenPaw-Tauri-*-macOS.app.tar.gz.sig . 2>/dev/null || true
+          mv tauri-updater-meta-macos/tauri-darwin-*-updater.json . 2>/dev/null || true
 
       - name: Generate Tauri updater manifest
         env:
@@ -532,10 +545,10 @@ jobs:
 
       - name: Upload Tauri macOS updater archive to OSS
         # The .zip is for first-install; the auto-updater pulls .app.tar.gz.
-        if: hashFiles('QwenPaw-Desktop-Tauri-macOS-*/*.app.tar.gz') != ''
+        if: hashFiles('tauri-updater-meta-macos/*.app.tar.gz') != ''
         run: |
           VERSION="${{ steps.version.outputs.version }}"
-          APP_TAR_GZ=$(find QwenPaw-Desktop-Tauri-macOS-* -name "QwenPaw-Tauri-*-macOS.app.tar.gz" | head -1)
+          APP_TAR_GZ=$(find tauri-updater-meta-macos -name "QwenPaw-Tauri-*-macOS.app.tar.gz" | head -1)
           if [ -z "$APP_TAR_GZ" ]; then
             echo "No macOS .app.tar.gz found, skipping"
             exit 0
@@ -549,7 +562,7 @@ jobs:
         # Mirror the GitHub-pointing manifest with one whose URLs point at
         # OSS, so mainland users can hit a CN-fast endpoint first and fall
         # back to GitHub if OSS is unreachable.
-        if: hashFiles('QwenPaw-Desktop-Tauri-*/tauri-*-updater.json') != ''
+        if: hashFiles('tauri-updater-meta-*/tauri-*-updater.json') != ''
         env:
           # Pass release.body via env so quotes/newlines/$ in markdown are safe.
           RELEASE_BODY: ${{ github.event.release.body }}
@@ -557,8 +570,8 @@ jobs:
           VERSION="${{ steps.version.outputs.version }}"
           OSS_BASE="https://download.qwenpaw.agentscope.io/files/apps/desktop"
           metadata_args=()
-          for f in QwenPaw-Desktop-Tauri-Windows-*/tauri-windows-*-updater.json \
-                   QwenPaw-Desktop-Tauri-macOS-*/tauri-darwin-*-updater.json; do
+          for f in tauri-updater-meta-windows/tauri-windows-*-updater.json \
+                   tauri-updater-meta-macos/tauri-darwin-*-updater.json; do
             [ -f "$f" ] && metadata_args+=(--metadata "$f")
           done
           if [ ${#metadata_args[@]} -eq 0 ]; then
