@@ -13,6 +13,14 @@ import time
 from pathlib import Path
 from typing import Any
 
+# On Windows, prevent console-subsystem child processes (tasklist,
+# taskkill …) from flashing a black CMD window.
+_WIN_CREATION_FLAGS: int = (
+    getattr(subprocess, "CREATE_NO_WINDOW", 0)
+    if sys.platform == "win32"
+    else 0
+)
+
 
 def home_dir() -> Path:
     return Path(
@@ -138,7 +146,7 @@ def spawn_claim_active() -> bool:
         clear_spawn_claim()
         return False
     pid = read_pid()
-    if pid and is_pid_running(pid):
+    if pid and is_pet_desktop_pid(pid):
         return True
     # Child may not have written pid / bound the port yet (Windows cold start).
     return True
@@ -265,6 +273,7 @@ def _pid_exists_win32(pid: int) -> bool:
             text=True,
             timeout=5,
             check=False,
+            creationflags=_WIN_CREATION_FLAGS,
         )
     except (FileNotFoundError, subprocess.TimeoutExpired, OSError):
         # If we cannot probe, assume it exists so shutdown still tries
@@ -314,6 +323,86 @@ def is_pid_running(pid: int) -> bool:
     return pid_exists(pid)
 
 
+# Process names that the pet desktop may appear as.  The desktop is
+# spawned via ``python.exe -m qwenpaw_pet_desktop.app`` or via
+# ``python.exe -c "…"``, so on Windows the image name is always some
+# variant of ``python`` (possibly versioned, e.g. ``python3.13.exe``).
+_PET_PROCESS_NAMES = frozenset({"python.exe", "python3.exe", "py.exe"})
+
+
+def _get_pid_process_name_win32(pid: int) -> str | None:
+    """Return the image name of *pid* on Windows, or ``None``."""
+    try:
+        result = subprocess.run(
+            ["tasklist", "/fi", f"PID eq {pid}", "/fo", "csv", "/nh"],
+            capture_output=True,
+            text=True,
+            timeout=5,
+            check=False,
+            creationflags=_WIN_CREATION_FLAGS,
+        )
+    except (FileNotFoundError, subprocess.TimeoutExpired, OSError):
+        return None
+    stdout = result.stdout or ""
+    if _tasklist_has_no_matching_pid(stdout):
+        return None
+    for line in stdout.splitlines():
+        line = line.strip()
+        if not line or line.lower().startswith("info:"):
+            continue
+        parts = line.split(",")
+        if len(parts) >= 2:
+            try:
+                found_pid = int(parts[1].strip().strip('"'))
+            except (IndexError, ValueError):
+                continue
+            if found_pid == pid:
+                return parts[0].strip().strip('"')
+    return None
+
+
+def _is_python_process_name(name: str) -> bool:
+    """Return True if *name* looks like a Python interpreter executable."""
+    lower = name.lower()
+    if lower in _PET_PROCESS_NAMES:
+        return True
+    # Accept versioned variants like python3.13.exe
+    return lower.startswith("python") and lower.endswith(".exe")
+
+
+def is_pet_desktop_pid(pid: int) -> bool:
+    """Return True only if *pid* is alive **and** looks like a Python process.
+
+    Plain ``is_pid_running`` cannot distinguish the pet desktop from an
+    unrelated process that inherited the same PID after the pet exited.
+    On Windows, PID reuse is common and fast — a stale PID file can
+    easily point to a completely different application (e.g. a system
+    service), causing the status page to permanently show
+    ``starting=True`` and disable the launch button.
+
+    On POSIX, ``/proc/<pid>/comm`` is checked; on Windows, ``tasklist``
+    output is inspected for the image name.
+    """
+    if not isinstance(pid, int) or pid <= 0:
+        return False
+
+    if sys.platform == "win32":
+        name = _get_pid_process_name_win32(pid)
+        return _is_python_process_name(name) if name else False
+
+    # POSIX: check /proc/<pid>/comm
+    try:
+        comm = (
+            Path(f"/proc/{pid}/comm")
+            .read_text(encoding="utf-8")
+            .strip()
+            .lower()
+        )
+        return "python" in comm
+    except OSError:
+        return _pid_exists_posix(pid)
+
+
 def _wait_for_pid_exit(pid: int, grace: float) -> bool:
     deadline = time.time() + grace
     while time.time() < deadline:
@@ -337,6 +426,7 @@ def _terminate_process_tree_win32(
                 text=True,
                 timeout=15,
                 check=False,
+                creationflags=_WIN_CREATION_FLAGS,
             )
         except (OSError, subprocess.TimeoutExpired):
             pass
@@ -349,6 +439,7 @@ def _terminate_process_tree_win32(
             text=True,
             timeout=10,
             check=False,
+            creationflags=_WIN_CREATION_FLAGS,
         )
     except (OSError, subprocess.TimeoutExpired):
         pass
@@ -361,6 +452,7 @@ def _terminate_process_tree_win32(
             text=True,
             timeout=15,
             check=False,
+            creationflags=_WIN_CREATION_FLAGS,
         )
     except (OSError, subprocess.TimeoutExpired):
         pass
