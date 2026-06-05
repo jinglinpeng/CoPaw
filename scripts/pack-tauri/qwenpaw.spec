@@ -116,6 +116,11 @@ hiddenimports = [
     "qwenpaw.app.middleware",
     "qwenpaw.app.multi_agent_manager",
     "qwenpaw.app.runner",
+    # Plugin system modules are imported lazily inside _app.py startup functions.
+    # PyInstaller cannot discover them from static analysis.
+    *collect_submodules("qwenpaw.plugins"),
+    # Startup optimization modules (ProgressiveInitializer, caching, lazy loader)
+    *collect_submodules("qwenpaw.startup"),
     # Backup modules are exposed through qwenpaw.backup.__getattr__, which
     # PyInstaller cannot discover from static imports.
     *collect_submodules("qwenpaw.backup"),
@@ -132,6 +137,10 @@ hiddenimports = [
     "agentscope_runtime",
     "psutil",
     "multipart",
+    # httpx_sse is required by the CloudPaw plugin and other plugins
+    # that use SSE streaming.  Pre-bundle it so plugins load in frozen
+    # environments without needing pip install at runtime.
+    "httpx_sse",
     "websockets",
     "modelscope",
     "modelscope.hub.api",
@@ -203,6 +212,11 @@ cli_exe = EXE(
     codesign_identity=codesign_identity,
     exclude_binaries=True,
 )
+
+# NOTE: The bundled Python embed directory (python-embed/) is copied
+# into the output by the build script *after* PyInstaller finishes,
+# rather than via COLLECT, because COLLECT does not reliably handle
+# large standalone directory trees.  See build_pyinstaller.ps1.
 
 coll = COLLECT(
     backend_exe,

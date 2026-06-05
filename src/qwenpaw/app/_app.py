@@ -336,6 +336,7 @@ async def lifespan(  # pylint: disable=too-many-statements,too-many-branches
         try:
             # ---- Parallel: agents + plugins + local model resume ----
             # These are independent and together dominate startup time.
+            # Agent failures are caught so they don't block plugins.
 
             async def _load_plugins():
                 logger.debug("Initializing plugin system...")
@@ -346,10 +347,17 @@ async def lifespan(  # pylint: disable=too-many-statements,too-many-branches
                 loader = PluginLoader(plugin_dirs)
                 loader.registry.set_plugin_http_app(app)
 
+                # Expose the loader early so API endpoints can
+                # function while discovery/load continues.
+                app.state.plugin_loader = loader
+                app.state.plugin_registry = loader.registry
+                app.state.plugin_loader_ready = False
+
                 cfg = load_config(get_config_path())
                 plugin_cfgs = cfg.plugins if hasattr(cfg, "plugins") else {}
                 logger.debug(
-                    f"Loading plugins with " f"{len(plugin_cfgs)} config(s)",
+                    f"Loading plugins with "
+                    f"{len(plugin_cfgs)} config(s)",
                 )
                 loaded = await loader.load_all_plugins(
                     configs=plugin_cfgs,
@@ -357,12 +365,28 @@ async def lifespan(  # pylint: disable=too-many-statements,too-many-branches
                 logger.debug(f"Loaded {len(loaded)} plugin(s)")
                 return loader
 
+            async def _start_agents():
+                try:
+                    await multi_agent_manager.start_all_configured_agents()
+                except Exception:
+                    logger.error(
+                        "Agent initialization failed; continuing with "
+                        "plugin system and remaining startup tasks",
+                        exc_info=True,
+                    )
+
             plugin_loader, _ = await asyncio.gather(
                 _load_plugins(),
-                multi_agent_manager.start_all_configured_agents(),
+                _start_agents(),
             )
 
-            provider_manager.start_local_model_resume(local_model_manager)
+            try:
+                provider_manager.start_local_model_resume(local_model_manager)
+            except Exception:
+                logger.warning(
+                    "Local model resume failed; continuing startup",
+                    exc_info=True,
+                )
 
             # ---- Plugin providers (depends on plugins loaded) ----
             from ..plugins.runtime import RuntimeHelpers
@@ -386,9 +410,6 @@ async def lifespan(  # pylint: disable=too-many-statements,too-many-branches
                 logger.debug(
                     f"Registered plugin provider: {provider_id}",
                 )
-
-            app.state.plugin_loader = plugin_loader
-            app.state.plugin_registry = plugin_loader.registry
 
             # ---- Plugin Control Commands ----
             logger.debug("Registering plugin control commands...")
@@ -472,6 +493,8 @@ async def lifespan(  # pylint: disable=too-many-statements,too-many-branches
                                 f"'{hook.plugin_id}': {res}",
                                 exc_info=True,
                             )
+
+            app.state.plugin_loader_ready = True
 
             # ---- Approval Service ----
             try:
