@@ -5,6 +5,9 @@ description = "Default permissions for QwenPaw Desktop's updater IPC commands"
 permissions = [
     "allow-check-desktop-update",
     "allow-install-desktop-update",
+    "allow-download-desktop-update",
+    "allow-install-downloaded-update",
+    "allow-check-cached-update",
 ]
 
 [[permission]]
@@ -16,3 +19,18 @@ commands.allow = ["check_desktop_update"]
 identifier = "allow-install-desktop-update"
 description = "Allow the frontend to start the desktop update install task."
 commands.allow = ["install_desktop_update"]
+
+[[permission]]
+identifier = "allow-download-desktop-update"
+description = "Allow the frontend to start a background download of the desktop update."
+commands.allow = ["download_desktop_update"]
+
+[[permission]]
+identifier = "allow-install-downloaded-update"
+description = "Allow the frontend to install a previously downloaded update and restart."
+commands.allow = ["install_downloaded_update"]
+
+[[permission]]
+identifier = "allow-check-cached-update"
+description = "Allow the frontend to check if a previously downloaded update is cached on disk."
+commands.allow = ["check_cached_update"]
