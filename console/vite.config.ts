@@ -100,6 +100,12 @@ export default defineConfig(({ mode }) => {
       include: ["diff"],
     },
     build: {
+      // Enable modulepreload for dynamic imports (Chat, CodingPage, etc.)
+      // This injects <link rel="modulepreload"> tags in HTML so the browser
+      // starts downloading lazy chunks earlier, reducing Suspense spinner time.
+      modulePreload: {
+        polyfill: false, // Modern browsers support modulepreload natively
+      },
       // Output to QwenPaw's console directory,
       // so we don't need to copy files manually after build.
       // outDir: path.resolve(__dirname, "../src/qwenpaw/console"),
