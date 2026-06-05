@@ -95,7 +95,13 @@
         "signature": "更新文件签名校验失败，请重新尝试下载。",
         "other": "更新失败。"
       },
-      "close": "关闭"
+      "close": "关闭",
+      "updateLater": "稍后更新",
+      "backgroundDownloading": "正在后台下载更新…",
+      "readyToInstall": "更新已就绪",
+      "readyToInstallHint": "v{{version}} 已准备好，重启即可生效。",
+      "restartNow": "立即重启",
+      "backgroundFailed": "后台下载失败"
     },
     "settings": {
       "language": "语言",
