@@ -36,6 +36,171 @@ class PluginLoader:
         self.plugin_dirs = [Path(d) for d in plugin_dirs]
         self.registry = PluginRegistry()
         self._loaded_plugins: Dict[str, PluginRecord] = {}
+        self._inject_bundled_site_packages()
+        self._sync_bundled_plugins()
+
+    @staticmethod
+    def _inject_bundled_site_packages() -> None:
+        """Add the bundled Python's site-packages to ``sys.path``.
+
+        In a frozen (PyInstaller / Tauri) environment, plugins install
+        their dependencies into the bundled Python's site-packages via
+        ``pip install``.  For those packages to be importable by the
+        main (frozen) process, the directory must be on ``sys.path``.
+
+        This is a no-op when not in a frozen environment or when the
+        bundled Python directory does not exist.
+        """
+        if not (getattr(sys, "frozen", False) or hasattr(sys, "_MEIPASS")):
+            return
+        try:
+            from .bundled_python import get_bundled_site_packages
+
+            site_packages = get_bundled_site_packages()
+            if site_packages and str(site_packages) not in sys.path:
+                sys.path.insert(0, str(site_packages))
+                logger.info(
+                    "Injected bundled site-packages into sys.path: %s",
+                    site_packages,
+                )
+        except ImportError:
+            pass
+
+    def _sync_bundled_plugins(self) -> None:
+        """Synchronize built-in plugins from the package to user directory.
+
+        In a frozen (PyInstaller / Tauri) environment, the installer
+        ships built-in plugins in a ``bundled-plugins/`` directory next
+        to the executable.  On each startup this method compares their
+        ``plugin.json`` version against what's in the user's plugin
+        directory (``~/.qwenpaw/plugins/``).
+
+        If the bundled version is **newer** or the plugin is **missing**
+        from the user directory, the bundled copy is deployed
+        automatically.  This ensures bug-fixes and new features in
+        built-in plugins reach users without manual re-installation.
+
+        This is a no-op when:
+        - Not in a frozen environment
+        - The ``bundled-plugins/`` directory does not exist
+        - No plugin directories are configured
+        """
+        if not (getattr(sys, "frozen", False) or hasattr(sys, "_MEIPASS")):
+            return
+
+        try:
+            from .bundled_python import get_bundled_plugins_path
+        except ImportError:
+            return
+
+        bundled_plugins_dir = get_bundled_plugins_path()
+        if not bundled_plugins_dir or not bundled_plugins_dir.is_dir():
+            return
+
+        # Determine the target user plugin directory (first writable dir)
+        if not self.plugin_dirs:
+            return
+        user_plugins_dir = self.plugin_dirs[0]
+        user_plugins_dir.mkdir(parents=True, exist_ok=True)
+
+        for bundled_item in bundled_plugins_dir.iterdir():
+            if not bundled_item.is_dir():
+                continue
+
+            bundled_manifest_path = bundled_item / "plugin.json"
+            if not bundled_manifest_path.exists():
+                continue
+
+            try:
+                self._sync_single_plugin(
+                    bundled_item,
+                    user_plugins_dir,
+                    bundled_manifest_path,
+                )
+            except Exception as exc:
+                logger.warning(
+                    "Failed to sync bundled plugin '%s': %s",
+                    bundled_item.name,
+                    exc,
+                    exc_info=True,
+                )
+
+    def _sync_single_plugin(
+        self,
+        bundled_item: Path,
+        user_plugins_dir: Path,
+        bundled_manifest_path: Path,
+    ) -> None:
+        """Compare and copy a single bundled plugin if needed."""
+        with open(bundled_manifest_path, "r", encoding="utf-8") as fh:
+            bundled_data = json.load(fh)
+
+        bundled_version = bundled_data.get("version", "0.0.0")
+        plugin_id = bundled_data.get("id", bundled_item.name)
+
+        user_plugin_dir = user_plugins_dir / plugin_id
+        user_manifest_path = user_plugin_dir / "plugin.json"
+
+        should_sync = False
+        if not user_plugin_dir.exists() or not user_manifest_path.exists():
+            should_sync = True
+            logger.info(
+                "Bundled plugin '%s' v%s not found in user directory — "
+                "installing.",
+                plugin_id,
+                bundled_version,
+            )
+        else:
+            try:
+                with open(user_manifest_path, "r", encoding="utf-8") as fh:
+                    user_data = json.load(fh)
+                user_version = user_data.get("version", "0.0.0")
+
+                if self._version_is_newer(bundled_version, user_version):
+                    should_sync = True
+                    logger.info(
+                        "Bundled plugin '%s' v%s is newer than installed "
+                        "v%s — upgrading.",
+                        plugin_id,
+                        bundled_version,
+                        user_version,
+                    )
+            except (json.JSONDecodeError, OSError) as err:
+                should_sync = True
+                logger.warning(
+                    "Cannot read user plugin '%s' manifest (%s) — "
+                    "re-deploying bundled version.",
+                    plugin_id,
+                    err,
+                )
+
+        if not should_sync:
+            return
+
+        # Remove old copy and deploy fresh from bundle
+        if user_plugin_dir.exists():
+            shutil.rmtree(user_plugin_dir)
+        shutil.copytree(bundled_item, user_plugin_dir)
+        logger.info(
+            "✓ Deployed bundled plugin '%s' v%s to %s",
+            plugin_id,
+            bundled_version,
+            user_plugin_dir,
+        )
+
+    @staticmethod
+    def _version_is_newer(new_ver: str, old_ver: str) -> bool:
+        """Return True if *new_ver* is strictly greater than *old_ver*.
+
+        Uses simple tuple comparison of integer version components.
+        Falls back to string comparison if parsing fails.
+        """
+        try:
+            new_parts = tuple(int(x) for x in new_ver.split("."))
+            old_parts = tuple(int(x) for x in old_ver.split("."))
+            return new_parts > old_parts
+        except (ValueError, AttributeError):
+            return new_ver > old_ver
 
     def discover_plugins(self) -> List[Tuple[PluginManifest, Path]]:
         """Discover all plugins in plugin directories.
@@ -144,6 +309,17 @@ class PluginLoader:
 
         return missing
 
+    @staticmethod
+    def _is_frozen_environment() -> bool:
+        """Return True when running inside a PyInstaller / frozen bundle.
+
+        In a frozen environment ``pip install`` cannot modify the
+        bundled site-packages, so dependency installation must be
+        skipped.  Plugins whose dependencies were pre-bundled into the
+        PyInstaller spec will still load normally.
+        """
+        return getattr(sys, "frozen", False) or hasattr(sys, "_MEIPASS")
+
     async def _ensure_dependencies_installed(
         self,
         source_path: Path,
@@ -155,6 +331,13 @@ class PluginLoader:
         packages are missing or version-incompatible, installs them via
         pip/uv before the plugin module is imported.
 
+        In a **frozen environment** (PyInstaller / Tauri desktop), pip
+        cannot install into the bundled site-packages.  In that case
+        missing dependencies are logged as warnings and the loader
+        proceeds — the plugin will load successfully if the dependency
+        was pre-bundled in the PyInstaller spec, or fail at import time
+        with a clear ``ModuleNotFoundError`` instead of a 300 s timeout.
+
         Args:
             source_path: Plugin directory containing requirements.txt
             plugin_id: Plugin identifier (for log messages)
@@ -163,6 +346,48 @@ class PluginLoader:
         missing_deps = self._check_dependencies_satisfied(requirements_file)
         if not missing_deps:
             return
+
+        # ── Frozen environment: use bundled Python's pip ───────────────
+        if self._is_frozen_environment():
+            from .bundled_python import get_bundled_python_executable
+
+            bundled_python = get_bundled_python_executable()
+            if bundled_python:
+                logger.info(
+                    "Plugin '%s' has %d unsatisfied dependency(ies): %s. "
+                    "Installing via bundled Python at '%s'...",
+                    plugin_id,
+                    len(missing_deps),
+                    ", ".join(missing_deps),
+                    bundled_python,
+                )
+                try:
+                    await asyncio.to_thread(
+                        self._install_requirements_with_bundled_python,
+                        requirements_file,
+                        plugin_id,
+                        bundled_python,
+                    )
+                except RuntimeError:
+                    logger.warning(
+                        "Plugin '%s': bundled-Python pip install failed "
+                        "(see above). The plugin will still attempt to "
+                        "load — it may work if deps are already available.",
+                        plugin_id,
+                        exc_info=True,
+                    )
+            else:
+                logger.warning(
+                    "Plugin '%s' has %d unsatisfied dependency(ies): %s. "
+                    "No bundled Python found — skipping installation "
+                    "(frozen/packaged environment). "
+                    "The plugin will load if dependencies are pre-bundled.",
+                    plugin_id,
+                    len(missing_deps),
+                    ", ".join(missing_deps),
+                )
+            return
+
         logger.info(
             "Plugin '%s' has %d unsatisfied dependency(ies): %s. "
             "Installing...",
@@ -400,12 +625,20 @@ class PluginLoader:
             " ".join(cmd),
         )
         output_lines: List[str] = []
+        # On Windows, prevent a visible console window from popping up
+        # when spawning pip / uv processes in the background.
+        creation_flags = (
+            getattr(subprocess, "CREATE_NO_WINDOW", 0)
+            if sys.platform == "win32"
+            else 0
+        )
         with subprocess.Popen(
             cmd,
             stdout=subprocess.PIPE,
             stderr=subprocess.STDOUT,
             text=True,
             bufsize=1,
+            creationflags=creation_flags,
         ) as proc:
 
             def _read_output() -> None:
@@ -544,6 +777,71 @@ class PluginLoader:
             f"Dependencies installed for plugin '{plugin_id}' (via uv)",
         )
 
+    def _install_requirements_with_bundled_python(
+        self,
+        requirements_file: Path,
+        plugin_id: str,
+        bundled_python: str,
+    ) -> None:
+        """Install plugin dependencies using the bundled Python's pip.
+
+        In a frozen (PyInstaller / Tauri) environment, the main
+        ``sys.executable`` cannot run ``pip``.  Instead we delegate to
+        the standalone Python interpreter shipped inside
+        ``python-embed/``.
+
+        Args:
+            requirements_file: Path to requirements.txt
+            plugin_id: Plugin identifier (for log messages)
+            bundled_python: Absolute path to the bundled python executable
+
+        Raises:
+            RuntimeError: If pip install fails or times out
+        """
+        logger.info(
+            "Installing dependencies for plugin '%s' via bundled Python "
+            "'%s'...",
+            plugin_id,
+            bundled_python,
+        )
+        req = str(requirements_file)
+        # Shorter timeout for bundled Python: pip runs locally and
+        # should not need 300 s.  A long timeout blocks all subsequent
+        # plugin loads because they are awaited sequentially.
+        timeout = 90
+
+        try:
+            result = self._run_subprocess_with_streaming_log(
+                [
+                    bundled_python,
+                    "-m",
+                    "pip",
+                    "install",
+                    "--disable-pip-version-check",
+                    "--no-input",
+                    "-r",
+                    req,
+                ],
+                timeout=timeout,
+                plugin_id=plugin_id,
+            )
+        except subprocess.TimeoutExpired as exc:
+            raise RuntimeError(
+                f"Dependency installation timed out for '{plugin_id}' "
+                f"({timeout} s limit, bundled Python)",
+            ) from exc
+
+        if result.returncode != 0:
+            raise RuntimeError(
+                f"Dependency installation failed for '{plugin_id}' "
+                f"(bundled Python): {result.stdout}",
+            )
+
+        logger.info(
+            "Dependencies installed for plugin '%s' (via bundled Python)",
+            plugin_id,
+        )
+
     async def load_plugin_from_path(
         self,
         source_path: Path,
@@ -611,14 +909,8 @@ class PluginLoader:
                 f"Copied plugin '{plugin_id}' to {target_dir}",
             )
 
-        # Install Python dependencies (off the event loop)
-        requirements_file = target_dir / "requirements.txt"
-        if requirements_file.exists():
-            await asyncio.to_thread(
-                self._install_requirements,
-                requirements_file,
-                plugin_id,
-            )
+        # Install Python dependencies (skipped in frozen/packaged envs)
+        await self._ensure_dependencies_installed(target_dir, plugin_id)
 
         # Re-read manifest from the installed location so that
         # source_path in the record points to the correct directory

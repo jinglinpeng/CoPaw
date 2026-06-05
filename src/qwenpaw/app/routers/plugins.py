@@ -3,6 +3,7 @@
 """Plugin API routes: list plugins with UI metadata and serve plugin
 static files.  Also provides runtime install / uninstall endpoints."""
 
+import asyncio
 import inspect
 import json
 import logging
@@ -23,6 +24,48 @@ from ..utils import schedule_agent_reload
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/plugins", tags=["plugins"])
+
+_LOADER_READY_POLL_INTERVAL = 0.5  # seconds
+_LOADER_READY_TIMEOUT = 30  # seconds
+
+
+async def _get_ready_loader(request: Request):
+    """Return the plugin loader once it is fully initialised.
+
+    If the loader instance exists but has not finished loading all
+    plugins yet, this helper polls ``plugin_loader_ready`` for up to
+    *_LOADER_READY_TIMEOUT* seconds so that CLI / API callers do not
+    receive a spurious 503 during normal startup.
+
+    Raises:
+        HTTPException 503: if the loader is still ``None`` after the
+            timeout (plugin system failed to start).
+    """
+    loader = getattr(request.app.state, "plugin_loader", None)
+    loader_ready = getattr(request.app.state, "plugin_loader_ready", False)
+
+    if loader is not None and loader_ready:
+        return loader
+
+    # Loader exists but hasn't finished loading – wait a bit.
+    elapsed = 0.0
+    while elapsed < _LOADER_READY_TIMEOUT:
+        await asyncio.sleep(_LOADER_READY_POLL_INTERVAL)
+        elapsed += _LOADER_READY_POLL_INTERVAL
+        loader = getattr(request.app.state, "plugin_loader", None)
+        loader_ready = getattr(
+            request.app.state,
+            "plugin_loader_ready",
+            False,
+        )
+        if loader is not None and loader_ready:
+            return loader
+
+    raise HTTPException(
+        status_code=503,
+        detail="Plugin loader is not ready yet. Try again shortly.",
+    )
+
 
 # ── Helpers ──────────────────────────────────────────────────────────────
 
@@ -451,8 +494,9 @@ async def list_plugins(request: Request):
     response is built by scanning the plugins directory on disk.
     """
     loader = getattr(request.app.state, "plugin_loader", None)
+    loader_ready = getattr(request.app.state, "plugin_loader_ready", False)
 
-    if loader is None:
+    if loader is None or not loader_ready:
         logger.debug(
             "[plugins] plugin_loader not ready, falling back to disk scan",
         )
@@ -519,12 +563,7 @@ async def install_plugin(
     reloaded in the background so that newly registered tools can be
     used without a server restart.
     """
-    loader = getattr(request.app.state, "plugin_loader", None)
-    if loader is None:
-        raise HTTPException(
-            status_code=503,
-            detail="Plugin loader is not ready yet. Try again shortly.",
-        )
+    loader = await _get_ready_loader(request)
 
     source = body.source.strip()
     is_url = source.startswith(("http://", "https://"))
@@ -635,12 +674,7 @@ async def upload_plugin(
     force: bool = False,
 ):
     """Install and hot-load a plugin from an uploaded ZIP file."""
-    loader = getattr(request.app.state, "plugin_loader", None)
-    if loader is None:
-        raise HTTPException(
-            status_code=503,
-            detail="Plugin loader is not ready yet. Try again shortly.",
-        )
+    loader = await _get_ready_loader(request)
 
     if not file.filename or not file.filename.endswith(".zip"):
         raise HTTPException(
@@ -739,12 +773,7 @@ async def upload_plugin(
 )
 async def uninstall_plugin(plugin_id: str, request: Request):
     """Unload and delete a plugin by ID."""
-    loader = getattr(request.app.state, "plugin_loader", None)
-    if loader is None:
-        raise HTTPException(
-            status_code=503,
-            detail="Plugin loader is not ready yet.",
-        )
+    loader = await _get_ready_loader(request)
 
     record = loader.get_loaded_plugin(plugin_id)
     if record is None:
@@ -950,7 +979,6 @@ async def _async_download(url: str, dest: Path) -> None:
     Raises:
         RuntimeError: If the download exceeds the size cap or times out.
     """
-    import asyncio
 
     def _download() -> None:
         with urllib.request.urlopen(  # noqa: S310
