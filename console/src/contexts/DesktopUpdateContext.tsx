@@ -10,7 +10,10 @@ import {
 } from "react";
 import {
   checkDesktopUpdate,
+  checkCachedUpdate,
+  downloadDesktopUpdate,
   installDesktopUpdate,
+  installDownloadedUpdate,
   onUpdateEvent,
   type UpdateError,
   type UpdateProgress,
@@ -22,10 +25,12 @@ export type UpdatePhase =
   | "checking"
   | "downloading"
   | "installing"
+  | "downloaded"
   | "failed";
 
 interface ContextValue {
   phase: UpdatePhase;
+  isBackground: boolean;
   hasUpdate: boolean;
   version: string;
   body: string;
@@ -34,6 +39,8 @@ interface ContextValue {
   throughputBps: number;
   error: UpdateError | null;
   startInstall: () => Promise<void>;
+  startBackgroundDownload: () => Promise<void>;
+  installDownloaded: () => Promise<void>;
   retry: () => Promise<void>;
   dismissFailure: () => void;
 }
@@ -44,6 +51,7 @@ const THROUGHPUT_WINDOW_MS = 5_000;
 
 export function DesktopUpdateProvider({ children }: { children: ReactNode }) {
   const [phase, setPhase] = useState<UpdatePhase>("idle");
+  const [isBackground, setIsBackground] = useState(false);
   const [hasUpdate, setHasUpdate] = useState(false);
   const [version, setVersion] = useState("");
   const [body, setBody] = useState("");
@@ -54,20 +62,34 @@ export function DesktopUpdateProvider({ children }: { children: ReactNode }) {
 
   const samplesRef = useRef<{ t: number; downloaded: number }[]>([]);
 
-  // Probe on mount.
+  // Probe on mount: check remote update + check cached installer on disk.
   useEffect(() => {
     if (!isDesktopApp()) return;
     let cancelled = false;
+
+    // Check if there's a cached (already downloaded) update on disk.
+    checkCachedUpdate()
+      .then((cachedVersion) => {
+        if (cancelled || !cachedVersion) return;
+        setVersion(cachedVersion);
+        setHasUpdate(true);
+        setPhase("downloaded");
+        setIsBackground(true);
+      })
+      .catch(() => {});
+
+    // Also check remote for new updates.
     checkDesktopUpdate()
       .then((info) => {
         if (cancelled || !info) return;
-        setVersion(info.version);
+        setVersion((prev) => prev || info.version);
         setBody(info.body?.trim() ?? "");
         setHasUpdate(true);
       })
       .catch((err) => {
         console.warn("[updates] desktop update check failed", err);
       });
+
     return () => {
       cancelled = true;
     };
@@ -97,6 +119,10 @@ export function DesktopUpdateProvider({ children }: { children: ReactNode }) {
       onCheckStart: () => setPhase("checking"),
       onDownloadProgress: handleProgress,
       onInstallStart: () => setPhase("installing"),
+      onDownloadDone: (payload) => {
+        setPhase("downloaded");
+        setVersion(payload.version);
+      },
       onError: (err) => {
         setPhase("failed");
         setError(err);
@@ -111,8 +137,10 @@ export function DesktopUpdateProvider({ children }: { children: ReactNode }) {
     };
   }, [handleProgress]);
 
+  // "Install and Restart" — immediate full takeover path (unchanged).
   const startInstall = useCallback(async () => {
     samplesRef.current = [];
+    setIsBackground(false);
     setPhase("checking");
     setDownloaded(0);
     setTotal(null);
@@ -125,21 +153,63 @@ export function DesktopUpdateProvider({ children }: { children: ReactNode }) {
         typeof err === "string"
           ? err
           : err instanceof Error
-          ? err.message
-          : JSON.stringify(err);
+            ? err.message
+            : JSON.stringify(err);
       setPhase("failed");
       setError({ stage: "check", kind: "other", message });
+    }
+  }, []);
+
+  // "Update Later" — background download + extract, no UI takeover.
+  const startBackgroundDownload = useCallback(async () => {
+    samplesRef.current = [];
+    setIsBackground(true);
+    setPhase("checking");
+    setDownloaded(0);
+    setTotal(null);
+    setThroughputBps(0);
+    setError(null);
+    try {
+      await downloadDesktopUpdate();
+    } catch (err) {
+      const message =
+        typeof err === "string"
+          ? err
+          : err instanceof Error
+            ? err.message
+            : JSON.stringify(err);
+      setPhase("failed");
+      setError({ stage: "check", kind: "other", message });
+    }
+  }, []);
+
+  // Install a previously downloaded update (just launches NSIS + exits).
+  const installDownloadedFn = useCallback(async () => {
+    try {
+      await installDownloadedUpdate();
+    } catch (err) {
+      const message =
+        typeof err === "string"
+          ? err
+          : err instanceof Error
+            ? err.message
+            : JSON.stringify(err);
+      setPhase("failed");
+      setIsBackground(false);
+      setError({ stage: "install", kind: "other", message });
     }
   }, []);
 
   const dismissFailure = useCallback(() => {
     setPhase("idle");
     setError(null);
+    setIsBackground(false);
   }, []);
 
   const value = useMemo<ContextValue>(
     () => ({
       phase,
+      isBackground,
       hasUpdate,
       version,
       body,
@@ -148,11 +218,14 @@ export function DesktopUpdateProvider({ children }: { children: ReactNode }) {
       throughputBps,
       error,
       startInstall,
+      startBackgroundDownload,
+      installDownloaded: installDownloadedFn,
       retry: startInstall,
       dismissFailure,
     }),
     [
       phase,
+      isBackground,
       hasUpdate,
       version,
       body,
@@ -161,6 +234,8 @@ export function DesktopUpdateProvider({ children }: { children: ReactNode }) {
       throughputBps,
       error,
       startInstall,
+      startBackgroundDownload,
+      installDownloadedFn,
       dismissFailure,
     ],
   );
