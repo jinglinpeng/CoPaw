@@ -537,6 +537,16 @@ jobs:
             --acl public-read \
             --force
 
+      - name: Link artifacts into updater-meta dirs for manifest generation
+        if: hashFiles('tauri-updater-meta-*/tauri-*-updater.json') != ''
+        run: |
+          # The manifest generator expects the artifact binary alongside the
+          # sidecar JSON.  After artifact splitting the exe lives in a separate
+          # artifact directory, so we symlink it into the meta directory.
+          for f in QwenPaw-Desktop-Tauri-Windows-*/QwenPaw-Tauri-*-Windows-setup.exe; do
+            [ -f "$f" ] && ln -sf "../$f" tauri-updater-meta-windows/ 2>/dev/null || true
+          done
+
       - name: Generate and upload OSS updater manifest
         # Mirror the GitHub-pointing manifest with one whose URLs point at
         # OSS, so mainland users can hit a CN-fast endpoint first and fall
