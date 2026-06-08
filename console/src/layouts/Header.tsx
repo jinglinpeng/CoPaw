@@ -201,7 +201,7 @@ export default function Header() {
   const isBackgroundActive =
     onDesktop &&
     desktop.isBackground &&
-    (desktop.phase === "checking" || desktop.phase === "downloading");
+    (desktop.phase === "checking" || desktop.phase === "downloading" || desktop.phase === "extracting");
   const isReady = onDesktop && desktop.phase === "downloaded";
   const isBackgroundFailed =
     onDesktop && desktop.isBackground && desktop.phase === "failed";
@@ -238,12 +238,18 @@ export default function Header() {
             </Badge>
           )}
           {isBackgroundActive && (() => {
+            const isExtracting = desktop.phase === "extracting";
             const percent =
               desktop.phase === "downloading" && desktop.total
                 ? Math.min(99, Math.round((desktop.downloaded / desktop.total) * 100))
                 : undefined;
+            const tooltipText = isExtracting
+              ? t(`sidebar.updateModal.backgroundExtracting`)
+              : percent !== undefined
+                ? `${t(`sidebar.updateModal.backgroundDownloading`)} ${percent}%`
+                : t(`sidebar.updateModal.backgroundDownloading`);
             return (
-              <Tooltip title={t(`sidebar.updateModal.backgroundDownloading`)}>
+              <Tooltip title={tooltipText}>
                 {percent !== undefined ? (
                   <Progress
                     type="circle"
