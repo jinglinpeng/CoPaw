@@ -1,4 +1,4 @@
-import { Layout, Space, Badge, Spin, Tooltip, Dropdown, Popover, Progress } from "antd";
+import { Layout, Space, Badge, Spin, Tooltip, Dropdown, Popover } from "antd";
 import type { MenuProps } from "antd";
 import LanguageSwitcher from "../components/LanguageSwitcher/index";
 import ThemeToggleButton from "../components/ThemeToggleButton";
@@ -259,17 +259,7 @@ export default function Header() {
                 : t(`sidebar.updateModal.backgroundDownloading`);
             return (
               <Tooltip title={tooltipText}>
-                {percent !== undefined ? (
-                  <Progress
-                    type="circle"
-                    percent={percent}
-                    size={18}
-                    strokeColor="rgba(255, 157, 77, 1)"
-                    style={{ marginLeft: 6 }}
-                  />
-                ) : (
-                  <SyncOutlined spin style={{ marginLeft: 6, fontSize: 14, color: "rgba(255, 157, 77, 1)" }} />
-                )}
+                <SyncOutlined spin style={{ marginLeft: 6, fontSize: 14, color: "rgba(255, 157, 77, 1)" }} />
               </Tooltip>
             );
           })()}
