@@ -24,6 +24,7 @@ export type UpdatePhase =
   | "idle"
   | "checking"
   | "downloading"
+  | "extracting"
   | "installing"
   | "downloaded"
   | "failed";
@@ -119,6 +120,7 @@ export function DesktopUpdateProvider({ children }: { children: ReactNode }) {
       onCheckStart: () => setPhase("checking"),
       onDownloadProgress: handleProgress,
       onInstallStart: () => setPhase("installing"),
+      onExtracting: () => setPhase("extracting"),
       onDownloadDone: (payload) => {
         setPhase("downloaded");
         setVersion(payload.version);

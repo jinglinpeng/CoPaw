@@ -100,7 +100,8 @@
       "readyToInstall": "更新已就绪",
       "readyToInstallHint": "v{{version}} 已准备好，重启即可生效。",
       "restartNow": "立即重启",
-      "backgroundFailed": "后台下载失败"
+      "backgroundFailed": "后台下载失败",
+      "backgroundExtracting": "正在解压更新..."
     },
     "settings": {
       "language": "语言",

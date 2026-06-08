@@ -110,6 +110,7 @@
       "close": "Tutup",
       "updateLater": "Perbarui Nanti",
       "backgroundDownloading": "Mengunduh di latar belakang…",
+      "backgroundExtracting": "Mengekstrak pembaruan...",
       "readyToInstall": "Pembaruan siap",
       "readyToInstallHint": "v{{version}} siap. Mulai ulang untuk menerapkan.",
       "restartNow": "Mulai Ulang Sekarang",

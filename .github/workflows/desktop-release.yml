@@ -216,6 +216,7 @@ jobs:
           path: dist/QwenPaw-Tauri-*-Windows-setup.exe
 
       - name: Upload Tauri Windows updater metadata
+        if: github.event_name == 'release' || (github.event_name == 'workflow_dispatch' && github.event.inputs.upload_to_oss == 'true')
         uses: actions/upload-artifact@v4
         with:
           name: tauri-updater-meta-windows
@@ -282,6 +283,7 @@ jobs:
           path: dist/QwenPaw-Tauri-*-macOS.zip
 
       - name: Upload Tauri macOS updater metadata
+        if: github.event_name == 'release' || (github.event_name == 'workflow_dispatch' && github.event.inputs.upload_to_oss == 'true')
         uses: actions/upload-artifact@v4
         with:
           name: tauri-updater-meta-macos
