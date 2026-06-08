@@ -239,44 +239,8 @@ async fn run_background_download(app: AppHandle, cache: Arc<Mutex<Option<CachedU
         return emit_error(&app, "download", &err);
     }
 
-    let exe_path = match extract_installer(&bytes, &updates_dir, &version) {
-        Ok(p) => p,
-        Err(err) => return emit_error(&app, "download", &format!("extract failed: {err}")),
-    };
-
-    // Pre-extract: run NSIS installer silently to a staging directory so that
-    // "Restart Now" only needs to copy files (no NSIS extraction wait).
-    let staged_dir = updates_dir.join("staged");
-    let _ = std::fs::remove_dir_all(&staged_dir);
-
-    log::info!("[updates] pre-extracting installer to staging dir");
-    emit(&app, "update:extracting", &serde_json::json!({}));
-
-    let status = std::process::Command::new(&exe_path)
-        .arg("/S")
-        .arg("/NO_QWENPAW_PATH")
-        .arg(format!("/D={}", staged_dir.display()))
-        .status();
-
-    match status {
-        Ok(s) if s.success() => {
-            log::info!("[updates] pre-extraction complete");
-        }
-        Ok(s) => {
-            return emit_error(
-                &app,
-                "download",
-                &format!("installer pre-extraction exited with code {}", s.code().unwrap_or(-1)),
-            );
-        }
-        Err(err) => {
-            return emit_error(&app, "download", &format!("failed to run installer: {err}"));
-        }
-    }
-
-    // Verify staging directory has content.
-    if !staged_dir.join("qwenpaw-desktop.exe").exists() {
-        return emit_error(&app, "download", &"staged app exe not found after extraction");
+    if let Err(err) = extract_installer(&bytes, &updates_dir, &version) {
+        return emit_error(&app, "download", &format!("extract failed: {err}"));
     }
 
     // Write metadata.
@@ -289,10 +253,7 @@ async fn run_background_download(app: AppHandle, cache: Arc<Mutex<Option<CachedU
         return emit_error(&app, "download", &err);
     }
 
-    log::info!(
-        "[updates] background download ready: version={version} staged={}",
-        staged_dir.display()
-    );
+    log::info!("[updates] background download ready: version={version}");
 
     // Cache the Update object for potential fallback via install_desktop_update.
     {
@@ -317,60 +278,25 @@ pub(crate) fn install_downloaded_update(app: AppHandle) -> Result<(), String> {
     let meta: UpdateMeta =
         serde_json::from_str(&meta_str).map_err(|e| format!("invalid update meta: {e}"))?;
 
-    let staged_dir = updates_dir.join("staged");
-    if !staged_dir.join("qwenpaw-desktop.exe").exists() {
-        return Err("staged update not found — please download again".to_string());
-    }
-
-    // Resolve the current installation directory (where this exe lives).
-    let install_dir = std::env::current_exe()
-        .map_err(|e| format!("cannot determine install dir: {e}"))?
-        .parent()
-        .ok_or("cannot determine install dir parent")?
-        .to_path_buf();
+    // Find the downloaded NSIS installer exe.
+    let exe_path = find_installer_exe(&updates_dir)
+        .ok_or("installer exe not found — please download again")?;
 
     log::info!(
-        "[updates] applying staged update version={} staged={} install={}",
+        "[updates] launching installer version={} exe={}",
         meta.version,
-        staged_dir.display(),
-        install_dir.display(),
+        exe_path.display(),
     );
 
     backend::stop(&app);
 
-    // Write a small PowerShell script that waits for this process to exit,
-    // copies the staged files over the installation, then launches the new exe.
-    let script_path = updates_dir.join("apply-update.ps1");
-    let script = format!(
-        r#"
-$ErrorActionPreference = 'Stop'
-$pid = {pid}
-try {{ Wait-Process -Id $pid -Timeout 15 -ErrorAction SilentlyContinue }} catch {{}}
-Start-Sleep -Milliseconds 500
-Copy-Item -Path '{staged}\*' -Destination '{install}' -Recurse -Force
-Start-Process -FilePath '{install}\qwenpaw-desktop.exe'
-Remove-Item -Path '{updates}' -Recurse -Force -ErrorAction SilentlyContinue
-"#,
-        pid = std::process::id(),
-        staged = staged_dir.display(),
-        install = install_dir.display(),
-        updates = updates_dir.display(),
-    );
-    std::fs::write(&script_path, &script)
-        .map_err(|e| format!("failed to write apply script: {e}"))?;
-
-    std::process::Command::new("powershell.exe")
-        .args([
-            "-NoProfile",
-            "-ExecutionPolicy",
-            "Bypass",
-            "-WindowStyle",
-            "Hidden",
-            "-File",
-            &script_path.to_string_lossy(),
-        ])
+    // Launch the NSIS installer silently. It will install over the current
+    // installation and launch the new version automatically.
+    std::process::Command::new(&exe_path)
+        .arg("/S")
+        .arg("/NO_QWENPAW_PATH")
         .spawn()
-        .map_err(|e| format!("failed to launch apply script: {e}"))?;
+        .map_err(|e| format!("failed to launch installer: {e}"))?;
 
     app.cleanup_before_exit();
     std::process::exit(0);
@@ -421,8 +347,8 @@ pub(crate) async fn check_cached_update(app: AppHandle) -> Result<Option<String>
         return Ok(None);
     }
 
-    // Verify the staged directory exists with the app exe.
-    if !updates_dir.join("staged").join("qwenpaw-desktop.exe").exists() {
+    // Verify the installer exe exists.
+    if find_installer_exe(&updates_dir).is_none() {
         let _ = std::fs::remove_dir_all(&updates_dir);
         return Ok(None);
     }
@@ -476,6 +402,17 @@ fn extract_installer(bytes: &[u8], dest_dir: &PathBuf, version: &str) -> Result<
     }
 
     exe_path.ok_or_else(|| "no .exe found in update zip".to_string())
+}
+
+fn find_installer_exe(updates_dir: &PathBuf) -> Option<PathBuf> {
+    std::fs::read_dir(updates_dir).ok()?.find_map(|entry| {
+        let path = entry.ok()?.path();
+        if path.extension().and_then(|e| e.to_str()) == Some("exe") {
+            Some(path)
+        } else {
+            None
+        }
+    })
 }
 
 fn version_lte(a: &str, b: &str) -> bool {

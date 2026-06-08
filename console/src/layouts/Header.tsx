@@ -202,7 +202,7 @@ export default function Header() {
   const isBackgroundActive =
     onDesktop &&
     desktop.isBackground &&
-    (desktop.phase === "checking" || desktop.phase === "downloading" || desktop.phase === "extracting");
+    (desktop.phase === "checking" || desktop.phase === "downloading");
   const isReady = onDesktop && desktop.phase === "downloaded";
   const isBackgroundFailed =
     onDesktop && desktop.isBackground && desktop.phase === "failed";
@@ -247,16 +247,13 @@ export default function Header() {
             </Badge>
           )}
           {isBackgroundActive && (() => {
-            const isExtracting = desktop.phase === "extracting";
             const percent =
               desktop.phase === "downloading" && desktop.total
                 ? Math.min(99, Math.round((desktop.downloaded / desktop.total) * 100))
                 : undefined;
-            const tooltipText = isExtracting
-              ? t(`sidebar.updateModal.backgroundExtracting`)
-              : percent !== undefined
-                ? `${t(`sidebar.updateModal.backgroundDownloading`)} ${percent}%`
-                : t(`sidebar.updateModal.backgroundDownloading`);
+            const tooltipText = percent !== undefined
+              ? `${t(`sidebar.updateModal.backgroundDownloading`)} ${percent}%`
+              : t(`sidebar.updateModal.backgroundDownloading`);
             return (
               <Tooltip title={tooltipText}>
                 <SyncOutlined spin style={{ marginLeft: 6, fontSize: 14, color: "rgba(255, 157, 77, 1)" }} />
