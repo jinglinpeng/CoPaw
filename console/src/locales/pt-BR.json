@@ -1795,6 +1795,7 @@
       "close": "Fechar",
       "updateLater": "Atualizar Depois",
       "backgroundDownloading": "Baixando em segundo plano…",
+      "backgroundExtracting": "Extraindo atualização...",
       "readyToInstall": "Atualização pronta",
       "readyToInstallHint": "v{{version}} está pronto. Reinicie para aplicar.",
       "restartNow": "Reiniciar Agora",
