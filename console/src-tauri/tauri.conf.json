@@ -74,8 +74,8 @@
     "updater": {
       "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IENGQUZCREZCOUI3OUMwNDIKUldSQ3dIbWIrNzJ2ejFRYzV1emtrZUorckdibkVZdWtIbWFSUVc2dG9aa01JNVlzNTdxSXpHWmMK",
       "endpoints": [
-        "https://qwenpawtest.oss-cn-beijing.aliyuncs.com/metadata/qwenpaw-tauri-latest.json",
-        "https://github.com/jinglinpeng/CoPaw/releases/latest/download/qwenpaw-tauri-latest.json"
+        "https://github.com/jinglinpeng/CoPaw/releases/latest/download/qwenpaw-tauri-latest.json",
+        "https://qwenpawtest.oss-cn-beijing.aliyuncs.com/metadata/qwenpaw-tauri-latest.json"
       ],
       "windows": {
         "installMode": "passive"
