@@ -10,7 +10,6 @@ export function UpdateTakeoverGate({ children }: { children: ReactNode }) {
   const isActive =
     phase === "checking" ||
     phase === "downloading" ||
-    phase === "extracting" ||
     phase === "installing" ||
     phase === "failed";
   const shouldTakeover = isActive && !isBackground;
