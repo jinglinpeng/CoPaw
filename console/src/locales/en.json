@@ -101,7 +101,8 @@
       "readyToInstall": "Update ready",
       "readyToInstallHint": "v{{version}} is ready. Restart to apply.",
       "restartNow": "Restart Now",
-      "backgroundFailed": "Background download failed"
+      "backgroundFailed": "Background download failed",
+      "backgroundExtracting": "Extracting update..."
     },
     "settings": {
       "language": "Language",
