@@ -1760,6 +1760,7 @@
       "close": "关闭",
       "updateLater": "稍后更新",
       "backgroundDownloading": "正在后台下载更新…",
+      "backgroundExtracting": "正在解压更新...",
       "readyToInstall": "更新已就绪",
       "readyToInstallHint": "v{{version}} 已准备好，重启即可生效。",
       "restartNow": "立即重启",
