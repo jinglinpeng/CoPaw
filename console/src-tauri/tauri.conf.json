@@ -40,7 +40,7 @@
       "../../scripts/pack/assets/icon.icns",
       "../../scripts/pack/assets/icon.ico"
     ],
-    "resources": ["binaries/qwenpaw-backend"],
+    "resources": ["binaries/qwenpaw-backend", "tools/7z.exe", "tools/7z.dll"],
     "windows": {
       "webviewInstallMode": {
         "type": "downloadBootstrapper",

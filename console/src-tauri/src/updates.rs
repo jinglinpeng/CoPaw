@@ -32,6 +32,8 @@ impl Default for UpdateCache {
 struct UpdateMeta {
     version: String,
     ready_at: String,
+    #[serde(default)]
+    extracted: bool,
 }
 
 // ── Original commands (unchanged) ─────────────────────────────────────────────
@@ -243,10 +245,29 @@ async fn run_background_download(app: AppHandle, cache: Arc<Mutex<Option<CachedU
         return emit_error(&app, "download", &format!("extract failed: {err}"));
     }
 
+    // Pre-extract the NSIS installer with 7z so "Restart Now" is instant.
+    let extracted = match pre_extract_nsis(&app, &updates_dir) {
+        Ok(()) => {
+            log::info!("[updates] NSIS pre-extraction complete");
+            true
+        }
+        Err(err) => {
+            log::warn!("[updates] NSIS pre-extraction failed (will fall back to NSIS): {err}");
+            false
+        }
+    };
+
+    emit(
+        &app,
+        "update:extracting",
+        &serde_json::json!({ "extracted": extracted }),
+    );
+
     // Write metadata.
     let meta = UpdateMeta {
         version: version.clone(),
         ready_at: chrono_now_iso(),
+        extracted,
     };
     let meta_path = updates_dir.join("update-meta.json");
     if let Err(err) = std::fs::write(&meta_path, serde_json::to_string_pretty(&meta).unwrap()) {
@@ -278,20 +299,56 @@ pub(crate) fn install_downloaded_update(app: AppHandle) -> Result<(), String> {
     let meta: UpdateMeta =
         serde_json::from_str(&meta_str).map_err(|e| format!("invalid update meta: {e}"))?;
 
-    // Find the downloaded NSIS installer exe.
+    let staged_dir = find_staged_source(&updates_dir);
+
+    if let Some(src_dir) = staged_dir {
+        // Pre-extracted path: copy files via PowerShell script for instant restart.
+        let install_dir = app
+            .path()
+            .resource_dir()
+            .map_err(|e| format!("cannot determine install directory: {e}"))?;
+
+        log::info!(
+            "[updates] installing pre-extracted update version={} src={} dest={}",
+            meta.version,
+            src_dir.display(),
+            install_dir.display(),
+        );
+
+        backend::stop(&app);
+
+        let script = generate_install_script(&src_dir, &install_dir, &meta.version);
+        let script_path = std::env::temp_dir().join("qwenpaw-update-install.ps1");
+        std::fs::write(&script_path, &script)
+            .map_err(|e| format!("failed to write install script: {e}"))?;
+
+        std::process::Command::new("powershell.exe")
+            .args([
+                "-NoProfile",
+                "-ExecutionPolicy",
+                "Bypass",
+                "-File",
+                &script_path.display().to_string(),
+            ])
+            .spawn()
+            .map_err(|e| format!("failed to launch install script: {e}"))?;
+
+        app.cleanup_before_exit();
+        std::process::exit(0);
+    }
+
+    // Fallback: run NSIS installer directly (slower, ~20-30s).
     let exe_path = find_installer_exe(&updates_dir)
         .ok_or("installer exe not found — please download again")?;
 
     log::info!(
-        "[updates] launching installer version={} exe={}",
+        "[updates] falling back to NSIS installer version={} exe={}",
         meta.version,
         exe_path.display(),
     );
 
     backend::stop(&app);
 
-    // Launch the NSIS installer silently. It will install over the current
-    // installation and launch the new version automatically.
     std::process::Command::new(&exe_path)
         .arg("/S")
         .arg("/NO_QWENPAW_PATH")
@@ -347,8 +404,8 @@ pub(crate) async fn check_cached_update(app: AppHandle) -> Result<Option<String>
         return Ok(None);
     }
 
-    // Verify the installer exe exists.
-    if find_installer_exe(&updates_dir).is_none() {
+    // Verify either a staged extraction or an installer exe exists.
+    if find_staged_source(&updates_dir).is_none() && find_installer_exe(&updates_dir).is_none() {
         let _ = std::fs::remove_dir_all(&updates_dir);
         return Ok(None);
     }
@@ -402,6 +459,136 @@ fn extract_installer(bytes: &[u8], dest_dir: &PathBuf, version: &str) -> Result<
     }
 
     exe_path.ok_or_else(|| "no .exe found in update zip".to_string())
+}
+
+fn pre_extract_nsis(app: &AppHandle, updates_dir: &PathBuf) -> Result<(), String> {
+    let exe_path =
+        find_installer_exe(updates_dir).ok_or("no installer exe found for extraction")?;
+
+    let seven_zip = app
+        .path()
+        .resource_dir()
+        .map_err(|e| e.to_string())?
+        .join("tools")
+        .join("7z.exe");
+
+    if !seven_zip.is_file() {
+        return Err(format!("7z.exe not found at {}", seven_zip.display()));
+    }
+
+    let staged_dir = updates_dir.join("staged");
+    if staged_dir.exists() {
+        let _ = std::fs::remove_dir_all(&staged_dir);
+    }
+
+    log::info!(
+        "[updates] extracting NSIS installer with 7z: {} -> {}",
+        exe_path.display(),
+        staged_dir.display(),
+    );
+
+    let status = std::process::Command::new(&seven_zip)
+        .arg("x")
+        .arg(exe_path.display().to_string())
+        .arg(format!("-o{}", staged_dir.display()))
+        .arg("-y")
+        .status()
+        .map_err(|e| format!("failed to run 7z: {e}"))?;
+
+    if !status.success() {
+        return Err(format!("7z exited with status {status}"));
+    }
+
+    // Verify we got usable output.
+    if find_staged_source(updates_dir).is_none() {
+        return Err("7z extraction produced no usable app files".to_string());
+    }
+
+    Ok(())
+}
+
+fn find_staged_source(updates_dir: &PathBuf) -> Option<PathBuf> {
+    let staged = updates_dir.join("staged");
+    if !staged.is_dir() {
+        return None;
+    }
+    // 7z extracts NSIS into $INSTDIR/ subdirectory.
+    let instdir = staged.join("$INSTDIR");
+    if instdir.is_dir() {
+        return Some(instdir);
+    }
+    // Fallback: maybe files are directly in staged/.
+    let has_exe = std::fs::read_dir(&staged).ok()?.any(|e| {
+        e.ok()
+            .and_then(|e| e.path().extension().map(|ext| ext == "exe"))
+            .unwrap_or(false)
+    });
+    if has_exe {
+        Some(staged)
+    } else {
+        None
+    }
+}
+
+fn generate_install_script(src_dir: &PathBuf, install_dir: &PathBuf, version: &str) -> String {
+    format!(
+        r#"param()
+$ErrorActionPreference = "Stop"
+$installDir = @'
+{install_dir}
+'@.Trim()
+$srcDir = @'
+{src_dir}
+'@.Trim()
+$version = "{version}"
+$logFile = Join-Path $env:TEMP "qwenpaw-update-install.log"
+
+function Log {{ param([string]$msg) "$(Get-Date -f 'HH:mm:ss') $msg" | Out-File -Append $logFile }}
+
+Log "Waiting for qwenpaw-desktop.exe to exit..."
+$timeout = 30; $elapsed = 0
+while ($elapsed -lt $timeout) {{
+    if (-not (Get-Process -Name "qwenpaw-desktop" -ErrorAction SilentlyContinue)) {{ break }}
+    Start-Sleep -Milliseconds 500; $elapsed += 0.5
+}}
+$proc = Get-Process -Name "qwenpaw-desktop" -ErrorAction SilentlyContinue
+if ($proc) {{
+    Stop-Process -Name "qwenpaw-desktop" -Force -ErrorAction SilentlyContinue
+    Start-Sleep -Seconds 1
+}}
+
+Log "Copying from $srcDir to $installDir"
+try {{
+    Copy-Item -Path (Join-Path $srcDir "*") -Destination $installDir -Recurse -Force
+    Log "Copy complete"
+}} catch {{
+    Log "Copy failed: $_"
+    exit 1
+}}
+
+# Update registry DisplayVersion
+$regKey = Get-ChildItem "HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall" -ErrorAction SilentlyContinue |
+    Where-Object {{ $_.GetValue("DisplayName") -like "QwenPaw Desktop*" }} |
+    Select-Object -First 1
+if ($regKey) {{
+    Set-ItemProperty -Path $regKey.PSPath -Name "DisplayVersion" -Value $version -ErrorAction SilentlyContinue
+    Log "Registry updated: $($regKey.PSPath) DisplayVersion=$version"
+}}
+
+# Clean up updates directory
+$updatesDir = Join-Path $installDir "updates"
+Remove-Item -Path $updatesDir -Recurse -Force -ErrorAction SilentlyContinue
+Log "Cleanup done"
+
+# Launch new version
+$exe = Join-Path $installDir "qwenpaw-desktop.exe"
+Log "Launching $exe"
+Start-Process -FilePath $exe
+"#,
+        install_dir = install_dir.display(),
+        src_dir = src_dir.display(),
+        version = version,
+    )
 }
 
 fn find_installer_exe(updates_dir: &PathBuf) -> Option<PathBuf> {

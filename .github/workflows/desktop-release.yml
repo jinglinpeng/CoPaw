@@ -180,6 +180,13 @@ jobs:
           }
           New-Item -ItemType Directory -Force -Path dist | Out-Null
 
+      - name: Stage 7-Zip for NSIS pre-extraction
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path console/src-tauri/tools | Out-Null
+          Copy-Item "C:\Program Files\7-Zip\7z.exe" console/src-tauri/tools/
+          Copy-Item "C:\Program Files\7-Zip\7z.dll" console/src-tauri/tools/
+
       - name: Build Tauri Windows package
         shell: pwsh
         env:
