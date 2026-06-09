@@ -45,7 +45,10 @@ function toSemver(version) {
 }
 
 function writeTauriVersionConfig(file, version) {
-  fs.writeFileSync(file, `${JSON.stringify({ version }, null, 2)}\n`);
+  const config = {
+    version,
+  };
+  fs.writeFileSync(file, `${JSON.stringify(config, null, 2)}\n`);
 }
 
 const semver = toSemver(readPythonVersion());

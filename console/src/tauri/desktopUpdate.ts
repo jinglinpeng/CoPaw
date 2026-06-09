@@ -5,6 +5,7 @@ import { isDesktopApp } from "./backendRuntime";
 export interface DesktopUpdateInfo {
   version: string;
   body?: string | null;
+  supportsLaterInstall?: boolean;
 }
 
 export interface UpdateProgress {
@@ -51,7 +52,6 @@ export interface UpdateEventHandlers {
   onCheckStart?: () => void;
   onDownloadProgress?: (progress: UpdateProgress) => void;
   onInstallStart?: () => void;
-  onExtracting?: () => void;
   onDownloadDone?: (payload: DownloadDonePayload) => void;
   onError?: (error: UpdateError) => void;
 }
@@ -82,14 +82,6 @@ export async function onUpdateEvent(
       await listen<unknown>(
         "update:install-start",
         () => handlers.onInstallStart?.(),
-      ),
-    );
-  }
-  if (handlers.onExtracting) {
-    unlisteners.push(
-      await listen<unknown>(
-        "update:extracting",
-        () => handlers.onExtracting?.(),
       ),
     );
   }
