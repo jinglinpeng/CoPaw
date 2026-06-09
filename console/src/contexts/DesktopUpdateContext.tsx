@@ -164,7 +164,7 @@ export function DesktopUpdateProvider({ children }: { children: ReactNode }) {
     }
   }, []);
 
-  // "Update Later" background download + extract, no UI takeover.
+  // "Update Later" caches the installer in the background, no UI takeover.
   const startBackgroundDownload = useCallback(async () => {
     samplesRef.current = [];
     setIsBackground(true);
