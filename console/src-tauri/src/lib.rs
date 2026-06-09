@@ -27,7 +27,6 @@ pub fn run() {
             updates::check_cached_update,
         ])
         .manage(backend::BackendState::default())
-        .manage(updates::UpdateCache::default())
         .setup(backend::setup)
         .on_window_event(|window, event| {
             // The app currently has a single "main" window, so closing it

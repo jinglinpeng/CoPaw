@@ -104,7 +104,7 @@ function UpdateTakeoverPage() {
           <p className={styles.progressLine}>
             {t(`${KEY_PREFIX}.downloadProgress`, {
               done: formatBytes(update.downloaded),
-              total: total ? formatBytes(total) : "—",
+              total: total ? formatBytes(total) : "-",
               rate: `${formatBytes(update.throughputBps)}/s`,
             })}
           </p>

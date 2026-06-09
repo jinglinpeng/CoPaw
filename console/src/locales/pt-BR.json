@@ -1795,10 +1795,9 @@
       "close": "Fechar",
       "updateLater": "Atualizar Depois",
       "backgroundDownloading": "Baixando em segundo plano…",
-      "backgroundExtracting": "Extraindo atualização...",
-      "readyToInstall": "Atualização pronta",
-      "readyToInstallHint": "v{{version}} está pronto. Reinicie para aplicar.",
-      "restartNow": "Reiniciar Agora",
+      "readyToInstall": "Instalador pronto",
+      "readyToInstallHint": "O instalador v{{version}} foi baixado. Reinicie para instalar e abrir a nova versão.",
+      "restartNow": "Instalar e Reiniciar",
       "backgroundFailed": "Falha no download em segundo plano"
     }
   },

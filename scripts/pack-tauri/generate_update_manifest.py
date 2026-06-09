@@ -42,7 +42,7 @@ def to_semver(version: str) -> str:
     return f"{major}.{minor}.{patch}{suffix}"
 
 
-# ─────────────────────────── stage ───────────────────────────
+# stage
 
 
 def _find_source(bundle_dir: Path, pattern: str) -> Path:
@@ -79,7 +79,7 @@ def cmd_stage(args: argparse.Namespace) -> None:
     print(f"staged {output.name} ({args.target}); sidecar {sidecar.name}")
 
 
-# ─────────────────────────── manifest ───────────────────────────
+# manifest
 
 
 def _read_metadata(path: Path) -> dict[str, str]:
@@ -144,7 +144,7 @@ def cmd_manifest(args: argparse.Namespace) -> None:
     )
 
 
-# ─────────────────────────── cli ───────────────────────────
+# cli
 
 
 def main() -> None:

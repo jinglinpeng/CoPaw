@@ -1920,10 +1920,9 @@
       "close": "Close",
       "updateLater": "Update Later",
       "backgroundDownloading": "Downloading in background…",
-      "backgroundExtracting": "Extracting update...",
-      "readyToInstall": "Update ready",
-      "readyToInstallHint": "v{{version}} is ready. Restart to apply.",
-      "restartNow": "Restart Now",
+      "readyToInstall": "Installer ready",
+      "readyToInstallHint": "v{{version}} installer is downloaded. Restart to install and launch the new version.",
+      "restartNow": "Install and Restart",
       "backgroundFailed": "Background download failed"
     }
   },
