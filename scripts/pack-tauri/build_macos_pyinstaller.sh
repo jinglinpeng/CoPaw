@@ -177,7 +177,8 @@ python "${REPO_ROOT}/scripts/pack-tauri/generate_update_manifest.py" stage \
     --bundle-dir "${BUNDLE_DIR}/macos" \
     --pattern '*.app.tar.gz' \
     --target "${UPDATER_TARGET}" \
-    --output "${UPDATER_NAME}"
+    --output "${UPDATER_NAME}" \
+    --pubkey-config "${REPO_ROOT}/console/src-tauri/tauri.conf.json"
 
 echo ""
 echo "========================================="

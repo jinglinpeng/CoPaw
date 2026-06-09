@@ -138,20 +138,25 @@ async fn run_background_download(app: AppHandle) {
         Err(err) => return emit_error(&app, "download", &err),
     };
 
-    // Extract the NSIS installer from the zip and persist to disk.
+    // Persist the downloaded NSIS installer so "Restart Now" only needs to
+    // launch it.
     let updates_dir = match updates_dir(&app) {
         Some(d) => d,
         None => return emit_error(&app, "download", &"cannot determine app data directory"),
     };
 
-    let _ = std::fs::remove_dir_all(&updates_dir);
+    if updates_dir.exists() {
+        if let Err(err) = std::fs::remove_dir_all(&updates_dir) {
+            return emit_error(&app, "download", &err);
+        }
+    }
     if let Err(err) = std::fs::create_dir_all(&updates_dir) {
         return emit_error(&app, "download", &err);
     }
 
-    let exe_path = match extract_installer(&bytes, &updates_dir, &version) {
+    let exe_path = match write_installer(&bytes, &updates_dir, &version) {
         Ok(path) => path,
-        Err(err) => return emit_error(&app, "download", &format!("extract failed: {err}")),
+        Err(err) => return emit_error(&app, "download", &err),
     };
     let installer_file = match exe_path
         .strip_prefix(&updates_dir)
@@ -290,46 +295,15 @@ fn updates_dir(app: &AppHandle) -> Option<PathBuf> {
         .map(|p| p.join("updates"))
 }
 
-fn extract_installer(bytes: &[u8], dest_dir: &PathBuf, version: &str) -> Result<PathBuf, String> {
-    // Detect if bytes are a raw PE executable (starts with "MZ") or a zip archive.
-    if bytes.len() >= 2 && bytes[0] == b'M' && bytes[1] == b'Z' {
-        // Raw exe - save directly.
-        let exe_name = format!("QwenPaw-Desktop_{version}_x64-setup.exe");
-        let exe_path = dest_dir.join(&exe_name);
-        std::fs::write(&exe_path, bytes).map_err(|e| e.to_string())?;
-        return Ok(exe_path);
+fn write_installer(bytes: &[u8], dest_dir: &Path, version: &str) -> Result<PathBuf, String> {
+    if bytes.len() < 2 || bytes[0] != b'M' || bytes[1] != b'Z' {
+        return Err("downloaded update is not a Windows installer executable".to_string());
     }
 
-    // Try as zip archive.
-    let reader = std::io::Cursor::new(bytes);
-    let mut archive = zip::ZipArchive::new(reader).map_err(|e| e.to_string())?;
-
-    let mut exe_path: Option<PathBuf> = None;
-
-    for i in 0..archive.len() {
-        let mut file = archive.by_index(i).map_err(|e| e.to_string())?;
-        let name = file.name().to_string();
-
-        if name.ends_with('/') || !name.to_lowercase().ends_with(".exe") {
-            continue;
-        }
-
-        let enclosed_name = match file.enclosed_name() {
-            Some(path) => path.to_owned(),
-            None => continue,
-        };
-        let file_name = enclosed_name
-            .file_name()
-            .ok_or_else(|| "installer file name is invalid".to_string())?;
-        let out_path = dest_dir.join(file_name);
-
-        let mut out_file = std::fs::File::create(&out_path).map_err(|e| e.to_string())?;
-        std::io::copy(&mut file, &mut out_file).map_err(|e| e.to_string())?;
-
-        exe_path = Some(out_path);
-    }
-
-    exe_path.ok_or_else(|| "no .exe found in update zip".to_string())
+    let exe_name = format!("QwenPaw-Desktop_{version}_x64-setup.exe");
+    let exe_path = dest_dir.join(&exe_name);
+    std::fs::write(&exe_path, bytes).map_err(|e| e.to_string())?;
+    Ok(exe_path)
 }
 
 fn cached_installer_path(updates_dir: &Path, meta: &UpdateMeta) -> PathBuf {

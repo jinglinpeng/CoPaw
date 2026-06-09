@@ -208,6 +208,9 @@ export default function Header() {
     onDesktop && desktop.phase === "installing";
   const isBackgroundFailed =
     onDesktop && desktop.isBackground && desktop.phase === "failed";
+  const backgroundFailureTitle = desktop.error?.message
+    ? `${t(`sidebar.updateModal.backgroundFailed`)}: ${desktop.error.message}`
+    : t(`sidebar.updateModal.backgroundFailed`);
 
   return (
     <>
@@ -306,7 +309,7 @@ export default function Header() {
             </Popover>
           )}
           {isBackgroundFailed && (
-            <Tooltip title={t(`sidebar.updateModal.backgroundFailed`)}>
+            <Tooltip title={backgroundFailureTitle}>
               <ExclamationCircleOutlined
                 style={{
                   marginLeft: 6,

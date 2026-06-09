@@ -12,6 +12,7 @@ Subcommands:
 from __future__ import annotations
 
 import argparse
+import base64
 import json
 import re
 import shutil
@@ -76,6 +77,11 @@ def cmd_stage(args: argparse.Namespace) -> None:
         json.dumps(metadata, indent=2, ensure_ascii=False) + "\n",
         encoding="utf-8",
     )
+    if args.pubkey_config:
+        verify_signature_key_id(
+            signature_path=output.with_suffix(output.suffix + ".sig"),
+            pubkey_config=Path(args.pubkey_config),
+        )
     print(f"staged {output.name} ({args.target}); sidecar {sidecar.name}")
 
 
@@ -98,6 +104,52 @@ def _signature_text(path: Path) -> str:
     if not path.is_file():
         raise SystemExit(f"signature file not found: {path}")
     return path.read_text(encoding="utf-8-sig").strip()
+
+
+def _decode_text_maybe_base64(value: str) -> str:
+    try:
+        decoded = base64.b64decode(value, validate=True).decode("utf-8")
+    except Exception:
+        return value
+    return decoded if "untrusted comment:" in decoded else value
+
+
+def _minisign_key_id(text: str, *, kind: str) -> str:
+    lines = [line.strip() for line in text.strip().splitlines() if line.strip()]
+    if len(lines) < 2:
+        raise SystemExit(f"{kind} is not a valid minisign text block")
+    try:
+        raw = base64.b64decode(lines[1], validate=True)
+    except Exception as err:
+        raise SystemExit(f"{kind} has invalid base64 key/signature data: {err}")
+    if len(raw) < 10:
+        raise SystemExit(f"{kind} minisign data is too short")
+    return raw[2:10].hex()
+
+
+def _pubkey_from_config(config_path: Path) -> str:
+    with config_path.open("r", encoding="utf-8-sig") as f:
+        config = json.load(f)
+    try:
+        pubkey = config["plugins"]["updater"]["pubkey"]
+    except KeyError as err:
+        raise SystemExit(f"{config_path} missing plugins.updater.pubkey: {err}")
+    if not isinstance(pubkey, str) or not pubkey.strip():
+        raise SystemExit(f"{config_path} has an empty plugins.updater.pubkey")
+    return _decode_text_maybe_base64(pubkey.strip())
+
+
+def verify_signature_key_id(signature_path: Path, pubkey_config: Path) -> None:
+    signature_text = _decode_text_maybe_base64(_signature_text(signature_path))
+    pubkey_text = _pubkey_from_config(pubkey_config)
+    signature_key_id = _minisign_key_id(signature_text, kind=str(signature_path))
+    pubkey_key_id = _minisign_key_id(pubkey_text, kind=str(pubkey_config))
+    if signature_key_id != pubkey_key_id:
+        raise SystemExit(
+            "updater signature key id does not match configured pubkey: "
+            f"signature={signature_key_id} pubkey={pubkey_key_id}",
+        )
+    print(f"verified updater signature key id: {signature_key_id}")
 
 
 def cmd_manifest(args: argparse.Namespace) -> None:
@@ -174,6 +226,13 @@ def main() -> None:
         "--output",
         required=True,
         help="Destination artifact path; .sig is staged alongside.",
+    )
+    p_stage.add_argument(
+        "--pubkey-config",
+        help=(
+            "Optional tauri.conf.json path. When provided, fail if the staged "
+            "signature key id does not match plugins.updater.pubkey."
+        ),
     )
     p_stage.set_defaults(func=cmd_stage)
 
