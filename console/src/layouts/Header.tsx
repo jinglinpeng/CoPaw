@@ -204,6 +204,8 @@ export default function Header() {
     desktop.isBackground &&
     (desktop.phase === "checking" || desktop.phase === "downloading");
   const isReady = onDesktop && desktop.phase === "downloaded";
+  const isApplyingDownloadedUpdate =
+    onDesktop && desktop.phase === "installing";
   const isBackgroundFailed =
     onDesktop && desktop.isBackground && desktop.phase === "failed";
 
@@ -246,28 +248,49 @@ export default function Header() {
               </span>
             </Badge>
           )}
-          {isBackgroundActive && (() => {
-            const percent =
-              desktop.phase === "downloading" && desktop.total
-                ? Math.min(99, Math.round((desktop.downloaded / desktop.total) * 100))
-                : undefined;
-            const tooltipText = percent !== undefined
-              ? `${t(`sidebar.updateModal.backgroundDownloading`)} ${percent}%`
-              : t(`sidebar.updateModal.backgroundDownloading`);
-            return (
-              <Tooltip title={tooltipText}>
-                <SyncOutlined spin style={{ marginLeft: 6, fontSize: 14, color: "rgba(255, 157, 77, 1)" }} />
-              </Tooltip>
-            );
-          })()}
+          {isBackgroundActive &&
+            (() => {
+              const percent =
+                desktop.phase === "downloading" && desktop.total
+                  ? Math.min(
+                      99,
+                      Math.round((desktop.downloaded / desktop.total) * 100),
+                    )
+                  : undefined;
+              const tooltipText =
+                percent !== undefined
+                  ? `${t(
+                      `sidebar.updateModal.backgroundDownloading`,
+                    )} ${percent}%`
+                  : t(`sidebar.updateModal.backgroundDownloading`);
+              return (
+                <Tooltip title={tooltipText}>
+                  <SyncOutlined
+                    spin
+                    style={{
+                      marginLeft: 6,
+                      fontSize: 14,
+                      color: "rgba(255, 157, 77, 1)",
+                    }}
+                  />
+                </Tooltip>
+              );
+            })()}
           {isReady && (
             <Popover
               content={
                 <div style={{ textAlign: "center" }}>
                   <p style={{ marginBottom: 12 }}>
-                    {t(`sidebar.updateModal.readyToInstallHint`, { version: desktop.version })}
+                    {t(`sidebar.updateModal.readyToInstallHint`, {
+                      version: desktop.version,
+                    })}
                   </p>
-                  <Button type="primary" size="small" onClick={handleRestartNow}>
+                  <Button
+                    type="primary"
+                    size="small"
+                    onClick={handleRestartNow}
+                    loading={isApplyingDownloadedUpdate}
+                  >
                     {t(`sidebar.updateModal.restartNow`)}
                   </Button>
                 </div>
@@ -276,14 +299,21 @@ export default function Header() {
               trigger="click"
             >
               <Tooltip title={t(`sidebar.updateModal.readyToInstall`)}>
-                <CheckCircleOutlined style={{ marginLeft: 6, fontSize: 14, color: "#52c41a" }} />
+                <CheckCircleOutlined
+                  style={{ marginLeft: 6, fontSize: 14, color: "#52c41a" }}
+                />
               </Tooltip>
             </Popover>
           )}
           {isBackgroundFailed && (
             <Tooltip title={t(`sidebar.updateModal.backgroundFailed`)}>
               <ExclamationCircleOutlined
-                style={{ marginLeft: 6, fontSize: 14, color: "#ff4d4f", cursor: "pointer" }}
+                style={{
+                  marginLeft: 6,
+                  fontSize: 14,
+                  color: "#ff4d4f",
+                  cursor: "pointer",
+                }}
                 onClick={() => void desktop.startBackgroundDownload()}
               />
             </Tooltip>
@@ -353,7 +383,7 @@ export default function Header() {
           <Button key="close" onClick={() => setUpdateModalOpen(false)}>
             {t("common.close")}
           </Button>,
-          onDesktop ? (
+          onDesktop && desktop.supportsLaterInstall ? (
             <Button key="later" onClick={handleUpdateLater}>
               {t("sidebar.updateModal.updateLater")}
             </Button>

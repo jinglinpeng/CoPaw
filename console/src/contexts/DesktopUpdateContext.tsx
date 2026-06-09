@@ -32,6 +32,7 @@ interface ContextValue {
   phase: UpdatePhase;
   isBackground: boolean;
   hasUpdate: boolean;
+  supportsLaterInstall: boolean;
   version: string;
   body: string;
   downloaded: number;
@@ -53,6 +54,7 @@ export function DesktopUpdateProvider({ children }: { children: ReactNode }) {
   const [phase, setPhase] = useState<UpdatePhase>("idle");
   const [isBackground, setIsBackground] = useState(false);
   const [hasUpdate, setHasUpdate] = useState(false);
+  const [supportsLaterInstall, setSupportsLaterInstall] = useState(false);
   const [version, setVersion] = useState("");
   const [body, setBody] = useState("");
   const [downloaded, setDownloaded] = useState(0);
@@ -73,6 +75,7 @@ export function DesktopUpdateProvider({ children }: { children: ReactNode }) {
         if (cancelled || !cachedVersion) return;
         setVersion(cachedVersion);
         setHasUpdate(true);
+        setSupportsLaterInstall(true);
         setPhase("downloaded");
         setIsBackground(true);
       })
@@ -85,6 +88,7 @@ export function DesktopUpdateProvider({ children }: { children: ReactNode }) {
         setVersion((prev) => prev || info.version);
         setBody(info.body?.trim() ?? "");
         setHasUpdate(true);
+        setSupportsLaterInstall(Boolean(info.supportsLaterInstall));
       })
       .catch((err) => {
         console.warn("[updates] desktop update check failed", err);
@@ -119,7 +123,6 @@ export function DesktopUpdateProvider({ children }: { children: ReactNode }) {
       onCheckStart: () => setPhase("checking"),
       onDownloadProgress: handleProgress,
       onInstallStart: () => setPhase("installing"),
-      onExtracting: () => {},
       onDownloadDone: (payload) => {
         setPhase("downloaded");
         setVersion(payload.version);
@@ -138,7 +141,7 @@ export function DesktopUpdateProvider({ children }: { children: ReactNode }) {
     };
   }, [handleProgress]);
 
-  // "Install and Restart" — immediate full takeover path (unchanged).
+  // "Install and Restart" immediate full takeover path.
   const startInstall = useCallback(async () => {
     samplesRef.current = [];
     setIsBackground(false);
@@ -154,14 +157,14 @@ export function DesktopUpdateProvider({ children }: { children: ReactNode }) {
         typeof err === "string"
           ? err
           : err instanceof Error
-            ? err.message
-            : JSON.stringify(err);
+          ? err.message
+          : JSON.stringify(err);
       setPhase("failed");
       setError({ stage: "check", kind: "other", message });
     }
   }, []);
 
-  // "Update Later" — background download + extract, no UI takeover.
+  // "Update Later" background download + extract, no UI takeover.
   const startBackgroundDownload = useCallback(async () => {
     samplesRef.current = [];
     setIsBackground(true);
@@ -177,8 +180,8 @@ export function DesktopUpdateProvider({ children }: { children: ReactNode }) {
         typeof err === "string"
           ? err
           : err instanceof Error
-            ? err.message
-            : JSON.stringify(err);
+          ? err.message
+          : JSON.stringify(err);
       setPhase("failed");
       setError({ stage: "check", kind: "other", message });
     }
@@ -186,6 +189,9 @@ export function DesktopUpdateProvider({ children }: { children: ReactNode }) {
 
   // Install a previously downloaded update (just launches NSIS + exits).
   const installDownloadedFn = useCallback(async () => {
+    setIsBackground(false);
+    setPhase("installing");
+    setError(null);
     try {
       await installDownloadedUpdate();
     } catch (err) {
@@ -193,8 +199,8 @@ export function DesktopUpdateProvider({ children }: { children: ReactNode }) {
         typeof err === "string"
           ? err
           : err instanceof Error
-            ? err.message
-            : JSON.stringify(err);
+          ? err.message
+          : JSON.stringify(err);
       setPhase("failed");
       setIsBackground(false);
       setError({ stage: "install", kind: "other", message });
@@ -212,6 +218,7 @@ export function DesktopUpdateProvider({ children }: { children: ReactNode }) {
       phase,
       isBackground,
       hasUpdate,
+      supportsLaterInstall,
       version,
       body,
       downloaded,
@@ -228,6 +235,7 @@ export function DesktopUpdateProvider({ children }: { children: ReactNode }) {
       phase,
       isBackground,
       hasUpdate,
+      supportsLaterInstall,
       version,
       body,
       downloaded,

@@ -1621,10 +1621,9 @@
       "close": "閉じる",
       "updateLater": "後で更新",
       "backgroundDownloading": "バックグラウンドでダウンロード中…",
-      "backgroundExtracting": "アップデートを展開中...",
-      "readyToInstall": "更新準備完了",
-      "readyToInstallHint": "v{{version}} の準備ができました。再起動して適用します。",
-      "restartNow": "今すぐ再起動",
+      "readyToInstall": "インストーラー準備完了",
+      "readyToInstallHint": "v{{version}} のインストーラーをダウンロードしました。再起動してインストールし、新しいバージョンを起動します。",
+      "restartNow": "インストールして再起動",
       "backgroundFailed": "バックグラウンドダウンロード失敗"
     },
     "settings": {

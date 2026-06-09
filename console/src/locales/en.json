@@ -97,11 +97,10 @@
       "close": "Close",
       "updateLater": "Update Later",
       "backgroundDownloading": "Downloading in background…",
-      "readyToInstall": "Update ready",
-      "readyToInstallHint": "v{{version}} is ready. Restart to apply.",
-      "restartNow": "Restart Now",
-      "backgroundFailed": "Background download failed",
-      "backgroundExtracting": "Extracting update..."
+      "readyToInstall": "Installer ready",
+      "readyToInstallHint": "v{{version}} installer is downloaded. Restart to install and launch the new version.",
+      "restartNow": "Install and Restart",
+      "backgroundFailed": "Background download failed"
     },
     "settings": {
       "language": "Language",

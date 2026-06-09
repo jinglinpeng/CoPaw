@@ -1636,10 +1636,9 @@
       "close": "Закрыть",
       "updateLater": "Обновить позже",
       "backgroundDownloading": "Загрузка в фоновом режиме…",
-      "backgroundExtracting": "Распаковка обновления...",
-      "readyToInstall": "Обновление готово",
-      "readyToInstallHint": "v{{version}} готово. Перезапустите для применения.",
-      "restartNow": "Перезапустить сейчас",
+      "readyToInstall": "Установщик готов",
+      "readyToInstallHint": "Установщик v{{version}} загружен. Перезапустите, чтобы установить и открыть новую версию.",
+      "restartNow": "Установить и перезапустить",
       "backgroundFailed": "Фоновая загрузка не удалась"
     },
     "settings": {

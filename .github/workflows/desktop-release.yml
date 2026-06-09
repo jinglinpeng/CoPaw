@@ -11,7 +11,7 @@ on:
   workflow_dispatch:
     inputs:
       upload_to_oss:
-        description: "Upload to OSS"
+        description: 'Upload to OSS'
         required: false
         type: boolean
         default: false
