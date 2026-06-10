@@ -34,7 +34,6 @@
   },
   "bundle": {
     "active": true,
-    "createUpdaterArtifacts": true,
     "targets": ["app", "nsis"],
     "icon": [
       "../../scripts/pack/assets/icon.icns",
@@ -67,6 +66,7 @@
           "Russian": "nsis-languages/Russian.nsh",
           "PortugueseBR": "nsis-languages/PortugueseBR.nsh"
         },
+        "compression": "zlib",
         "displayLanguageSelector": false
       }
     }

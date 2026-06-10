@@ -82,12 +82,24 @@ function readUpdaterEndpoints(baseUpdater) {
     .filter(Boolean);
 }
 
+function shouldCreateUpdaterArtifacts() {
+  return Boolean(process.env.TAURI_SIGNING_PRIVATE_KEY?.trim());
+}
+
 function writeTauriVersionConfig(file, version) {
   const baseUpdater = readBaseUpdaterConfig();
   const pubkey = process.env.TAURI_UPDATER_PUBKEY?.trim() || baseUpdater.pubkey;
   const endpoints = readUpdaterEndpoints(baseUpdater);
+  const createUpdaterArtifacts = shouldCreateUpdaterArtifacts();
   const config = {
     version,
+    ...(createUpdaterArtifacts
+      ? {
+          bundle: {
+            createUpdaterArtifacts: true,
+          },
+        }
+      : {}),
     plugins: {
       updater: {
         pubkey,
@@ -106,6 +118,11 @@ function writeTauriVersionConfig(file, version) {
   if (process.env.TAURI_UPDATER_ENDPOINTS?.trim()) {
     console.log("Using updater endpoints from TAURI_UPDATER_ENDPOINTS");
   }
+  console.log(
+    createUpdaterArtifacts
+      ? "Creating Tauri updater artifacts"
+      : "Skipping Tauri updater artifacts because TAURI_SIGNING_PRIVATE_KEY is not set",
+  );
 }
 
 const semver = toSemver(readPythonVersion());
