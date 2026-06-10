@@ -391,6 +391,13 @@ def is_pet_desktop_pid(pid: int) -> bool:
         return _is_python_process_name(name) if name else False
 
     # POSIX: check /proc/<pid>/comm
+    # Note: /proc/<pid>/comm may not reflect "python" if the process
+    # called prctl(PR_SET_NAME, ...) to rename itself, or if the
+    # interpreter was invoked via a symlink with a non-standard name
+    # (e.g. "qwenpaw-pet").  In such edge cases we fall back to
+    # _pid_exists_posix(), which only confirms the PID is alive but
+    # cannot verify it belongs to the pet desktop.  This is acceptable
+    # because PID reuse is far less aggressive on Linux than on Windows.
     try:
         comm = (
             Path(f"/proc/{pid}/comm")
@@ -400,6 +407,9 @@ def is_pet_desktop_pid(pid: int) -> bool:
         )
         return "python" in comm
     except OSError:
+        # /proc not available (e.g. macOS, FreeBSD) — fall back to
+        # kill-based existence check.  False positives are possible
+        # but unlikely on POSIX systems with large PID spaces.
         return _pid_exists_posix(pid)
 
 

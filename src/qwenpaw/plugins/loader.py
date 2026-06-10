@@ -192,9 +192,17 @@ class PluginLoader:
     def _version_is_newer(new_ver: str, old_ver: str) -> bool:
         """Return True if *new_ver* is strictly greater than *old_ver*.
 
-        Uses simple tuple comparison of integer version components.
-        Falls back to string comparison if parsing fails.
+        Uses ``packaging.version`` for PEP 440 compliance (handles
+        pre-release, post-release, dev suffixes, etc.).  Falls back
+        to simple tuple comparison if ``packaging`` is unavailable.
         """
+        try:
+            from packaging.version import parse
+
+            return parse(new_ver) > parse(old_ver)
+        except ImportError:
+            pass
+
         try:
             new_parts = tuple(int(x) for x in new_ver.split("."))
             old_parts = tuple(int(x) for x in old_ver.split("."))
