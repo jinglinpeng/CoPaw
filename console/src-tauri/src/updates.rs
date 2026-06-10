@@ -9,6 +9,8 @@ use tauri_plugin_updater::UpdaterExt;
 
 use crate::backend;
 
+const CACHED_UPDATE_INSTALLER_DIR: &str = "cached-update-installer";
+
 #[derive(Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct UpdateMeta {
@@ -140,26 +142,26 @@ async fn run_background_download(app: AppHandle) {
 
     // Persist the downloaded NSIS installer so "Restart Now" only needs to
     // launch it.
-    let updates_dir = match updates_dir(&app) {
+    let cache_dir = match cached_update_installer_dir(&app) {
         Some(d) => d,
         None => return emit_error(&app, "download", &"cannot determine app data directory"),
     };
 
-    if updates_dir.exists() {
-        if let Err(err) = std::fs::remove_dir_all(&updates_dir) {
+    if cache_dir.exists() {
+        if let Err(err) = std::fs::remove_dir_all(&cache_dir) {
             return emit_error(&app, "download", &err);
         }
     }
-    if let Err(err) = std::fs::create_dir_all(&updates_dir) {
+    if let Err(err) = std::fs::create_dir_all(&cache_dir) {
         return emit_error(&app, "download", &err);
     }
 
-    let exe_path = match write_installer(&bytes, &updates_dir, &version) {
+    let exe_path = match write_installer(&bytes, &cache_dir, &version) {
         Ok(path) => path,
         Err(err) => return emit_error(&app, "download", &err),
     };
     let installer_file = match exe_path
-        .strip_prefix(&updates_dir)
+        .strip_prefix(&cache_dir)
         .ok()
         .and_then(|p| p.to_str())
     {
@@ -173,7 +175,7 @@ async fn run_background_download(app: AppHandle) {
         ready_at: now_epoch_seconds(),
         installer_file,
     };
-    let meta_path = updates_dir.join("update-meta.json");
+    let meta_path = cache_dir.join("update-meta.json");
     let meta_json = match serde_json::to_string_pretty(&meta) {
         Ok(json) => json,
         Err(err) => return emit_error(&app, "download", &err),
@@ -197,15 +199,16 @@ pub(crate) fn install_downloaded_update(app: AppHandle) -> Result<(), String> {
         return Err("cached installer updates are only supported on Windows".into());
     }
 
-    let updates_dir = updates_dir(&app).ok_or("cannot determine app data directory")?;
-    let meta_path = updates_dir.join("update-meta.json");
+    let cache_dir =
+        cached_update_installer_dir(&app).ok_or("cannot determine app data directory")?;
+    let meta_path = cache_dir.join("update-meta.json");
 
     let meta_str =
         std::fs::read_to_string(&meta_path).map_err(|e| format!("no cached update found: {e}"))?;
     let meta: UpdateMeta =
         serde_json::from_str(&meta_str).map_err(|e| format!("invalid update meta: {e}"))?;
 
-    let exe_path = cached_installer_path(&updates_dir, &meta);
+    let exe_path = cached_installer_path(&cache_dir, &meta);
     if !exe_path.is_file() {
         return Err("installer exe not found - please download again".into());
     }
@@ -240,12 +243,12 @@ pub(crate) async fn check_cached_update(app: AppHandle) -> Result<Option<String>
         return Ok(None);
     }
 
-    let updates_dir = match updates_dir(&app) {
+    let cache_dir = match cached_update_installer_dir(&app) {
         Some(d) => d,
         None => return Ok(None),
     };
 
-    let meta_path = updates_dir.join("update-meta.json");
+    let meta_path = cache_dir.join("update-meta.json");
     if !meta_path.exists() {
         return Ok(None);
     }
@@ -253,7 +256,7 @@ pub(crate) async fn check_cached_update(app: AppHandle) -> Result<Option<String>
     let meta_str = match std::fs::read_to_string(&meta_path) {
         Ok(s) => s,
         Err(_) => {
-            let _ = std::fs::remove_dir_all(&updates_dir);
+            let _ = std::fs::remove_dir_all(&cache_dir);
             return Ok(None);
         }
     };
@@ -261,7 +264,7 @@ pub(crate) async fn check_cached_update(app: AppHandle) -> Result<Option<String>
     let meta: UpdateMeta = match serde_json::from_str(&meta_str) {
         Ok(m) => m,
         Err(_) => {
-            let _ = std::fs::remove_dir_all(&updates_dir);
+            let _ = std::fs::remove_dir_all(&cache_dir);
             return Ok(None);
         }
     };
@@ -275,24 +278,24 @@ pub(crate) async fn check_cached_update(app: AppHandle) -> Result<Option<String>
             meta.version,
             current_version
         );
-        let _ = std::fs::remove_dir_all(&updates_dir);
+        let _ = std::fs::remove_dir_all(&cache_dir);
         return Ok(None);
     }
 
     // Verify the installer exe exists.
-    if !cached_installer_path(&updates_dir, &meta).is_file() {
-        let _ = std::fs::remove_dir_all(&updates_dir);
+    if !cached_installer_path(&cache_dir, &meta).is_file() {
+        let _ = std::fs::remove_dir_all(&cache_dir);
         return Ok(None);
     }
 
     Ok(Some(meta.version))
 }
 
-fn updates_dir(app: &AppHandle) -> Option<PathBuf> {
+fn cached_update_installer_dir(app: &AppHandle) -> Option<PathBuf> {
     app.path()
         .app_local_data_dir()
         .ok()
-        .map(|p| p.join("updates"))
+        .map(|p| p.join(CACHED_UPDATE_INSTALLER_DIR))
 }
 
 fn write_installer(bytes: &[u8], dest_dir: &Path, version: &str) -> Result<PathBuf, String> {
@@ -306,8 +309,8 @@ fn write_installer(bytes: &[u8], dest_dir: &Path, version: &str) -> Result<PathB
     Ok(exe_path)
 }
 
-fn cached_installer_path(updates_dir: &Path, meta: &UpdateMeta) -> PathBuf {
-    updates_dir.join(&meta.installer_file)
+fn cached_installer_path(cache_dir: &Path, meta: &UpdateMeta) -> PathBuf {
+    cache_dir.join(&meta.installer_file)
 }
 
 async fn download_update(
