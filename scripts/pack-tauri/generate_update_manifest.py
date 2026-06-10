@@ -115,13 +115,17 @@ def _decode_text_maybe_base64(value: str) -> str:
 
 
 def _minisign_key_id(text: str, *, kind: str) -> str:
-    lines = [line.strip() for line in text.strip().splitlines() if line.strip()]
+    lines = [
+        line.strip() for line in text.strip().splitlines() if line.strip()
+    ]
     if len(lines) < 2:
         raise SystemExit(f"{kind} is not a valid minisign text block")
     try:
         raw = base64.b64decode(lines[1], validate=True)
     except Exception as err:
-        raise SystemExit(f"{kind} has invalid base64 key/signature data: {err}")
+        raise SystemExit(
+            f"{kind} has invalid base64 key/signature data: {err}",
+        ) from err
     if len(raw) < 10:
         raise SystemExit(f"{kind} minisign data is too short")
     return raw[2:10].hex()
@@ -133,7 +137,9 @@ def _pubkey_from_config(config_path: Path) -> str:
     try:
         pubkey = config["plugins"]["updater"]["pubkey"]
     except KeyError as err:
-        raise SystemExit(f"{config_path} missing plugins.updater.pubkey: {err}")
+        raise SystemExit(
+            f"{config_path} missing plugins.updater.pubkey: {err}",
+        ) from err
     if not isinstance(pubkey, str) or not pubkey.strip():
         raise SystemExit(f"{config_path} has an empty plugins.updater.pubkey")
     return _decode_text_maybe_base64(pubkey.strip())
@@ -142,7 +148,10 @@ def _pubkey_from_config(config_path: Path) -> str:
 def verify_signature_key_id(signature_path: Path, pubkey_config: Path) -> None:
     signature_text = _decode_text_maybe_base64(_signature_text(signature_path))
     pubkey_text = _pubkey_from_config(pubkey_config)
-    signature_key_id = _minisign_key_id(signature_text, kind=str(signature_path))
+    signature_key_id = _minisign_key_id(
+        signature_text,
+        kind=str(signature_path),
+    )
     pubkey_key_id = _minisign_key_id(pubkey_text, kind=str(pubkey_config))
     if signature_key_id != pubkey_key_id:
         raise SystemExit(

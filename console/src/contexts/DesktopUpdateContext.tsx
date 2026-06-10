@@ -50,6 +50,12 @@ const DesktopUpdateContext = createContext<ContextValue | null>(null);
 
 const THROUGHPUT_WINDOW_MS = 5_000;
 
+function toErrorMessage(err: unknown): string {
+  if (typeof err === "string") return err;
+  if (err instanceof Error) return err.message;
+  return JSON.stringify(err);
+}
+
 export function DesktopUpdateProvider({ children }: { children: ReactNode }) {
   const [phase, setPhase] = useState<UpdatePhase>("idle");
   const [isBackground, setIsBackground] = useState(false);
@@ -153,14 +159,8 @@ export function DesktopUpdateProvider({ children }: { children: ReactNode }) {
     try {
       await installDesktopUpdate();
     } catch (err) {
-      const message =
-        typeof err === "string"
-          ? err
-          : err instanceof Error
-          ? err.message
-          : JSON.stringify(err);
       setPhase("failed");
-      setError({ stage: "check", kind: "other", message });
+      setError({ stage: "check", kind: "other", message: toErrorMessage(err) });
     }
   }, []);
 
@@ -176,14 +176,8 @@ export function DesktopUpdateProvider({ children }: { children: ReactNode }) {
     try {
       await downloadDesktopUpdate();
     } catch (err) {
-      const message =
-        typeof err === "string"
-          ? err
-          : err instanceof Error
-          ? err.message
-          : JSON.stringify(err);
       setPhase("failed");
-      setError({ stage: "check", kind: "other", message });
+      setError({ stage: "check", kind: "other", message: toErrorMessage(err) });
     }
   }, []);
 
@@ -195,15 +189,13 @@ export function DesktopUpdateProvider({ children }: { children: ReactNode }) {
     try {
       await installDownloadedUpdate();
     } catch (err) {
-      const message =
-        typeof err === "string"
-          ? err
-          : err instanceof Error
-          ? err.message
-          : JSON.stringify(err);
       setPhase("failed");
       setIsBackground(false);
-      setError({ stage: "install", kind: "other", message });
+      setError({
+        stage: "install",
+        kind: "other",
+        message: toErrorMessage(err),
+      });
     }
   }, []);
 

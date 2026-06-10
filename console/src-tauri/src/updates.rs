@@ -3,6 +3,7 @@
 use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 
+use semver::Version;
 use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Emitter, Manager};
 use tauri_plugin_updater::UpdaterExt;
@@ -54,24 +55,8 @@ pub(crate) fn install_desktop_update(app: AppHandle) -> Result<(), String> {
 async fn run_install(app: AppHandle) {
     emit(&app, "update:check-start", &serde_json::json!({}));
 
-    let update = match app
-        .updater_builder()
-        .on_before_exit({
-            let app = app.clone();
-            move || {
-                backend::stop(&app);
-                app.cleanup_before_exit();
-            }
-        })
-        .build()
-    {
-        Ok(b) => b,
-        Err(err) => return emit_error(&app, "check", &err),
-    };
-
-    let update = match update.check().await {
-        Ok(Some(u)) => u,
-        Ok(None) => return emit_error(&app, "check", &"no desktop update available"),
+    let update = match check_installable_update(&app).await {
+        Ok(update) => update,
         Err(err) => return emit_error(&app, "check", &err),
     };
 
@@ -111,24 +96,8 @@ pub(crate) fn download_desktop_update(app: AppHandle) -> Result<(), String> {
 async fn run_background_download(app: AppHandle) {
     emit(&app, "update:check-start", &serde_json::json!({}));
 
-    let updater = match app
-        .updater_builder()
-        .on_before_exit({
-            let app = app.clone();
-            move || {
-                backend::stop(&app);
-                app.cleanup_before_exit();
-            }
-        })
-        .build()
-    {
-        Ok(b) => b,
-        Err(err) => return emit_error(&app, "check", &err),
-    };
-
-    let update = match updater.check().await {
-        Ok(Some(u)) => u,
-        Ok(None) => return emit_error(&app, "check", &"no desktop update available"),
+    let update = match check_installable_update(&app).await {
+        Ok(update) => update,
         Err(err) => return emit_error(&app, "check", &err),
     };
 
@@ -199,14 +168,23 @@ pub(crate) fn install_downloaded_update(app: AppHandle) -> Result<(), String> {
         return Err("cached installer updates are only supported on Windows".into());
     }
 
+    let started = Instant::now();
+    log::info!("[updates] cached installer install requested");
+
     let cache_dir =
         cached_update_installer_dir(&app).ok_or("cannot determine app data directory")?;
     let meta_path = cache_dir.join("update-meta.json");
 
+    let load_started = Instant::now();
     let meta_str =
         std::fs::read_to_string(&meta_path).map_err(|e| format!("no cached update found: {e}"))?;
     let meta: UpdateMeta =
         serde_json::from_str(&meta_str).map_err(|e| format!("invalid update meta: {e}"))?;
+    log::info!(
+        "[updates] cached installer metadata loaded elapsed_ms={} total_elapsed_ms={}",
+        load_started.elapsed().as_millis(),
+        started.elapsed().as_millis()
+    );
 
     let exe_path = cached_installer_path(&cache_dir, &meta);
     if !exe_path.is_file() {
@@ -219,21 +197,40 @@ pub(crate) fn install_downloaded_update(app: AppHandle) -> Result<(), String> {
         exe_path.display(),
     );
 
+    let stop_started = Instant::now();
     backend::stop(&app);
+    log::info!(
+        "[updates] backend stop requested elapsed_ms={} total_elapsed_ms={}",
+        stop_started.elapsed().as_millis(),
+        started.elapsed().as_millis()
+    );
 
     emit(&app, "update:install-start", &serde_json::json!({}));
 
     // Launch the NSIS installer in the same updater mode Tauri uses for
     // passive Windows installs, while skipping QwenPaw's optional PATH prompt.
-    std::process::Command::new(&exe_path)
+    let spawn_started = Instant::now();
+    let child = std::process::Command::new(&exe_path)
         .arg("/P")
         .arg("/R")
         .arg("/UPDATE")
         .arg("/NO_QWENPAW_PATH")
         .spawn()
         .map_err(|e| format!("failed to launch installer: {e}"))?;
+    log::info!(
+        "[updates] installer process spawned pid={} elapsed_ms={} total_elapsed_ms={}",
+        child.id(),
+        spawn_started.elapsed().as_millis(),
+        started.elapsed().as_millis()
+    );
 
+    let cleanup_started = Instant::now();
     app.cleanup_before_exit();
+    log::info!(
+        "[updates] app cleanup before exit complete elapsed_ms={} total_elapsed_ms={}",
+        cleanup_started.elapsed().as_millis(),
+        started.elapsed().as_millis()
+    );
     std::process::exit(0);
 }
 
@@ -313,6 +310,26 @@ fn cached_installer_path(cache_dir: &Path, meta: &UpdateMeta) -> PathBuf {
     cache_dir.join(&meta.installer_file)
 }
 
+async fn check_installable_update(app: &AppHandle) -> Result<tauri_plugin_updater::Update, String> {
+    let updater = app
+        .updater_builder()
+        .on_before_exit({
+            let app = app.clone();
+            move || {
+                backend::stop(&app);
+                app.cleanup_before_exit();
+            }
+        })
+        .build()
+        .map_err(|err| err.to_string())?;
+
+    updater
+        .check()
+        .await
+        .map_err(|err| err.to_string())?
+        .ok_or_else(|| "no desktop update available".to_string())
+}
+
 async fn download_update(
     app: &AppHandle,
     update: &tauri_plugin_updater::Update,
@@ -360,15 +377,19 @@ async fn download_update(
 }
 
 fn version_lte(a: &str, b: &str) -> bool {
-    let parse = |v: &str| -> Vec<u64> {
-        v.trim_start_matches('v')
-            .split('.')
-            .filter_map(|s| s.parse().ok())
-            .collect()
-    };
-    let va = parse(a);
-    let vb = parse(b);
-    va <= vb
+    let a = a.trim_start_matches('v');
+    let b = b.trim_start_matches('v');
+    match (Version::parse(a), Version::parse(b)) {
+        (Ok(va), Ok(vb)) => va <= vb,
+        (Err(err), _) => {
+            log::warn!("[updates] cannot parse cached update version {a}: {err}");
+            false
+        }
+        (_, Err(err)) => {
+            log::warn!("[updates] cannot parse current app version {b}: {err}");
+            false
+        }
+    }
 }
 
 fn now_epoch_seconds() -> String {
