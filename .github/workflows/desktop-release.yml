@@ -342,6 +342,7 @@ jobs:
     runs-on: ubuntu-latest
     env:
       OSS_BUCKET: ${{ vars.OSS_BUCKET || 'qwenpaw-download' }}
+      OSS_PUBLIC_BASE_URL: ${{ vars.OSS_PUBLIC_BASE_URL || 'https://download.qwenpaw.agentscope.io/files/apps/desktop' }}
     steps:
       - name: Checkout (for scripts)
         uses: actions/checkout@v4
@@ -564,7 +565,7 @@ jobs:
           RELEASE_BODY: ${{ github.event.release.body }}
         run: |
           VERSION="${{ steps.version.outputs.version }}"
-          OSS_BASE="https://download.qwenpaw.agentscope.io/files/apps/desktop"
+          OSS_BASE="${OSS_PUBLIC_BASE_URL%/}"
           metadata_args=()
           for f in tauri-updater-meta-windows/tauri-windows-*-updater.json \
                    tauri-updater-meta-macos/tauri-darwin-*-updater.json; do
