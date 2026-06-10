@@ -121,7 +121,9 @@ def _minisign_key_id(text: str, *, kind: str) -> str:
     try:
         raw = base64.b64decode(lines[1], validate=True)
     except Exception as err:
-        raise SystemExit(f"{kind} has invalid base64 key/signature data: {err}")
+        raise SystemExit(
+            f"{kind} has invalid base64 key/signature data: {err}"
+        ) from err
     if len(raw) < 10:
         raise SystemExit(f"{kind} minisign data is too short")
     return raw[2:10].hex()
@@ -133,7 +135,9 @@ def _pubkey_from_config(config_path: Path) -> str:
     try:
         pubkey = config["plugins"]["updater"]["pubkey"]
     except KeyError as err:
-        raise SystemExit(f"{config_path} missing plugins.updater.pubkey: {err}")
+        raise SystemExit(
+            f"{config_path} missing plugins.updater.pubkey: {err}"
+        ) from err
     if not isinstance(pubkey, str) or not pubkey.strip():
         raise SystemExit(f"{config_path} has an empty plugins.updater.pubkey")
     return _decode_text_maybe_base64(pubkey.strip())

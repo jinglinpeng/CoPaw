@@ -4,6 +4,7 @@ param(
 )
 
 $ErrorActionPreference = "SilentlyContinue"
+$Stopwatch = [System.Diagnostics.Stopwatch]::StartNew()
 
 try {
   $installRoot = [System.IO.Path]::GetFullPath($InstallDir).TrimEnd("\") + "\"
@@ -39,8 +40,16 @@ foreach ($processId in $processIds) {
   Stop-Process -Id $processId -Force
 }
 
+$timedOut = $false
 if ($processIds.Count -gt 0) {
-  Wait-Process -Id $processIds -Timeout 8
+  try {
+    Wait-Process -Id $processIds -Timeout 8 -ErrorAction Stop
+  } catch {
+    $timedOut = $true
+  }
 }
+
+$Stopwatch.Stop()
+Write-Output "QwenPaw backend sidecar stop: matched=$($processIds.Count) timed_out=$timedOut elapsed_ms=$($Stopwatch.ElapsedMilliseconds)"
 
 exit 0

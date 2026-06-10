@@ -93,9 +93,16 @@ FunctionEnd
   ; permanently changed.
   InitPluginsDir
   File /oname=$PLUGINSDIR\qwenpaw-stop-backend-sidecar.ps1 "..\..\..\..\nsis\stop-backend-sidecar.ps1"
+  DetailPrint "Stopping QwenPaw backend sidecar"
   nsExec::ExecToStack `powershell.exe -NoProfile -ExecutionPolicy Bypass -File "$PLUGINSDIR\qwenpaw-stop-backend-sidecar.ps1" -InstallDir "$INSTDIR"`
   Pop $0
   Pop $1
+  ${If} $1 != ""
+    DetailPrint "$1"
+  ${EndIf}
+  ${If} $0 != 0
+    DetailPrint "QwenPaw backend sidecar stop script exited with code $0"
+  ${EndIf}
 !macroend
 
 !macro NSIS_HOOK_PREINSTALL
