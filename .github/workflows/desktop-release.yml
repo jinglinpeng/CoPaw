@@ -80,6 +80,7 @@ jobs:
           path: packed-env-artifact/**
           include-hidden-files: true
           if-no-files-found: error
+          retention-days: 1
 
   build-windows:
     needs: build-env-windows
@@ -198,6 +199,7 @@ jobs:
           name: QwenPaw-Packed-Env-macOS
           path: packed-env-artifact/**
           if-no-files-found: error
+          retention-days: 1
 
   build-macos:
     needs: build-env-macos
@@ -388,8 +390,10 @@ jobs:
     permissions:
       contents: write
     steps:
-      - name: Download all artifacts
+      - name: Download desktop artifacts
         uses: actions/download-artifact@v4
+        with:
+          pattern: QwenPaw-Desktop-*
 
       - name: Move artifacts to root for upload
         run: |
@@ -428,8 +432,10 @@ jobs:
         id: version
         run: echo "version=$(sed -n 's/^__version__[[:space:]]*=[[:space:]]*"\([^"]*\)".*/\1/p' src/qwenpaw/__version__.py)" >> $GITHUB_OUTPUT
 
-      - name: Download all artifacts
+      - name: Download desktop artifacts
         uses: actions/download-artifact@v4
+        with:
+          pattern: QwenPaw-Desktop-*
 
       - name: Install ossutil
         run: |
