@@ -37,7 +37,6 @@ class PluginLoader:
         self.registry = PluginRegistry()
         self._loaded_plugins: Dict[str, PluginRecord] = {}
         self._inject_bundled_site_packages()
-        self._sync_bundled_plugins()
 
     @staticmethod
     def _inject_bundled_site_packages() -> None:
@@ -51,7 +50,9 @@ class PluginLoader:
         This is a no-op when not in a frozen environment or when the
         bundled Python directory does not exist.
         """
-        if not (getattr(sys, "frozen", False) or hasattr(sys, "_MEIPASS")):
+        from ..utils.frozen_env import is_frozen_environment
+
+        if not is_frozen_environment():
             return
         try:
             from .bundled_python import get_bundled_site_packages
@@ -85,7 +86,7 @@ class PluginLoader:
         - The ``bundled-plugins/`` directory does not exist
         - No plugin directories are configured
         """
-        if not (getattr(sys, "frozen", False) or hasattr(sys, "_MEIPASS")):
+        if not self._is_frozen_environment():
             return
 
         try:
@@ -197,10 +198,10 @@ class PluginLoader:
         to simple tuple comparison if ``packaging`` is unavailable.
         """
         try:
-            from packaging.version import parse
+            from packaging.version import InvalidVersion, parse
 
             return parse(new_ver) > parse(old_ver)
-        except ImportError:
+        except (ImportError, InvalidVersion):
             pass
 
         try:
@@ -319,14 +320,10 @@ class PluginLoader:
 
     @staticmethod
     def _is_frozen_environment() -> bool:
-        """Return True when running inside a PyInstaller / frozen bundle.
+        """Return True when running inside a PyInstaller / frozen bundle."""
+        from ..utils.frozen_env import is_frozen_environment
 
-        In a frozen environment ``pip install`` cannot modify the
-        bundled site-packages, so dependency installation must be
-        skipped.  Plugins whose dependencies were pre-bundled into the
-        PyInstaller spec will still load normally.
-        """
-        return getattr(sys, "frozen", False) or hasattr(sys, "_MEIPASS")
+        return is_frozen_environment()
 
     async def _ensure_dependencies_installed(
         self,
@@ -576,6 +573,11 @@ class PluginLoader:
         Returns:
             Dictionary of plugin_id -> PluginRecord
         """
+        # Sync bundled plugins before discovery — runs in a thread
+        # to avoid blocking the event loop when the bundled-plugins
+        # directory is large.
+        await asyncio.to_thread(self._sync_bundled_plugins)
+
         discovered = self.discover_plugins()
 
         for manifest, plugin_dir in discovered:

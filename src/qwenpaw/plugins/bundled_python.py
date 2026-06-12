@@ -23,7 +23,9 @@ _searched = False
 
 
 def _is_frozen() -> bool:
-    return getattr(sys, "frozen", False) or hasattr(sys, "_MEIPASS")
+    from ..utils.frozen_env import is_frozen_environment
+
+    return is_frozen_environment()
 
 
 def get_bundled_python_dir() -> Path | None:

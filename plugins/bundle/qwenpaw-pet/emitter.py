@@ -45,13 +45,14 @@ _SPAWN_LOCK = threading.RLock()
 
 
 def _is_frozen_environment() -> bool:
-    """Return True when running inside a PyInstaller / frozen bundle.
+    """Return True when running inside a PyInstaller / frozen bundle."""
+    try:
+        from qwenpaw.utils.frozen_env import is_frozen_environment
 
-    In a frozen environment ``sys.executable`` is the bundled exe, not a
-    regular Python interpreter — ``python -m qwenpaw_pet_desktop.app``
-    cannot work because PySide6 is not bundled.
-    """
-    return getattr(sys, "frozen", False) or hasattr(sys, "_MEIPASS")
+        return is_frozen_environment()
+    except ImportError:
+        # Standalone execution outside the host package.
+        return getattr(sys, "frozen", False) or hasattr(sys, "_MEIPASS")
 
 
 # Cache: ``None`` = not searched yet, ``""`` = searched but not found.
