@@ -620,7 +620,7 @@ class PluginLoader:
                 f"Copied plugin '{plugin_id}' to {target_dir}",
             )
 
-        # Install Python dependencies (skipped in frozen/packaged envs)
+        # Install Python dependencies into the current QwenPaw interpreter.
         await self._ensure_dependencies_installed(target_dir, plugin_id)
 
         # Re-read manifest from the installed location so that
