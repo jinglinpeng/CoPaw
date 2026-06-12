@@ -57,6 +57,8 @@ jobs:
 
       - name: Build Windows packed env archive
         shell: pwsh
+        env:
+          NODE_OPTIONS: "--max-old-space-size=8192"
         run: |
           conda run -n qwenpaw-build pwsh -File ./scripts/wheel_build.ps1
           conda run -n qwenpaw-build python ./scripts/pack/build_common.py --output dist/qwenpaw-env.zip --format zip --cache-wheels
@@ -179,6 +181,8 @@ jobs:
         run: rm -rf dist packed-env-artifact && mkdir -p dist
 
       - name: Build macOS packed env archive
+        env:
+          NODE_OPTIONS: "--max-old-space-size=8192"
         run: |
           conda run -n qwenpaw-build bash scripts/wheel_build.sh
           conda run -n qwenpaw-build python scripts/pack/build_common.py --output dist/qwenpaw-env.tar.gz --format tar.gz
