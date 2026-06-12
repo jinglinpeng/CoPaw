@@ -266,6 +266,14 @@ def _tasklist_has_no_matching_pid(stdout: str) -> bool:
 
 
 def _pid_exists_win32(pid: int) -> bool:
+    """Return whether *pid* is still running on Windows.
+
+    Uses ``tasklist /fi`` to query the process table without requiring
+    elevated privileges.  On any error (tasklist not found, timeout,
+    permission denied) returns ``True`` so that downstream callers such
+    as ``terminate_process_tree`` still attempt a ``taskkill`` rather
+    than silently skipping a live process.
+    """
     try:
         result = subprocess.run(
             ["tasklist", "/fi", f"PID eq {pid}", "/fo", "csv", "/nh"],
@@ -299,6 +307,14 @@ def _pid_exists_win32(pid: int) -> bool:
 
 
 def _pid_exists_posix(pid: int) -> bool:
+    """Return whether *pid* is still running on POSIX systems.
+
+    Sends signal 0 to *pid* via ``os.kill``, which performs the kernel
+    permission check without delivering an actual signal:
+    - ``ProcessLookupError`` (ESRCH) → process does not exist → False
+    - ``PermissionError`` (EPERM)  → process exists, we lack permission → True
+    - Any other ``OSError``        → treat as not running → False
+    """
     try:
         os.kill(pid, 0)
     except ProcessLookupError:
