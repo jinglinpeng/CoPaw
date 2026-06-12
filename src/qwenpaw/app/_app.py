@@ -356,8 +356,7 @@ async def lifespan(  # pylint: disable=too-many-statements,too-many-branches
                 cfg = load_config(get_config_path())
                 plugin_cfgs = cfg.plugins if hasattr(cfg, "plugins") else {}
                 logger.debug(
-                    f"Loading plugins with "
-                    f"{len(plugin_cfgs)} config(s)",
+                    f"Loading plugins with " f"{len(plugin_cfgs)} config(s)",
                 )
                 loaded = await loader.load_all_plugins(
                     configs=plugin_cfgs,
