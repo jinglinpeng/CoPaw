@@ -111,7 +111,7 @@ make check-contracts  # 应显示你的 Channel 在已测试列表
 """YourChannel 实现的单元测试。"""
 
 import pytest
-from src.copaw.app.channels.your_channel import YourChannel
+from src.qwenpaw.app.channels.your_channel import YourChannel
 
 
 class TestYourChannel:

@@ -59,7 +59,7 @@ from tests.contract.channels import ChannelContractTest
 
 class TestSlackChannelContract(ChannelContractTest):
     def create_instance(self):
-        from src.copaw.app.channels.slack.channel import SlackChannel
+        from src.qwenpaw.app.channels.slack.channel import SlackChannel
         return SlackChannel(process=mock_process, ...)
 
     # Optional: Slack-specific contracts
@@ -95,7 +95,7 @@ pytest tests/contract/ -v
 | **Error Location** | Precise: Subclass X missing method Y | Vague: DingTalk send failed |
 | **Base Class Changes** | ✅ Auto-detect breakage | ⚠️ Probabilistic detection |
 
-## Current Status
+## Current Coverage Status
 
 | Component | Status |
 |-----------|--------|

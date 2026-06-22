@@ -112,7 +112,7 @@ Create a new test file following the existing pattern:
 """Unit tests for YourChannel implementation."""
 
 import pytest
-from src.copaw.app.channels.your_channel import YourChannel
+from src.qwenpaw.app.channels.your_channel import YourChannel
 
 
 class TestYourChannel:
