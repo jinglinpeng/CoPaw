@@ -95,7 +95,6 @@
         "signature": "Update file signature invalid. Try downloading again.",
         "other": "Update failed."
       },
-      "close": "Close",
       "updateLater": "Update Later",
       "backgroundDownloading": "Downloading in background…",
       "readyToInstall": "Installer ready",

@@ -1825,7 +1825,6 @@
         "signature": "Assinatura do arquivo de atualização inválida. Tente baixar novamente.",
         "other": "Falha na atualização."
       },
-      "close": "Fechar",
       "updateLater": "Atualizar Depois",
       "backgroundDownloading": "Baixando em segundo plano…",
       "readyToInstall": "Instalador pronto",
