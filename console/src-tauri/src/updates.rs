@@ -1,10 +1,14 @@
 //! Tauri commands for desktop auto-updates via tauri-plugin-updater.
 
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::{Duration, Instant};
 
+use base64::Engine;
+use minisign_verify::{PublicKey, Signature};
 use semver::Version;
 use serde::{Deserialize, Serialize};
+use sha2::{Digest, Sha256};
 use tauri::{AppHandle, Emitter, Manager};
 use tauri_plugin_updater::UpdaterExt;
 
@@ -12,12 +16,49 @@ use crate::backend;
 
 const CACHED_UPDATE_INSTALLER_DIR: &str = "cached-update-installer";
 
+/// Guards against concurrent update operations (check/download/install). Each
+/// of the public commands acquires this before spawning work and releases it
+/// when the work finishes, so repeated clicks can't race on the cache dir.
+static UPDATE_IN_FLIGHT: AtomicBool = AtomicBool::new(false);
+
+/// RAII token: holding it means an update operation is in flight; dropping it
+/// (including on early returns / errors) clears the flag.
+struct InFlightGuard;
+
+impl InFlightGuard {
+    fn try_acquire() -> Option<Self> {
+        UPDATE_IN_FLIGHT
+            .compare_exchange(false, true, Ordering::AcqRel, Ordering::Acquire)
+            .ok()
+            .map(|_| InFlightGuard)
+    }
+}
+
+impl Drop for InFlightGuard {
+    fn drop(&mut self) {
+        UPDATE_IN_FLIGHT.store(false, Ordering::Release);
+    }
+}
+
+fn begin_update() -> Result<InFlightGuard, String> {
+    InFlightGuard::try_acquire()
+        .ok_or_else(|| "an update operation is already in progress".to_string())
+}
+
 #[derive(Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct UpdateMeta {
     version: String,
-    ready_at: String,
     installer_file: String,
+    /// Base64 minisign signature string from the update manifest (same value
+    /// `tauri-plugin-updater` verifies at download time). Re-verified before
+    /// the cached installer is launched.
+    #[serde(default)]
+    signature: String,
+    /// Hex SHA-256 of the persisted installer bytes, for a fast corruption
+    /// check before the (more expensive) signature verification.
+    #[serde(default)]
+    sha256: String,
 }
 
 #[derive(Serialize)]
@@ -46,7 +87,9 @@ pub(crate) async fn check_desktop_update(app: AppHandle) -> Result<Option<Deskto
 
 #[tauri::command]
 pub(crate) fn install_desktop_update(app: AppHandle) -> Result<(), String> {
+    let guard = begin_update()?;
     tauri::async_runtime::spawn(async move {
+        let _guard = guard;
         run_install(app).await;
     });
     Ok(())
@@ -56,8 +99,9 @@ async fn run_install(app: AppHandle) {
     emit(&app, "update:check-start", &serde_json::json!({}));
 
     let update = match check_installable_update(&app).await {
-        Ok(update) => update,
-        Err(err) => return emit_error(&app, "check", &err),
+        Ok(Some(update)) => update,
+        Ok(None) => return emit_error(&app, "check", &"no desktop update available"),
+        Err(err) => return emit_updater_error(&app, "check", &err),
     };
 
     let version = update.version.clone();
@@ -65,14 +109,14 @@ async fn run_install(app: AppHandle) {
 
     let bytes = match download_update(&app, &update).await {
         Ok(b) => b,
-        Err(err) => return emit_error(&app, "download", &err),
+        Err(err) => return emit_updater_error(&app, "download", &err),
     };
 
     log::info!("[updates] installing desktop update version={version}");
     emit(&app, "update:install-start", &serde_json::json!({}));
 
     if let Err(err) = update.install(bytes) {
-        return emit_error(&app, "install", &err);
+        return emit_updater_error(&app, "install", &err);
     }
 
     backend::stop(&app);
@@ -87,7 +131,9 @@ pub(crate) fn download_desktop_update(app: AppHandle) -> Result<(), String> {
         );
     }
 
+    let guard = begin_update()?;
     tauri::async_runtime::spawn(async move {
+        let _guard = guard;
         run_background_download(app).await;
     });
     Ok(())
@@ -97,17 +143,21 @@ async fn run_background_download(app: AppHandle) {
     emit(&app, "update:check-start", &serde_json::json!({}));
 
     let update = match check_installable_update(&app).await {
-        Ok(update) => update,
-        Err(err) => return emit_error(&app, "check", &err),
+        Ok(Some(update)) => update,
+        Ok(None) => return emit_error(&app, "check", &"no desktop update available"),
+        Err(err) => return emit_updater_error(&app, "check", &err),
     };
 
     let version = update.version.clone();
+    let signature = update.signature.clone();
     log::info!("[updates] background download starting version={version}");
 
     let bytes = match download_update(&app, &update).await {
         Ok(b) => b,
-        Err(err) => return emit_error(&app, "download", &err),
+        Err(err) => return emit_updater_error(&app, "download", &err),
     };
+
+    let sha256 = sha256_hex(&bytes);
 
     // Persist the downloaded NSIS installer so "Restart Now" only needs to
     // launch it.
@@ -141,8 +191,9 @@ async fn run_background_download(app: AppHandle) {
     // Write metadata.
     let meta = UpdateMeta {
         version: version.clone(),
-        ready_at: now_epoch_seconds(),
         installer_file,
+        signature,
+        sha256,
     };
     let meta_path = cache_dir.join("update-meta.json");
     let meta_json = match serde_json::to_string_pretty(&meta) {
@@ -168,6 +219,7 @@ pub(crate) fn install_downloaded_update(app: AppHandle) -> Result<(), String> {
         return Err("cached installer updates are only supported on Windows".into());
     }
 
+    let _guard = begin_update()?;
     let started = Instant::now();
     log::info!("[updates] cached installer install requested");
 
@@ -190,6 +242,25 @@ pub(crate) fn install_downloaded_update(app: AppHandle) -> Result<(), String> {
     if !exe_path.is_file() {
         return Err("installer exe not found - please download again".into());
     }
+
+    // The cached installer lives in a user-writable directory, so "verified at
+    // download time" is not enough: re-verify the on-disk bytes against the
+    // configured updater public key right before launch (mirrors what
+    // tauri-plugin-updater does before a foreground install). Any tampering or
+    // corruption fails here and the stale cache is dropped.
+    let verify_started = Instant::now();
+    let bytes =
+        std::fs::read(&exe_path).map_err(|e| format!("cannot read cached installer: {e}"))?;
+    if let Err(err) = verify_cached_installer(&app, &meta, &bytes) {
+        let _ = std::fs::remove_dir_all(&cache_dir);
+        log::warn!("[updates] cached installer verification failed: {err}");
+        return Err(err);
+    }
+    log::info!(
+        "[updates] cached installer verified elapsed_ms={} total_elapsed_ms={}",
+        verify_started.elapsed().as_millis(),
+        started.elapsed().as_millis()
+    );
 
     log::info!(
         "[updates] launching installer version={} exe={}",
@@ -310,7 +381,67 @@ fn cached_installer_path(cache_dir: &Path, meta: &UpdateMeta) -> PathBuf {
     cache_dir.join(&meta.installer_file)
 }
 
-async fn check_installable_update(app: &AppHandle) -> Result<tauri_plugin_updater::Update, String> {
+fn sha256_hex(bytes: &[u8]) -> String {
+    let digest = Sha256::digest(bytes);
+    let mut out = String::with_capacity(digest.len() * 2);
+    for byte in digest {
+        use std::fmt::Write;
+        let _ = write!(out, "{byte:02x}");
+    }
+    out
+}
+
+/// Read the updater public key from the (build-injected) Tauri config so we can
+/// verify cached installers with the exact key the plugin uses.
+fn updater_pubkey(app: &AppHandle) -> Option<String> {
+    app.config()
+        .plugins
+        .0
+        .get("updater")
+        .and_then(|cfg| cfg.get("pubkey"))
+        .and_then(|val| val.as_str())
+        .map(|s| s.to_string())
+}
+
+/// Verify `data` against a base64-encoded minisign signature and public key,
+/// mirroring `tauri-plugin-updater`'s own `verify_signature`.
+fn verify_minisign(data: &[u8], signature_b64: &str, pubkey_b64: &str) -> Result<(), String> {
+    let pubkey_text = base64_to_string(pubkey_b64)?;
+    let public_key = PublicKey::decode(pubkey_text.trim()).map_err(|e| e.to_string())?;
+
+    let signature_text = base64_to_string(signature_b64)?;
+    let signature = Signature::decode(signature_text.trim()).map_err(|e| e.to_string())?;
+
+    public_key
+        .verify(data, &signature, true)
+        .map_err(|e| e.to_string())
+}
+
+fn base64_to_string(value: &str) -> Result<String, String> {
+    let decoded = base64::engine::general_purpose::STANDARD
+        .decode(value.trim())
+        .map_err(|e| e.to_string())?;
+    String::from_utf8(decoded).map_err(|e| e.to_string())
+}
+
+/// Pre-launch integrity + authenticity gate for a previously downloaded
+/// installer. Cheap SHA-256 corruption check first, then the cryptographic
+/// signature check that actually closes the "user-writable cache" gap.
+fn verify_cached_installer(app: &AppHandle, meta: &UpdateMeta, bytes: &[u8]) -> Result<(), String> {
+    if !meta.sha256.is_empty() && sha256_hex(bytes) != meta.sha256 {
+        return Err("cached installer is corrupted - please download again".into());
+    }
+    if meta.signature.trim().is_empty() {
+        return Err("cached installer has no signature - please download again".into());
+    }
+    let pubkey = updater_pubkey(app).ok_or("cannot read updater public key from config")?;
+    verify_minisign(bytes, &meta.signature, &pubkey)
+        .map_err(|err| format!("cached installer signature invalid: {err}"))
+}
+
+async fn check_installable_update(
+    app: &AppHandle,
+) -> Result<Option<tauri_plugin_updater::Update>, tauri_plugin_updater::Error> {
     let updater = app
         .updater_builder()
         .on_before_exit({
@@ -320,20 +451,15 @@ async fn check_installable_update(app: &AppHandle) -> Result<tauri_plugin_update
                 app.cleanup_before_exit();
             }
         })
-        .build()
-        .map_err(|err| err.to_string())?;
+        .build()?;
 
-    updater
-        .check()
-        .await
-        .map_err(|err| err.to_string())?
-        .ok_or_else(|| "no desktop update available".to_string())
+    updater.check().await
 }
 
 async fn download_update(
     app: &AppHandle,
     update: &tauri_plugin_updater::Update,
-) -> Result<Vec<u8>, String> {
+) -> Result<Vec<u8>, tauri_plugin_updater::Error> {
     let mut last_emit: Option<Instant> = None;
     let mut downloaded: u64 = 0;
 
@@ -360,8 +486,7 @@ async fn download_update(
                 log::info!("[updates] desktop update download complete");
             },
         )
-        .await
-        .map_err(|err| err.to_string())?;
+        .await?;
 
     // Final progress frame (forces UI to land on 100%).
     emit(
@@ -381,23 +506,22 @@ fn version_lte(a: &str, b: &str) -> bool {
     let b = b.trim_start_matches('v');
     match (Version::parse(a), Version::parse(b)) {
         (Ok(va), Ok(vb)) => va <= vb,
+        // If either version is unparseable we cannot prove the cached update is
+        // newer than the running app, so treat it as stale (true) and let the
+        // caller drop the cache rather than advertising an unverifiable update.
         (Err(err), _) => {
-            log::warn!("[updates] cannot parse cached update version {a}: {err}");
-            false
+            log::warn!(
+                "[updates] cannot parse cached update version {a}, treating as stale: {err}"
+            );
+            true
         }
         (_, Err(err)) => {
-            log::warn!("[updates] cannot parse current app version {b}: {err}");
-            false
+            log::warn!(
+                "[updates] cannot parse current app version {b}, treating cache as stale: {err}"
+            );
+            true
         }
     }
-}
-
-fn now_epoch_seconds() -> String {
-    let now = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .unwrap_or_default()
-        .as_secs();
-    format!("{now}")
 }
 
 fn emit<S: Serialize>(app: &AppHandle, name: &str, payload: &S) {
@@ -407,8 +531,17 @@ fn emit<S: Serialize>(app: &AppHandle, name: &str, payload: &S) {
 }
 
 fn emit_error(app: &AppHandle, stage: &'static str, err: &dyn std::fmt::Display) {
-    let message = err.to_string();
-    let kind = classify(&message);
+    emit_error_kind(app, stage, "other", &err.to_string());
+}
+
+/// Emit an update error whose `kind` is derived from the concrete
+/// `tauri-plugin-updater` error variant rather than fragile string matching on
+/// the (library-/locale-dependent) message text.
+fn emit_updater_error(app: &AppHandle, stage: &'static str, err: &tauri_plugin_updater::Error) {
+    emit_error_kind(app, stage, classify_updater_error(err), &err.to_string());
+}
+
+fn emit_error_kind(app: &AppHandle, stage: &'static str, kind: &'static str, message: &str) {
     log::warn!("[updates] error stage={stage} kind={kind} message={message}");
     let _ = app.emit(
         "update:error",
@@ -420,21 +553,17 @@ fn emit_error(app: &AppHandle, stage: &'static str, err: &dyn std::fmt::Display)
     );
 }
 
-fn classify(message: &str) -> &'static str {
-    let s = message.to_lowercase();
-    if s.contains("timed out")
-        || s.contains("timeout")
-        || s.contains("connection")
-        || s.contains("dns")
-        || s.contains("tls")
-        || s.contains("network")
-        || s.contains("unreachable")
-        || s.contains("resolve")
-    {
-        "network"
-    } else if s.contains("signature") || s.contains("verify") {
-        "signature"
-    } else {
-        "other"
+fn classify_updater_error(err: &tauri_plugin_updater::Error) -> &'static str {
+    use tauri_plugin_updater::Error as E;
+    match err {
+        E::Reqwest(_)
+        | E::Network(_)
+        | E::Http(_)
+        | E::ReleaseNotFound
+        | E::EmptyEndpoints
+        | E::InsecureTransportProtocol
+        | E::UrlParse(_) => "network",
+        E::Minisign(_) | E::SignatureUtf8(_) | E::Base64(_) => "signature",
+        _ => "other",
     }
 }
