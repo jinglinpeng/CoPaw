@@ -14,31 +14,37 @@ from __future__ import annotations
 import argparse
 import base64
 import json
-import re
 import shutil
 from datetime import datetime, timezone
 from pathlib import Path
 from urllib.parse import quote
 
-
-_PEP440_RE = re.compile(
-    r"^(\d+)\.(\d+)\.(\d+)(?:(a|b|rc)(\d+))?(?:\.post(\d+))?(?:\.dev(\d+))?$",
-)
+from packaging.version import InvalidVersion, Version
 
 
 def to_semver(version: str) -> str:
-    match = _PEP440_RE.match(version)
-    if not match:
+    try:
+        parsed = Version(version)
+    except InvalidVersion as err:
+        raise SystemExit(
+            f"unsupported Python version for Tauri: {version}",
+        ) from err
+
+    if parsed.epoch != 0 or parsed.local is not None:
         raise SystemExit(f"unsupported Python version for Tauri: {version}")
-    major, minor, patch, prerelease, prerelease_n, post, dev = match.groups()
+    if len(parsed.release) != 3:
+        raise SystemExit(f"unsupported Python version for Tauri: {version}")
+
+    major, minor, patch = parsed.release
     prerelease_map = {"a": "alpha", "b": "beta", "rc": "rc"}
     labels: list[str] = []
-    if prerelease:
+    if parsed.pre:
+        prerelease, prerelease_n = parsed.pre
         labels.append(f"{prerelease_map[prerelease]}.{prerelease_n}")
-    if post:
-        labels.append(f"post.{post}")
-    if dev:
-        labels.append(f"dev.{dev}")
+    if parsed.post is not None:
+        labels.append(f"post.{parsed.post}")
+    if parsed.dev is not None:
+        labels.append(f"dev.{parsed.dev}")
     suffix = f"-{'.'.join(labels)}" if labels else ""
     return f"{major}.{minor}.{patch}{suffix}"
 
