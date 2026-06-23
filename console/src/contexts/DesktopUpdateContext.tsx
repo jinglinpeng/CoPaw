@@ -120,6 +120,16 @@ export function DesktopUpdateProvider({ children }: { children: ReactNode }) {
     setThroughputBps(dt > 0 ? Math.max(0, dBytes / dt) : 0);
   }, []);
 
+  const beginUpdate = useCallback((background: boolean) => {
+    samplesRef.current = [];
+    setIsBackground(background);
+    setPhase("checking");
+    setDownloaded(0);
+    setTotal(null);
+    setThroughputBps(0);
+    setError(null);
+  }, []);
+
   // Subscribe to Rust-side update:* events.
   useEffect(() => {
     if (!isDesktopApp()) return;
@@ -149,37 +159,25 @@ export function DesktopUpdateProvider({ children }: { children: ReactNode }) {
 
   // "Install and Restart" immediate full takeover path.
   const startInstall = useCallback(async () => {
-    samplesRef.current = [];
-    setIsBackground(false);
-    setPhase("checking");
-    setDownloaded(0);
-    setTotal(null);
-    setThroughputBps(0);
-    setError(null);
+    beginUpdate(false);
     try {
       await installDesktopUpdate();
     } catch (err) {
       setPhase("failed");
       setError({ stage: "check", kind: "other", message: toErrorMessage(err) });
     }
-  }, []);
+  }, [beginUpdate]);
 
   // "Update Later" caches the installer in the background, no UI takeover.
   const startBackgroundDownload = useCallback(async () => {
-    samplesRef.current = [];
-    setIsBackground(true);
-    setPhase("checking");
-    setDownloaded(0);
-    setTotal(null);
-    setThroughputBps(0);
-    setError(null);
+    beginUpdate(true);
     try {
       await downloadDesktopUpdate();
     } catch (err) {
       setPhase("failed");
       setError({ stage: "check", kind: "other", message: toErrorMessage(err) });
     }
-  }, []);
+  }, [beginUpdate]);
 
   // Install a previously downloaded update (just launches NSIS + exits).
   const installDownloadedFn = useCallback(async () => {

@@ -30,9 +30,7 @@ def to_semver(version: str) -> str:
             f"unsupported Python version for Tauri: {version}",
         ) from err
 
-    if parsed.epoch != 0 or parsed.local is not None:
-        raise SystemExit(f"unsupported Python version for Tauri: {version}")
-    if len(parsed.release) != 3:
+    if parsed.epoch or parsed.local is not None or len(parsed.release) != 3:
         raise SystemExit(f"unsupported Python version for Tauri: {version}")
 
     major, minor, patch = parsed.release
@@ -112,29 +110,34 @@ def _signature_text(path: Path) -> str:
     return path.read_text(encoding="utf-8-sig").strip()
 
 
-def _decode_text_maybe_base64(value: str) -> str:
+def _decode_base64_minisign_text(value: str, *, kind: str) -> str:
     try:
-        decoded = base64.b64decode(value, validate=True).decode("utf-8")
-    except Exception:
-        return value
-    return decoded if "untrusted comment:" in decoded else value
+        text = base64.b64decode(value, validate=True).decode("utf-8")
+    except Exception as err:
+        raise SystemExit(
+            f"{kind} is not valid base64 minisign text: {err}",
+        ) from err
+    if "untrusted comment:" not in text:
+        raise SystemExit(f"{kind} is not a minisign text block")
+    return text
 
 
 def _minisign_key_id(text: str, *, kind: str) -> str:
     lines = [
         line.strip() for line in text.strip().splitlines() if line.strip()
     ]
-    if len(lines) < 2:
-        raise SystemExit(f"{kind} is not a valid minisign text block")
     try:
         raw = base64.b64decode(lines[1], validate=True)
+        key_id = raw[2:10]
+        if len(key_id) != 8:
+            raise ValueError("missing key id")
+    except IndexError as err:
+        raise SystemExit(f"{kind} is not a valid minisign text block") from err
     except Exception as err:
         raise SystemExit(
-            f"{kind} has invalid base64 key/signature data: {err}",
+            f"{kind} has invalid minisign key/signature data: {err}",
         ) from err
-    if len(raw) < 10:
-        raise SystemExit(f"{kind} minisign data is too short")
-    return raw[2:10].hex()
+    return key_id.hex()
 
 
 def _pubkey_from_config(config_path: Path) -> str:
@@ -148,11 +151,14 @@ def _pubkey_from_config(config_path: Path) -> str:
         ) from err
     if not isinstance(pubkey, str) or not pubkey.strip():
         raise SystemExit(f"{config_path} has an empty plugins.updater.pubkey")
-    return _decode_text_maybe_base64(pubkey.strip())
+    return _decode_base64_minisign_text(pubkey.strip(), kind=str(config_path))
 
 
 def verify_signature_key_id(signature_path: Path, pubkey_config: Path) -> None:
-    signature_text = _decode_text_maybe_base64(_signature_text(signature_path))
+    signature_text = _decode_base64_minisign_text(
+        _signature_text(signature_path),
+        kind=str(signature_path),
+    )
     pubkey_text = _pubkey_from_config(pubkey_config)
     signature_key_id = _minisign_key_id(
         signature_text,

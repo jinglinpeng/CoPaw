@@ -78,7 +78,7 @@ pub(super) fn persist_cached_installer(
 }
 
 fn write_installer(bytes: &[u8], dest_dir: &Path, version: &str) -> Result<PathBuf, String> {
-    if bytes.len() < 2 || bytes[0] != b'M' || bytes[1] != b'Z' {
+    if !bytes.starts_with(b"MZ") {
         return Err("downloaded update is not a Windows installer executable".to_string());
     }
 
