@@ -208,6 +208,16 @@ export default function Header() {
     onDesktop && desktop.phase === "installing";
   const isBackgroundFailed =
     onDesktop && desktop.isBackground && desktop.phase === "failed";
+  const backgroundDownloadPercent =
+    isBackgroundActive && desktop.phase === "downloading" && desktop.total
+      ? Math.min(99, Math.round((desktop.downloaded / desktop.total) * 100))
+      : undefined;
+  const backgroundDownloadTitle =
+    backgroundDownloadPercent !== undefined
+      ? `${t(
+          `sidebar.updateModal.backgroundDownloading`,
+        )} ${backgroundDownloadPercent}%`
+      : t(`sidebar.updateModal.backgroundDownloading`);
   const backgroundFailureTitle = desktop.error?.message
     ? `${t(`sidebar.updateModal.backgroundFailed`)}: ${desktop.error.message}`
     : t(`sidebar.updateModal.backgroundFailed`);
@@ -251,34 +261,18 @@ export default function Header() {
               </span>
             </Badge>
           )}
-          {isBackgroundActive &&
-            (() => {
-              const percent =
-                desktop.phase === "downloading" && desktop.total
-                  ? Math.min(
-                      99,
-                      Math.round((desktop.downloaded / desktop.total) * 100),
-                    )
-                  : undefined;
-              const tooltipText =
-                percent !== undefined
-                  ? `${t(
-                      `sidebar.updateModal.backgroundDownloading`,
-                    )} ${percent}%`
-                  : t(`sidebar.updateModal.backgroundDownloading`);
-              return (
-                <Tooltip title={tooltipText}>
-                  <SyncOutlined
-                    spin
-                    style={{
-                      marginLeft: 6,
-                      fontSize: 14,
-                      color: "rgba(255, 157, 77, 1)",
-                    }}
-                  />
-                </Tooltip>
-              );
-            })()}
+          {isBackgroundActive && (
+            <Tooltip title={backgroundDownloadTitle}>
+              <SyncOutlined
+                spin
+                style={{
+                  marginLeft: 6,
+                  fontSize: 14,
+                  color: "rgba(255, 157, 77, 1)",
+                }}
+              />
+            </Tooltip>
+          )}
           {isReady && (
             <Popover
               content={

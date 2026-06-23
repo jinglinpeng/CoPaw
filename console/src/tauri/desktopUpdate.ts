@@ -61,46 +61,31 @@ export async function onUpdateEvent(
 ): Promise<UnlistenFn> {
   const unlisteners: UnlistenFn[] = [];
 
-  if (handlers.onCheckStart) {
+  const addListener = async <T>(
+    eventName: string,
+    handler?: (payload: T) => void,
+  ) => {
+    if (!handler) return;
     unlisteners.push(
-      await listen<unknown>(
-        "update:check-start",
-        () => handlers.onCheckStart?.(),
-      ),
+      await listen<T>(eventName, (event) => handler(event.payload)),
     );
-  }
-  if (handlers.onDownloadProgress) {
-    unlisteners.push(
-      await listen<UpdateProgress>(
-        "update:download-progress",
-        (event) => handlers.onDownloadProgress?.(event.payload),
-      ),
-    );
-  }
-  if (handlers.onInstallStart) {
-    unlisteners.push(
-      await listen<unknown>(
-        "update:install-start",
-        () => handlers.onInstallStart?.(),
-      ),
-    );
-  }
-  if (handlers.onDownloadDone) {
-    unlisteners.push(
-      await listen<DownloadDonePayload>(
-        "update:download-done",
-        (event) => handlers.onDownloadDone?.(event.payload),
-      ),
-    );
-  }
-  if (handlers.onError) {
-    unlisteners.push(
-      await listen<UpdateError>(
-        "update:error",
-        (event) => handlers.onError?.(event.payload),
-      ),
-    );
-  }
+  };
+
+  const withoutPayload = (
+    handler?: () => void,
+  ): ((payload: unknown) => void) | undefined =>
+    handler ? () => handler() : undefined;
+
+  await Promise.all([
+    addListener("update:check-start", withoutPayload(handlers.onCheckStart)),
+    addListener("update:download-progress", handlers.onDownloadProgress),
+    addListener(
+      "update:install-start",
+      withoutPayload(handlers.onInstallStart),
+    ),
+    addListener("update:download-done", handlers.onDownloadDone),
+    addListener("update:error", handlers.onError),
+  ]);
 
   return () => {
     unlisteners.forEach((u) => u());

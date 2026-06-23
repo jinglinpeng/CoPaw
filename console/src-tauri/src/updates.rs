@@ -166,21 +166,17 @@ pub(crate) async fn check_cached_update(app: AppHandle) -> Result<Option<String>
         return Ok(None);
     }
 
-    let cache_dir = match cached_update_installer_dir(&app) {
-        Some(d) => d,
-        None => return Ok(None),
+    let Some(cache_dir) = cached_update_installer_dir(&app) else {
+        return Ok(None);
     };
 
     if !has_cached_update_meta(&cache_dir) {
         return Ok(None);
     }
 
-    let meta = match read_cached_update_meta(&cache_dir) {
-        Ok(meta) => meta,
-        Err(_) => {
-            remove_cached_update(&cache_dir);
-            return Ok(None);
-        }
+    let Ok(meta) = read_cached_update_meta(&cache_dir) else {
+        remove_cached_update(&cache_dir);
+        return Ok(None);
     };
 
     // Compare with current app version. If cached version <= current, it's stale.
