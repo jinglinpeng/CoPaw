@@ -3,7 +3,6 @@
 mod cache;
 mod events;
 mod guard;
-mod macos;
 mod remote;
 mod signature;
 mod version;
@@ -18,7 +17,7 @@ use cache::{
     cached_installer_path, cached_update_installer_dir, has_cached_update_meta,
     persist_cached_installer, read_cached_update_meta, remove_cached_update,
 };
-use events::{emit, emit_error, emit_error_kind, emit_updater_error};
+use events::{emit, emit_error, emit_updater_error};
 use guard::begin_update;
 use remote::check_and_download;
 use signature::verify_cached_installer;
@@ -69,14 +68,7 @@ async fn run_install(app: AppHandle) {
     );
     emit(&app, "update:install-start", &serde_json::json!({}));
 
-    if let Err(err) = macos::ensure_install_location() {
-        return emit_error_kind(&app, "install", "appLocation", &err);
-    }
-
     if let Err(err) = update.install(bytes) {
-        if let Some(hint) = macos::install_error_hint(&err) {
-            return emit_error_kind(&app, "install", "appLocation", &hint);
-        }
         return emit_updater_error(&app, "install", &err);
     }
 

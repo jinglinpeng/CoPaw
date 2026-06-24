@@ -22,12 +22,7 @@ pub(super) fn emit_updater_error(
     emit_error_kind(app, stage, classify_updater_error(err), &err.to_string());
 }
 
-pub(super) fn emit_error_kind(
-    app: &AppHandle,
-    stage: &'static str,
-    kind: &'static str,
-    message: &str,
-) {
+fn emit_error_kind(app: &AppHandle, stage: &'static str, kind: &'static str, message: &str) {
     log::warn!("[updates] error stage={stage} kind={kind} message={message}");
     let _ = app.emit(
         "update:error",
@@ -50,6 +45,12 @@ fn classify_updater_error(err: &tauri_plugin_updater::Error) -> &'static str {
         | E::InsecureTransportProtocol
         | E::UrlParse(_) => "network",
         E::Minisign(_) | E::SignatureUtf8(_) | E::Base64(_) => "signature",
+        _ if cfg!(target_os = "macos") && is_read_only_filesystem_error(err) => "appLocation",
         _ => "other",
     }
+}
+
+fn is_read_only_filesystem_error(err: &tauri_plugin_updater::Error) -> bool {
+    let message = err.to_string();
+    message.contains("read-only file system") || message.contains("os error: 30")
 }
