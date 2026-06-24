@@ -22,7 +22,12 @@ pub(super) fn emit_updater_error(
     emit_error_kind(app, stage, classify_updater_error(err), &err.to_string());
 }
 
-fn emit_error_kind(app: &AppHandle, stage: &'static str, kind: &'static str, message: &str) {
+pub(super) fn emit_error_kind(
+    app: &AppHandle,
+    stage: &'static str,
+    kind: &'static str,
+    message: &str,
+) {
     log::warn!("[updates] error stage={stage} kind={kind} message={message}");
     let _ = app.emit(
         "update:error",

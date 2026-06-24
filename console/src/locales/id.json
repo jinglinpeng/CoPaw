@@ -105,6 +105,7 @@
       "errors": {
         "network": "Tidak dapat menjangkau server pembaruan. Periksa internet dan coba lagi.",
         "signature": "Tanda tangan file pembaruan tidak valid. Coba unduh lagi.",
+        "appLocation": "QwenPaw berjalan dari lokasi macOS yang hanya-baca. Pindahkan QwenPaw.app ke folder Applications, jalankan dari sana, lalu coba perbarui lagi.",
         "other": "Pembaruan gagal."
       },
       "updateLater": "Unduh di Latar Belakang",

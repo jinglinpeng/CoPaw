@@ -93,6 +93,7 @@
       "errors": {
         "network": "Couldn't reach the update server. Check your internet and try again.",
         "signature": "Update file signature invalid. Try downloading again.",
+        "appLocation": "QwenPaw is running from a read-only macOS location. Move QwenPaw.app to the Applications folder, launch it from there, then try updating again.",
         "other": "Update failed."
       },
       "updateLater": "Download in Background",

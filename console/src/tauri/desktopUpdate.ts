@@ -15,7 +15,7 @@ export interface UpdateProgress {
 
 export interface UpdateError {
   stage: "check" | "download" | "install";
-  kind: "network" | "signature" | "other";
+  kind: "network" | "signature" | "appLocation" | "other";
   message: string;
 }
 
