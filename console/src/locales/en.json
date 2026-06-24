@@ -75,7 +75,7 @@
     "updateModal": {
       "title": "New version available: v{{version}}",
       "viewReleases": "View Releases",
-      "installDesktopUpdate": "Install and Restart",
+      "installDesktopUpdate": "Update Now",
       "desktopInstallHint": "QwenPaw Desktop {{version}} is ready to install. The app will restart after the update.",
       "checking": "Checking for updates…",
       "checkingHint": "Confirming the latest release",

@@ -1805,7 +1805,7 @@
     "updateModal": {
       "title": "Novo Versao available: v{{version}}",
       "viewReleases": "Visualizar Releases",
-      "installDesktopUpdate": "Instalar e Reiniciar",
+      "installDesktopUpdate": "Atualizar agora",
       "desktopInstallHint": "QwenPaw Desktop {{version}} está pronto para instalar. O aplicativo será reiniciado após a atualização.",
       "checking": "Verificando atualizações…",
       "checkingHint": "Confirmando a versão mais recente",

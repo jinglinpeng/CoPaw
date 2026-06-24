@@ -75,7 +75,7 @@
     "updateModal": {
       "title": "发现新版本 v{{version}}",
       "viewReleases": "查看 Releases",
-      "installDesktopUpdate": "安装并重启",
+      "installDesktopUpdate": "现在更新",
       "desktopInstallHint": "QwenPaw 桌面端 {{version}} 已准备好安装，更新后应用将自动重启。",
       "checking": "检查更新中…",
       "checkingHint": "正在确认最新版本",
