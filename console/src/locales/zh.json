@@ -95,11 +95,11 @@
         "signature": "更新文件签名校验失败，请重新尝试下载。",
         "other": "更新失败。"
       },
-      "updateLater": "稍后更新",
+      "updateLater": "后台下载更新",
       "backgroundDownloading": "正在后台下载更新…",
       "readyToInstall": "安装包已就绪",
       "readyToInstallHint": "v{{version}} 安装包已下载，重启后将安装并启动新版本。",
-      "restartNow": "安装并重启",
+      "restartNow": "现在更新",
       "backgroundFailed": "后台下载失败"
     },
     "settings": {

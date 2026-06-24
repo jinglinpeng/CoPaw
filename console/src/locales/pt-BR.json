@@ -1825,11 +1825,11 @@
         "signature": "Assinatura do arquivo de atualização inválida. Tente baixar novamente.",
         "other": "Falha na atualização."
       },
-      "updateLater": "Atualizar Depois",
+      "updateLater": "Baixar em segundo plano",
       "backgroundDownloading": "Baixando em segundo plano…",
       "readyToInstall": "Instalador pronto",
       "readyToInstallHint": "O instalador v{{version}} foi baixado. Reinicie para instalar e abrir a nova versão.",
-      "restartNow": "Instalar e Reiniciar",
+      "restartNow": "Atualizar agora",
       "backgroundFailed": "Falha no download em segundo plano"
     },
     "settings": {

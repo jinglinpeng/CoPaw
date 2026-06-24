@@ -95,11 +95,11 @@
         "signature": "Update file signature invalid. Try downloading again.",
         "other": "Update failed."
       },
-      "updateLater": "Update Later",
+      "updateLater": "Download in Background",
       "backgroundDownloading": "Downloading in background…",
       "readyToInstall": "Installer ready",
       "readyToInstallHint": "v{{version}} installer is downloaded. Restart to install and launch the new version.",
-      "restartNow": "Install and Restart",
+      "restartNow": "Update Now",
       "backgroundFailed": "Background download failed"
     },
     "settings": {

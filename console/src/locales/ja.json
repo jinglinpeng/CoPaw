@@ -1618,11 +1618,11 @@
         "signature": "更新ファイルの署名検証に失敗しました。もう一度ダウンロードしてください。",
         "other": "更新に失敗しました。"
       },
-      "updateLater": "後で更新",
+      "updateLater": "バックグラウンドでダウンロード",
       "backgroundDownloading": "バックグラウンドでダウンロード中…",
       "readyToInstall": "インストーラー準備完了",
       "readyToInstallHint": "v{{version}} のインストーラーをダウンロードしました。再起動してインストールし、新しいバージョンを起動します。",
-      "restartNow": "インストールして再起動",
+      "restartNow": "今すぐ更新",
       "backgroundFailed": "バックグラウンドダウンロード失敗"
     },
     "settings": {
