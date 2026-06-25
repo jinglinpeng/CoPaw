@@ -1828,8 +1828,8 @@
       },
       "updateLater": "Baixar em segundo plano",
       "backgroundDownloading": "Baixando em segundo plano…",
-      "readyToInstall": "Instalador pronto",
-      "readyToInstallHint": "O instalador v{{version}} foi baixado. Reinicie para instalar e abrir a nova versão.",
+      "readyToInstall": "Atualização pronta",
+      "readyToInstallHint": "A atualização v{{version}} foi baixada. Reinicie para instalar e abrir a nova versão.",
       "restartNow": "Atualizar agora",
       "backgroundFailed": "Falha no download em segundo plano"
     },

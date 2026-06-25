@@ -70,7 +70,7 @@ export function DesktopUpdateProvider({ children }: { children: ReactNode }) {
 
   const samplesRef = useRef<{ t: number; downloaded: number }[]>([]);
 
-  // Probe on mount: check remote update + check cached installer on disk.
+  // Probe on mount: check remote update + check cached update on disk.
   useEffect(() => {
     if (!isDesktopApp()) return;
     let cancelled = false;
@@ -168,7 +168,7 @@ export function DesktopUpdateProvider({ children }: { children: ReactNode }) {
     }
   }, [beginUpdate]);
 
-  // "Update Later" caches the installer in the background, no UI takeover.
+  // "Update Later" caches the update in the background, no UI takeover.
   const startBackgroundDownload = useCallback(async () => {
     beginUpdate(true);
     try {
@@ -179,7 +179,7 @@ export function DesktopUpdateProvider({ children }: { children: ReactNode }) {
     }
   }, [beginUpdate]);
 
-  // Install a previously downloaded update (just launches NSIS + exits).
+  // Install a previously downloaded update.
   const installDownloadedFn = useCallback(async () => {
     setIsBackground(false);
     setPhase("installing");

@@ -9,18 +9,17 @@ mod version;
 
 use serde::Serialize;
 use tauri::AppHandle;
-use tauri_plugin_updater::UpdaterExt;
 
 use crate::backend;
 
 use cache::{
-    cached_installer_path, cached_update_installer_dir, has_cached_update_meta,
-    persist_cached_installer, read_cached_update_meta, remove_cached_update,
+    cached_artifact_path, cached_update_dir, ensure_current_platform, has_cached_update_meta,
+    persist_cached_update, read_cached_update_meta, remove_cached_update, supports_cached_updates,
 };
 use events::{emit, emit_error, emit_updater_error};
 use guard::begin_update;
-use remote::check_and_download;
-use signature::verify_cached_installer;
+use remote::{check_and_download, check_installable_update};
+use signature::verify_cached_update;
 use version::version_lte;
 
 #[derive(Serialize)]
@@ -33,17 +32,14 @@ pub(crate) struct DesktopUpdate {
 
 #[tauri::command]
 pub(crate) async fn check_desktop_update(app: AppHandle) -> Result<Option<DesktopUpdate>, String> {
-    let update = app
-        .updater()
-        .map_err(|e| e.to_string())?
-        .check()
+    let update = check_installable_update(&app)
         .await
         .map_err(|e| e.to_string())?;
 
     Ok(update.map(|u| DesktopUpdate {
         version: u.version,
         body: u.body,
-        supports_later_install: cfg!(windows),
+        supports_later_install: supports_cached_updates(),
     }))
 }
 
@@ -78,10 +74,8 @@ async fn run_install(app: AppHandle) {
 
 #[tauri::command]
 pub(crate) fn download_desktop_update(app: AppHandle) -> Result<(), String> {
-    if !cfg!(windows) {
-        return Err(
-            "background update download is only supported for Windows installer packages".into(),
-        );
+    if !supports_cached_updates() {
+        return Err("background update download is not supported on this platform".into());
     }
 
     let guard = begin_update()?;
@@ -97,7 +91,7 @@ async fn run_background_download(app: AppHandle) {
         return;
     };
 
-    if let Err(err) = persist_cached_installer(&app, &update, &bytes) {
+    if let Err(err) = persist_cached_update(&app, &update, &bytes) {
         return emit_error(&app, "download", &err);
     }
 
@@ -114,59 +108,146 @@ async fn run_background_download(app: AppHandle) {
 
 #[tauri::command]
 pub(crate) fn install_downloaded_update(app: AppHandle) -> Result<(), String> {
-    if !cfg!(windows) {
-        return Err("cached installer updates are only supported on Windows".into());
+    if !supports_cached_updates() {
+        return Err("cached updates are not supported on this platform".into());
     }
 
-    let _guard = begin_update()?;
+    let guard = begin_update()?;
+    tauri::async_runtime::spawn(async move {
+        let _guard = guard;
+        run_cached_install(app).await;
+    });
+    Ok(())
+}
 
-    let cache_dir =
-        cached_update_installer_dir(&app).ok_or("cannot determine app data directory")?;
-    let meta = read_cached_update_meta(&cache_dir)?;
+async fn run_cached_install(app: AppHandle) {
+    let Some(cache_dir) = cached_update_dir(&app) else {
+        return emit_error(&app, "install", &"cannot determine app data directory");
+    };
 
-    let exe_path = cached_installer_path(&cache_dir, &meta);
-    if !exe_path.is_file() {
-        return Err("installer exe not found - please download again".into());
-    }
+    let meta = match read_cached_update_meta(&cache_dir) {
+        Ok(meta) => meta,
+        Err(err) => {
+            remove_cached_update(&cache_dir);
+            return emit_error(&app, "install", &err);
+        }
+    };
 
-    // The cached installer lives in a user-writable directory, so "verified at
-    // download time" is not enough: re-verify the on-disk bytes against the
-    // configured updater public key right before launch (mirrors what
-    // tauri-plugin-updater does before a foreground install). Any tampering or
-    // corruption fails here and the stale cache is dropped.
-    let bytes =
-        std::fs::read(&exe_path).map_err(|e| format!("cannot read cached installer: {e}"))?;
-    if let Err(err) = verify_cached_installer(&app, &meta, &bytes) {
+    if let Err(err) = ensure_current_platform(&meta) {
         remove_cached_update(&cache_dir);
-        return Err(err);
+        return emit_error(&app, "install", &err);
+    }
+
+    let artifact_path = cached_artifact_path(&cache_dir, &meta);
+    if !artifact_path.is_file() {
+        remove_cached_update(&cache_dir);
+        return emit_error(
+            &app,
+            "install",
+            &"cached update artifact not found - please download again",
+        );
+    }
+
+    // The cache lives in a user-writable directory, so "verified at download
+    // time" is not enough. Re-verify the on-disk bytes against the configured
+    // updater public key right before install.
+    let bytes = match std::fs::read(&artifact_path) {
+        Ok(bytes) => bytes,
+        Err(err) => {
+            remove_cached_update(&cache_dir);
+            return emit_error(
+                &app,
+                "install",
+                &format!("cannot read cached update: {err}"),
+            );
+        }
+    };
+    if let Err(err) = verify_cached_update(&app, &meta, &bytes) {
+        remove_cached_update(&cache_dir);
+        return emit_error(&app, "install", &err);
     }
 
     log::info!(
-        "[updates] launching cached installer version={} exe={}",
+        "[updates] installing cached update version={} artifact={}",
         meta.version,
-        exe_path.display()
+        artifact_path.display()
     );
-    backend::stop(&app);
     emit(&app, "update:install-start", &serde_json::json!({}));
 
-    // Launch the NSIS installer in the same passive updater mode Tauri uses for
-    // Windows installs, while skipping QwenPaw's optional PATH prompt.
-    std::process::Command::new(&exe_path)
+    match meta.platform.as_str() {
+        "windows" => install_cached_windows(&app, &artifact_path),
+        "macos" => install_cached_macos(&app, &cache_dir, &meta, bytes).await,
+        _ => {
+            remove_cached_update(&cache_dir);
+            emit_error(&app, "install", &"cached update platform is unsupported");
+        }
+    }
+}
+
+fn install_cached_windows(app: &AppHandle, exe_path: &std::path::Path) {
+    backend::stop(app);
+    if let Err(err) = std::process::Command::new(exe_path)
         .args(["/P", "/R", "/UPDATE", "/NO_QWENPAW_PATH"])
         .spawn()
-        .map_err(|e| format!("failed to launch installer: {e}"))?;
-
+    {
+        return emit_error(
+            app,
+            "install",
+            &format!("failed to launch installer: {err}"),
+        );
+    }
+    // Mirrors tauri-plugin-updater's Windows path: after NSIS is launched the
+    // current process must exit so the installer can replace locked files.
     app.cleanup_before_exit();
     std::process::exit(0);
 }
 
+async fn install_cached_macos(
+    app: &AppHandle,
+    cache_dir: &std::path::Path,
+    meta: &cache::UpdateMeta,
+    bytes: Vec<u8>,
+) {
+    let update = match check_installable_update(app).await {
+        Ok(Some(update)) => update,
+        Ok(None) => {
+            remove_cached_update(cache_dir);
+            return emit_error(
+                app,
+                "install",
+                &"cached update is no longer available - please download again",
+            );
+        }
+        Err(err) => return emit_updater_error(app, "check", &err),
+    };
+
+    if update.version != meta.version
+        || update.target != meta.target
+        || update.signature != meta.signature
+    {
+        remove_cached_update(cache_dir);
+        return emit_error(
+            app,
+            "install",
+            &"cached update no longer matches the latest release - please download again",
+        );
+    }
+
+    if let Err(err) = update.install(bytes) {
+        return emit_updater_error(app, "install", &err);
+    }
+
+    backend::stop(app);
+    app.restart();
+}
+
 #[tauri::command]
 pub(crate) async fn check_cached_update(app: AppHandle) -> Result<Option<String>, String> {
-    if !cfg!(windows) {
+    if !supports_cached_updates() {
         return Ok(None);
     }
 
-    let Some(cache_dir) = cached_update_installer_dir(&app) else {
+    let Some(cache_dir) = cached_update_dir(&app) else {
         return Ok(None);
     };
 
@@ -178,6 +259,11 @@ pub(crate) async fn check_cached_update(app: AppHandle) -> Result<Option<String>
         remove_cached_update(&cache_dir);
         return Ok(None);
     };
+
+    if ensure_current_platform(&meta).is_err() {
+        remove_cached_update(&cache_dir);
+        return Ok(None);
+    }
 
     // Compare with current app version. If cached version <= current, it's stale.
     let current_version = app.config().version.clone().unwrap_or_default();
@@ -192,8 +278,7 @@ pub(crate) async fn check_cached_update(app: AppHandle) -> Result<Option<String>
         return Ok(None);
     }
 
-    // Verify the installer exe exists.
-    if !cached_installer_path(&cache_dir, &meta).is_file() {
+    if !cached_artifact_path(&cache_dir, &meta).is_file() {
         remove_cached_update(&cache_dir);
         return Ok(None);
     }

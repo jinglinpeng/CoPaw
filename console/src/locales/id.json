@@ -110,8 +110,8 @@
       },
       "updateLater": "Unduh di Latar Belakang",
       "backgroundDownloading": "Mengunduh di latar belakang…",
-      "readyToInstall": "Installer siap",
-      "readyToInstallHint": "Installer v{{version}} telah diunduh. Mulai ulang untuk memasang dan membuka versi baru.",
+      "readyToInstall": "Pembaruan siap",
+      "readyToInstallHint": "Pembaruan v{{version}} telah diunduh. Mulai ulang untuk memasang dan membuka versi baru.",
       "restartNow": "Perbarui Sekarang",
       "backgroundFailed": "Unduhan latar belakang gagal"
     },

@@ -40,7 +40,7 @@ pub(super) async fn check_and_download(
     }
 }
 
-async fn check_installable_update(
+pub(super) async fn check_installable_update(
     app: &AppHandle,
 ) -> Result<Option<tauri_plugin_updater::Update>, tauri_plugin_updater::Error> {
     let updater = app

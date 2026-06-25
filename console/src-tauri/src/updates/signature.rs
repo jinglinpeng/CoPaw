@@ -16,7 +16,7 @@ pub(super) fn sha256_hex(bytes: &[u8]) -> String {
 }
 
 /// Read the updater public key from the (build-injected) Tauri config so we can
-/// verify cached installers with the exact key the plugin uses.
+/// verify cached updates with the exact key the plugin uses.
 fn updater_pubkey(app: &AppHandle) -> Option<String> {
     app.config()
         .plugins
@@ -48,21 +48,21 @@ fn base64_to_string(value: &str) -> Result<String, String> {
     String::from_utf8(decoded).map_err(|e| e.to_string())
 }
 
-/// Pre-launch integrity + authenticity gate for a previously downloaded
-/// installer. Cheap SHA-256 corruption check first, then the cryptographic
-/// signature check that actually closes the "user-writable cache" gap.
-pub(super) fn verify_cached_installer(
+/// Pre-install integrity + authenticity gate for a previously downloaded
+/// update artifact. Cheap SHA-256 corruption check first, then the
+/// cryptographic signature check that closes the "user-writable cache" gap.
+pub(super) fn verify_cached_update(
     app: &AppHandle,
     meta: &UpdateMeta,
     bytes: &[u8],
 ) -> Result<(), String> {
     if !meta.sha256.is_empty() && sha256_hex(bytes) != meta.sha256 {
-        return Err("cached installer is corrupted - please download again".into());
+        return Err("cached update is corrupted - please download again".into());
     }
     if meta.signature.trim().is_empty() {
-        return Err("cached installer has no signature - please download again".into());
+        return Err("cached update has no signature - please download again".into());
     }
     let pubkey = updater_pubkey(app).ok_or("cannot read updater public key from config")?;
     verify_minisign(bytes, &meta.signature, &pubkey)
-        .map_err(|err| format!("cached installer signature invalid: {err}"))
+        .map_err(|err| format!("cached update signature invalid: {err}"))
 }
