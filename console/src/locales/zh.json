@@ -96,7 +96,7 @@
         "appLocation": "QwenPaw 正在从 macOS 只读位置运行。请先将 QwenPaw.app 移动到“应用程序”文件夹，从那里启动后再重试更新。",
         "other": "更新失败。"
       },
-      "updateLater": "后台下载更新",
+      "updateLater": "后台下载",
       "backgroundDownloading": "正在后台下载更新…",
       "readyToInstall": "更新已就绪",
       "readyToInstallHint": "v{{version}} 更新已下载，重启后将安装并启动新版本。",
