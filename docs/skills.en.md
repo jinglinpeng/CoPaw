@@ -69,6 +69,8 @@ Pool-side operations:
   name that already exists, QwenPaw returns a conflict instead of silently
   overwriting. The UI/API includes a suggested renamed target so you can retry
   with that name.
+- **Auto sync:** Once enabled for a skill, any change to its pool content is
+  pushed to the relevant workspaces automatically (see **Auto sync** below).
 
 Adding skills to the pool:
 
@@ -122,6 +124,54 @@ Adding skills to the pool:
    recommended. Direct pool edits can be lost or overwritten more easily,
    especially for customized skills. Be careful and treat this as an advanced
    workflow.
+
+### External skill paths
+
+By default the skill pool has a single root: the primary pool at
+`$QWENPAW_WORKING_DIR/skill_pool/`. You can also register one or more **external skill
+roots** in the config so QwenPaw reads the skills they contain into the **same skill pool
+view**. This is useful for reusing skill collections already on your machine (a git repo,
+a shared team folder) without copying them into the primary pool.
+
+What external paths mean:
+
+- **One pool, multiple roots.** Skills under an external directory are not copied into the
+  primary pool; they are read in place and appear in the pool alongside the primary skills.
+  On-disk changes are reflected on the next load.
+- **Order is priority.** Scan order is the primary pool first, then each entry in
+  `skill_paths` in order. If two roots contain a skill with the same name, the **earlier one
+  wins**; the later duplicate is shadowed and skipped (a warning is logged).
+- **What you can do with external skills.** List, view, broadcast / download to a workspace,
+  edit in place (save / rename writes back to the external directory), and delete (which
+  **physically removes the files under the external directory**). In the Skill Pool UI, an
+  external skill's **installed-from** field shows its external path so you can recognize it.
+- **No metadata written to external dirs.** The pool's `skill.json` index lives only in the
+  primary pool and is rebuilt from disk and self-heals; external directories are left
+  untouched and never get a manifest written to them.
+- **Uploads / imports always land in the primary pool.** Sync from a workspace, import from
+  zip, and import from URL all write to the primary pool, never to an external path.
+
+#### How to configure
+
+Edit `$QWENPAW_WORKING_DIR/config.json` and add the top-level `skill_paths` field:
+
+```json
+{
+  "skill_paths": ["~/my-skills", "/opt/team/shared-skills"]
+}
+```
+
+Notes:
+
+- The array is ordered; the order decides the conflict priority described above.
+- Paths support `~` expansion to the home directory.
+- Missing or invalid paths are silently skipped.
+- After saving, external skills appear on the next skill pool load (a refresh, a restart,
+  or any endpoint that triggers it).
+
+`$QWENPAW_WORKING_DIR` defaults to `~/.qwenpaw` and can be overridden with the
+`QWENPAW_WORKING_DIR` environment variable. See [Config](./config) for the full
+configuration reference.
 
 ### Workspace Skills
 
@@ -280,6 +330,23 @@ This skill is used for…
 
 Manually placed skills are detected on the next manifest reconcile and added
 to `skill.json` as **disabled**. Enable them in the Console or CLI.
+
+### Auto sync (Skill Pool & Workspace)
+
+Turn on **Auto sync** for a pool skill and any change to its pool content is
+synced to the relevant workspaces automatically — no manual broadcast needed.
+
+- **How to enable:** Toggle it on the skill card in **Settings → Skill Pool**
+  (applies immediately), or enable it and pick associated agents in the skill
+  drawer (applies on save).
+- **Sync scope:**
+  - **Default** (no associated agents configured): syncs only to workspaces that
+    **already have the skill**; agents that never had it are not installed.
+  - **Explicit agents:** syncs to exactly those agents; ones in the list that
+    lack the skill get it installed, while agents not listed are left untouched.
+- **Change detection:** based on the content of `SKILL.md`.
+- **Inbox notification:** each run posts one message to the [Inbox](./console)
+  listing which agents each skill was synced to (sender shown as "Skill Pool").
 
 ### 6. Create from current session via /make-skill (Beta)
 
