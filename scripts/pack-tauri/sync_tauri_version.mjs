@@ -61,7 +61,7 @@ function readBaseUpdaterConfig() {
 
 function readUpdaterEndpoints(baseUpdater) {
   const raw = process.env.TAURI_UPDATER_ENDPOINTS?.trim();
-  if (!raw) return baseUpdater.endpoints;
+  if (!raw) return applyVariantToEndpoints(baseUpdater.endpoints);
 
   if (raw.startsWith("[")) {
     const parsed = JSON.parse(raw);
@@ -73,13 +73,30 @@ function readUpdaterEndpoints(baseUpdater) {
         "TAURI_UPDATER_ENDPOINTS JSON must be an array of strings",
       );
     }
-    return parsed;
+    return applyVariantToEndpoints(parsed);
   }
 
-  return raw
-    .split(/[\n,]/)
-    .map((entry) => entry.trim())
-    .filter(Boolean);
+  return applyVariantToEndpoints(
+    raw
+      .split(/[\n,]/)
+      .map((entry) => entry.trim())
+      .filter(Boolean),
+  );
+}
+
+// Each desktop variant self-updates within its own channel, so point the
+// baked-in updater endpoints at the matching per-variant manifest. The base
+// endpoints in tauri.conf.json reference the unsuffixed manifest name, so we
+// only need to insert the variant into that file name (full -> ...-full.json).
+function applyVariantToEndpoints(endpoints) {
+  const variant = process.env.QWENPAW_DESKTOP_VARIANT?.trim().toLowerCase();
+  if (!variant || !Array.isArray(endpoints)) return endpoints;
+  return endpoints.map((url) =>
+    url.replace(
+      /qwenpaw-tauri-latest\.json/g,
+      `qwenpaw-tauri-latest-${variant}.json`,
+    ),
+  );
 }
 
 function shouldCreateUpdaterArtifacts() {

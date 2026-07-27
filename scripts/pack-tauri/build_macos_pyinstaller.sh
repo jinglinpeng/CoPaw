@@ -12,10 +12,25 @@ cd "$REPO_ROOT"
 
 VERSION=$(sed -n 's/^__version__[[:space:]]*=[[:space:]]*"\([^"]*\)".*/\1/p' src/qwenpaw/__version__.py)
 
+# Desktop variant (full|lite) is forwarded to build_pyinstaller.sh, which
+# controls which optional dependency set is frozen. It is also encoded into the
+# distribution artifact names so full and lite packages never collide.
+VARIANT="${QWENPAW_DESKTOP_VARIANT:-full}"
+case "$VARIANT" in
+    full) VARIANT_LABEL="Full" ;;
+    lite) VARIANT_LABEL="Lite" ;;
+    *)
+        echo "ERROR: unknown QWENPAW_DESKTOP_VARIANT: ${VARIANT} (expected 'full' or 'lite')"
+        exit 1
+        ;;
+esac
+export QWENPAW_DESKTOP_VARIANT="$VARIANT"
+
 echo "========================================="
 echo "QwenPaw Tauri Build - macOS (PyInstaller)"
 echo "========================================="
 echo "Version: ${VERSION}"
+echo "Variant: ${VARIANT_LABEL}"
 echo ""
 
 SIGN_MACOS_BUNDLE="${REPO_ROOT}/scripts/pack-tauri/sign_macos_bundle.sh"
@@ -147,7 +162,7 @@ STAGED_APP_PATH="${DIST_DIR}/$(basename "${APP_PATH}")"
 echo ".app copied to ${STAGED_APP_PATH}"
 
 # Create ZIP archive
-ZIP_NAME="${DIST_ROOT}/QwenPaw-Tauri-${VERSION}-macOS.zip"
+ZIP_NAME="${DIST_ROOT}/QwenPaw-Tauri-${VERSION}-macOS-${VARIANT_LABEL}.zip"
 if [ -f "${ZIP_NAME}" ]; then
     rm -f "${ZIP_NAME}"
 fi
@@ -168,7 +183,7 @@ else
 fi
 echo ""
 
-UPDATER_NAME="${DIST_ROOT}/QwenPaw-Tauri-${VERSION}-macOS.app.tar.gz"
+UPDATER_NAME="${DIST_ROOT}/QwenPaw-Tauri-${VERSION}-macOS-${VARIANT_LABEL}.app.tar.gz"
 case "$(uname -m)" in
     arm64 | aarch64) UPDATER_TARGET="darwin-aarch64" ;;
     *) UPDATER_TARGET="darwin-x86_64" ;;

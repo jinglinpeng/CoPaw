@@ -66,10 +66,23 @@ if ! "$PYTHON_BIN" -c "import PyInstaller" 2> /dev/null; then
 fi
 echo "PyInstaller installed"
 
-# Install project dependencies (ensures ALL runtime deps are importable)
-echo "== Installing project dependencies =="
-install_python_packages -e ".[full]"
-echo "Project dependencies installed with full extras"
+# Install project dependencies (ensures ALL runtime deps are importable).
+# The desktop variant controls which optional dependency set is frozen:
+#   full  -> .[full] (includes channels-all; every channel SDK is bundled)
+#   lite  -> .[local,whisper] (no optional channel SDKs; those are installed
+#           on demand at runtime into the user-writable channel runtime site)
+VARIANT="${QWENPAW_DESKTOP_VARIANT:-full}"
+case "$VARIANT" in
+    full) EXTRAS=".[full]" ;;
+    lite) EXTRAS=".[local,whisper]" ;;
+    *)
+        echo "ERROR: unknown QWENPAW_DESKTOP_VARIANT: ${VARIANT} (expected 'full' or 'lite')"
+        exit 1
+        ;;
+esac
+echo "== Installing project dependencies (variant: ${VARIANT}) =="
+install_python_packages -e "$EXTRAS"
+echo "Project dependencies installed (${EXTRAS})"
 
 # Fix agent-client-protocol namespace collision
 # PyPI has an empty 'acp' stub that shadows the real package

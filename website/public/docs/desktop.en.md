@@ -40,7 +40,7 @@ This guide explains how to install and use the QwenPaw Desktop application on Wi
 ### Installation Steps
 
 1. **Download the installer**
-   Download `QwenPaw-Tauri-<version>-Windows-setup.exe` from the [Release page][releases]
+   Download `QwenPaw-Tauri-<version>-Windows-Full-setup.exe` from the [Release page][releases] (recommended). The smaller `QwenPaw-Tauri-<version>-Windows-Lite-setup.exe` installs channel dependencies on demand.
 
 2. **Run the installer**
    Double-click the `.exe` file and follow the installation wizard
@@ -107,7 +107,7 @@ The code is completely open source, and the build process is transparently verif
 ### Installation Steps
 
 1. **Download the archive**
-   Download `QwenPaw-Tauri-<version>-macOS.zip` from the [Release page][releases]
+   Download `QwenPaw-Tauri-<version>-macOS-Full.zip` from the [Release page][releases] (recommended). The smaller `QwenPaw-Tauri-<version>-macOS-Lite.zip` installs channel dependencies on demand.
 
 2. **Extract**
    Double-click the `.zip` file to extract and get `QwenPaw Desktop.app`

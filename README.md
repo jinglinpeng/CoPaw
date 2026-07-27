@@ -294,8 +294,10 @@ If you're not comfortable with command-line tools, you can download and use Qwen
 #### Download
 
 Download the desktop app (Tauri build) from [the official download page](https://qwenpaw.agentscope.io/downloads):
-- **Windows**: `QwenPaw-Tauri-<version>-Windows-setup.exe`
-- **macOS**: `QwenPaw-Tauri-<version>-macOS.zip` (Apple Silicon recommended)
+- **Windows**: `QwenPaw-Tauri-<version>-Windows-Full-setup.exe`
+- **macOS**: `QwenPaw-Tauri-<version>-macOS-Full.zip` (Apple Silicon recommended)
+
+`Full` packages (recommended) bundle every built-in channel SDK. Smaller `Lite` packages (`-Lite` in the file name) are also available and install channel dependencies on demand when a channel is enabled.
 
 #### Features
 

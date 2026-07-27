@@ -6,7 +6,8 @@ set -euo pipefail
 # 1. Unpack the freshly built Tauri zip.
 echo "[launch_tauri_macos] Unpacking zip..."
 mkdir -p dist/verify-tauri
-unzip -q dist/QwenPaw-Tauri-*-macOS.zip -d dist/verify-tauri
+# The zip name carries the -Full / -Lite variant, so match either.
+unzip -q dist/QwenPaw-Tauri-*-macOS-*.zip -d dist/verify-tauri
 APP="$(find dist/verify-tauri -maxdepth 3 -name '*.app' -type d | head -1)"
 if [ -z "$APP" ]; then
   echo "::error::Tauri .app not found inside zip"

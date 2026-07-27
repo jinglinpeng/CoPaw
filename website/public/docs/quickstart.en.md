@@ -257,8 +257,10 @@ or running commands.
 1. **Download the installer**
    Go to [GitHub Releases](https://github.com/agentscope-ai/QwenPaw/releases) to download the Tauri build for your system:
 
-   - Windows: `QwenPaw-Tauri-<version>-Windows-setup.exe`
-   - macOS: `QwenPaw-Tauri-<version>-macOS.zip`
+   - Windows: `QwenPaw-Tauri-<version>-Windows-Full-setup.exe`
+   - macOS: `QwenPaw-Tauri-<version>-macOS-Full.zip`
+
+   `Full` (recommended) bundles all channel SDKs; smaller `Lite` packages install channel dependencies on demand.
 
 2. **Install and launch**
 

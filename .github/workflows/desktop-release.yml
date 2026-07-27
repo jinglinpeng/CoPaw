@@ -19,6 +19,16 @@ on:
 permissions:
   contents: read
 
+# The unsuffixed qwenpaw-tauri-latest.json manifest mirrors this variant so
+# existing installs (whose baked-in endpoint points at the legacy manifest
+# name) keep receiving updates. Switch to `lite` here to migrate the default
+# download / auto-update channel; nothing in GitHub settings needs changing.
+env:
+  DEFAULT_DESKTOP_VARIANT: full
+  # Desktop packaging variants, shared by the aggregation jobs below. The two
+  # build matrices declare the same list inline (matrix values must be literal).
+  VARIANTS: "full lite"
+
 jobs:
   # On release events, fail fast if the DashScope secret is missing.
   # Without it, the verifier would silently skip the LLM chat round
@@ -262,6 +272,15 @@ jobs:
       (needs.check-release-secrets.result == 'success' ||
        needs.check-release-secrets.result == 'skipped')
     runs-on: windows-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        variant: [full, lite]
+        include:
+          - variant: full
+            label: Full
+          - variant: lite
+            label: Lite
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -318,7 +337,10 @@ jobs:
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
           TAURI_UPDATER_PUBKEY: ${{ vars.TAURI_UPDATER_PUBKEY }}
+          # sync_tauri_version.mjs derives the per-variant manifest name from
+          # QWENPAW_DESKTOP_VARIANT, so a single endpoint var covers both.
           TAURI_UPDATER_ENDPOINTS: ${{ vars.TAURI_UPDATER_ENDPOINTS }}
+          QWENPAW_DESKTOP_VARIANT: ${{ matrix.variant }}
         run: ./scripts/pack-tauri/build_win_pyinstaller.ps1
 
       - name: Stage Tauri Windows installer and updater assets
@@ -328,7 +350,7 @@ jobs:
             --bundle-dir console/src-tauri/target/release/bundle/nsis `
             --pattern '*-setup.exe' `
             --target windows-x86_64 `
-            --output "dist/QwenPaw-Tauri-${{ steps.version.outputs.version }}-Windows-setup.exe" `
+            --output "dist/QwenPaw-Tauri-${{ steps.version.outputs.version }}-Windows-${{ matrix.label }}-setup.exe" `
             --pubkey-config console/src-tauri/tauri.version.conf.json
 
       - name: Verify desktop (Tauri Windows)
@@ -358,7 +380,7 @@ jobs:
         if: failure()
         uses: actions/upload-artifact@v4
         with:
-          name: desktop-verify-logs-tauri-windows-${{ steps.version.outputs.version }}
+          name: desktop-verify-logs-tauri-windows-${{ matrix.variant }}-${{ steps.version.outputs.version }}
           path: |
             ${{ runner.temp }}/qwenpaw-desktop-stdout.log
             ${{ runner.temp }}/qwenpaw-desktop-stderr.log
@@ -370,7 +392,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: desktop-verify-screenshots-tauri-windows-${{ steps.version.outputs.version }}
+          name: desktop-verify-screenshots-tauri-windows-${{ matrix.variant }}-${{ steps.version.outputs.version }}
           path: ${{ runner.temp }}/verify-screenshots/
           if-no-files-found: ignore
           retention-days: 7
@@ -378,16 +400,16 @@ jobs:
       - name: Upload Tauri Windows artifact
         uses: actions/upload-artifact@v4
         with:
-          name: QwenPaw-Desktop-Tauri-Windows-${{ steps.version.outputs.version }}
-          path: dist/QwenPaw-Tauri-*-Windows-setup.exe
+          name: QwenPaw-Desktop-Tauri-Windows-${{ steps.version.outputs.version }}-${{ matrix.variant }}
+          path: dist/QwenPaw-Tauri-*-Windows-${{ matrix.label }}-setup.exe
 
       - name: Upload Tauri Windows updater metadata
         if: github.event_name == 'release' || (github.event_name == 'workflow_dispatch' && github.event.inputs.upload_to_oss == 'true')
         uses: actions/upload-artifact@v4
         with:
-          name: tauri-updater-meta-windows
+          name: tauri-updater-meta-windows-${{ matrix.variant }}
           path: |
-            dist/QwenPaw-Tauri-*-Windows-setup.exe.sig
+            dist/QwenPaw-Tauri-*-Windows-${{ matrix.label }}-setup.exe.sig
             dist/tauri-windows-x86_64-updater.json
 
   build-tauri-macos:
@@ -397,6 +419,15 @@ jobs:
       (needs.check-release-secrets.result == 'success' ||
        needs.check-release-secrets.result == 'skipped')
     runs-on: macos-14
+    strategy:
+      fail-fast: false
+      matrix:
+        variant: [full, lite]
+        include:
+          - variant: full
+            label: Full
+          - variant: lite
+            label: Lite
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -447,7 +478,10 @@ jobs:
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
           TAURI_UPDATER_PUBKEY: ${{ vars.TAURI_UPDATER_PUBKEY }}
+          # sync_tauri_version.mjs derives the per-variant manifest name from
+          # QWENPAW_DESKTOP_VARIANT, so a single endpoint var covers both.
           TAURI_UPDATER_ENDPOINTS: ${{ vars.TAURI_UPDATER_ENDPOINTS }}
+          QWENPAW_DESKTOP_VARIANT: ${{ matrix.variant }}
         run: |
           chmod +x scripts/pack-tauri/build_macos_pyinstaller.sh
           bash scripts/pack-tauri/build_macos_pyinstaller.sh
@@ -478,7 +512,7 @@ jobs:
         if: failure()
         uses: actions/upload-artifact@v4
         with:
-          name: desktop-verify-logs-tauri-macos-${{ steps.version.outputs.version }}
+          name: desktop-verify-logs-tauri-macos-${{ matrix.variant }}-${{ steps.version.outputs.version }}
           path: |
             ${{ runner.temp }}/qwenpaw-desktop-stdout.log
             ${{ runner.temp }}/qwenpaw-desktop-stderr.log
@@ -490,7 +524,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: desktop-verify-screenshots-tauri-macos-${{ steps.version.outputs.version }}
+          name: desktop-verify-screenshots-tauri-macos-${{ matrix.variant }}-${{ steps.version.outputs.version }}
           path: ${{ runner.temp }}/verify-screenshots/
           if-no-files-found: ignore
           retention-days: 7
@@ -498,17 +532,17 @@ jobs:
       - name: Upload Tauri macOS artifact
         uses: actions/upload-artifact@v4
         with:
-          name: QwenPaw-Desktop-Tauri-macOS-${{ steps.version.outputs.version }}
-          path: dist/QwenPaw-Tauri-*-macOS.zip
+          name: QwenPaw-Desktop-Tauri-macOS-${{ steps.version.outputs.version }}-${{ matrix.variant }}
+          path: dist/QwenPaw-Tauri-*-macOS-${{ matrix.label }}.zip
 
       - name: Upload Tauri macOS updater metadata
         if: github.event_name == 'release' || (github.event_name == 'workflow_dispatch' && github.event.inputs.upload_to_oss == 'true')
         uses: actions/upload-artifact@v4
         with:
-          name: tauri-updater-meta-macos
+          name: tauri-updater-meta-macos-${{ matrix.variant }}
           path: |
-            dist/QwenPaw-Tauri-*-macOS.app.tar.gz
-            dist/QwenPaw-Tauri-*-macOS.app.tar.gz.sig
+            dist/QwenPaw-Tauri-*-macOS-${{ matrix.label }}.app.tar.gz
+            dist/QwenPaw-Tauri-*-macOS-${{ matrix.label }}.app.tar.gz.sig
             dist/tauri-darwin-*-updater.json
 
   upload-release:
@@ -536,45 +570,62 @@ jobs:
       - name: Download all artifacts
         uses: actions/download-artifact@v4
 
-      - name: Move artifacts to root for upload
+      - name: Move packages to root for upload
         run: |
-          mv QwenPaw-Desktop-Windows-*/QwenPaw-Setup-*.exe . 2>/dev/null || true
-          mv QwenPaw-Desktop-macOS-*/QwenPaw-*.zip . 2>/dev/null || true
-          mv QwenPaw-Desktop-Tauri-Windows-*/QwenPaw-Tauri-*-Windows-setup.exe . 2>/dev/null || true
-          mv QwenPaw-Desktop-Tauri-macOS-*/QwenPaw-Tauri-*-macOS.zip . 2>/dev/null || true
-          # Updater metadata from internal artifacts
-          mv tauri-updater-meta-windows/QwenPaw-Tauri-*-Windows-setup.exe.sig . 2>/dev/null || true
-          mv tauri-updater-meta-windows/tauri-windows-*-updater.json . 2>/dev/null || true
-          mv tauri-updater-meta-macos/QwenPaw-Tauri-*-macOS.app.tar.gz . 2>/dev/null || true
-          mv tauri-updater-meta-macos/QwenPaw-Tauri-*-macOS.app.tar.gz.sig . 2>/dev/null || true
-          mv tauri-updater-meta-macos/tauri-darwin-*-updater.json . 2>/dev/null || true
+          # Package file names already carry the -Full / -Lite variant, so the
+          # four packages never collide when flattened to the workspace root.
+          mv QwenPaw-Desktop-Tauri-Windows-*/QwenPaw-Tauri-*-Windows-*-setup.exe . 2>/dev/null || true
+          mv QwenPaw-Desktop-Tauri-macOS-*/QwenPaw-Tauri-*-macOS-*.zip . 2>/dev/null || true
+          # macOS updater archives live in the per-variant updater-meta artifacts.
+          mv tauri-updater-meta-macos-*/QwenPaw-Tauri-*-macOS-*.app.tar.gz . 2>/dev/null || true
 
-      - name: Generate Tauri updater manifest
+      - name: Generate per-variant Tauri updater manifests
         env:
           # Pass release.body via env so quotes/newlines/$ in markdown are safe.
           RELEASE_BODY: ${{ github.event.release.body }}
         run: |
-          metadata_args=()
-          for f in tauri-windows-*-updater.json tauri-darwin-*-updater.json; do
-            [ -f "$f" ] && metadata_args+=(--metadata "$f")
-          done
           NOTES="${RELEASE_BODY:-QwenPaw Desktop ${{ steps.version.outputs.version }}}"
-          python scripts/pack-tauri/generate_update_manifest.py manifest \
-            --version "${{ steps.version.outputs.version }}" \
-            --base-url "https://github.com/${{ github.repository }}/releases/download/${{ github.event.release.tag_name }}" \
-            "${metadata_args[@]}" \
-            --notes "$NOTES" \
-            --output qwenpaw-tauri-latest.json
+          for variant in $VARIANTS; do
+            label="${variant^}"
+            stage="manifest-stage-${variant}"
+            rm -rf "$stage"; mkdir -p "$stage"
+            # Co-locate each platform sidecar JSON with its artifact and .sig so
+            # the manifest generator can resolve them from one directory. The
+            # Windows sidecar names the NSIS setup.exe; macOS names the
+            # .app.tar.gz (already beside its sidecar in the meta artifact).
+            cp tauri-updater-meta-windows-${variant}/* "$stage"/ 2>/dev/null || true
+            cp QwenPaw-Tauri-*-Windows-${label}-setup.exe "$stage"/ 2>/dev/null || true
+            cp tauri-updater-meta-macos-${variant}/* "$stage"/ 2>/dev/null || true
+            cp QwenPaw-Tauri-*-macOS-${label}.app.tar.gz "$stage"/ 2>/dev/null || true
+            metadata_args=()
+            for f in "$stage"/tauri-windows-*-updater.json "$stage"/tauri-darwin-*-updater.json; do
+              [ -f "$f" ] && metadata_args+=(--metadata "$f")
+            done
+            if [ ${#metadata_args[@]} -eq 0 ]; then
+              echo "No ${variant} updater sidecars found, skipping"
+              continue
+            fi
+            python scripts/pack-tauri/generate_update_manifest.py manifest \
+              --version "${{ steps.version.outputs.version }}" \
+              --base-url "https://github.com/${{ github.repository }}/releases/download/${{ github.event.release.tag_name }}" \
+              "${metadata_args[@]}" \
+              --notes "$NOTES" \
+              --output "qwenpaw-tauri-latest-${variant}.json"
+          done
+          # Mirror the default variant under the legacy unsuffixed name so
+          # existing installs pointing at qwenpaw-tauri-latest.json migrate to it.
+          if [ -f "qwenpaw-tauri-latest-${DEFAULT_DESKTOP_VARIANT}.json" ]; then
+            cp "qwenpaw-tauri-latest-${DEFAULT_DESKTOP_VARIANT}.json" qwenpaw-tauri-latest.json
+          fi
 
       - name: Upload to Release
         uses: softprops/action-gh-release@v2
         with:
           files: |
-            QwenPaw-Setup-*.exe
-            QwenPaw-[0-9]*-macOS.zip
-            QwenPaw-Tauri-*-Windows-setup.exe
-            QwenPaw-Tauri-*-macOS.zip
-            QwenPaw-Tauri-*-macOS.app.tar.gz
+            QwenPaw-Tauri-*-Windows-*-setup.exe
+            QwenPaw-Tauri-*-macOS-*.zip
+            QwenPaw-Tauri-*-macOS-*.app.tar.gz
+            qwenpaw-tauri-latest-*.json
             qwenpaw-tauri-latest.json
           fail-on-unmatched-files: false
         env:
@@ -767,51 +818,46 @@ jobs:
               --force
           }
 
-          upload_tauri_artifact \
-            "QwenPaw-Desktop-Tauri-Windows-*" \
-            "QwenPaw-Tauri-*-Windows-setup.exe" \
-            "win-tauri" \
-            "QwenPaw-Tauri-${VERSION}-Windows-setup.exe" \
-            "QwenPaw-Tauri-latest-Windows-setup.exe" \
-            "win-tauri-metadata.json"
-
-          upload_tauri_artifact \
-            "QwenPaw-Desktop-Tauri-macOS-*" \
-            "QwenPaw-Tauri-*-macOS.zip" \
-            "mac-tauri" \
-            "QwenPaw-Tauri-${VERSION}-macOS.zip" \
-            "QwenPaw-Tauri-latest-macOS.zip" \
-            "mac-tauri-metadata.json"
-
-      - name: Upload Tauri macOS updater archive to OSS
-        # The .zip is for first-install; the auto-updater pulls .app.tar.gz.
-        if: hashFiles('tauri-updater-meta-macos/*.app.tar.gz') != ''
-        run: |
-          VERSION="${{ steps.version.outputs.version }}"
-          APP_TAR_GZ=$(find tauri-updater-meta-macos -name "QwenPaw-Tauri-*-macOS.app.tar.gz" | head -1)
-          if [ -z "$APP_TAR_GZ" ]; then
-            echo "No macOS .app.tar.gz found, skipping"
-            exit 0
-          fi
-          ossutil cp "$APP_TAR_GZ" \
-            "oss://${OSS_BUCKET}/files/apps/desktop/mac-tauri/QwenPaw-Tauri-${VERSION}-macOS.app.tar.gz" \
-            --acl public-read \
-            --force
-
-      - name: Link artifacts into updater-meta dirs for manifest generation
-        if: hashFiles('tauri-updater-meta-*/tauri-*-updater.json') != ''
-        run: |
-          # The manifest generator expects the artifact binary alongside the
-          # sidecar JSON.  After artifact splitting the exe lives in a separate
-          # artifact directory, so we symlink it into the meta directory.
-          for f in QwenPaw-Desktop-Tauri-Windows-*/QwenPaw-Tauri-*-Windows-setup.exe; do
-            [ -f "$f" ] && ln -sf "../$f" tauri-updater-meta-windows/ 2>/dev/null || true
+          for variant in $VARIANTS; do
+            label="${variant^}"
+            upload_tauri_artifact \
+              "QwenPaw-Desktop-Tauri-Windows-*-${variant}" \
+              "QwenPaw-Tauri-*-Windows-${label}-setup.exe" \
+              "win-tauri-${variant}" \
+              "QwenPaw-Tauri-${VERSION}-Windows-${label}-setup.exe" \
+              "QwenPaw-Tauri-latest-Windows-${label}-setup.exe" \
+              "win-tauri-${variant}-metadata.json"
+            upload_tauri_artifact \
+              "QwenPaw-Desktop-Tauri-macOS-*-${variant}" \
+              "QwenPaw-Tauri-*-macOS-${label}.zip" \
+              "mac-tauri-${variant}" \
+              "QwenPaw-Tauri-${VERSION}-macOS-${label}.zip" \
+              "QwenPaw-Tauri-latest-macOS-${label}.zip" \
+              "mac-tauri-${variant}-metadata.json"
           done
 
-      - name: Generate and upload OSS updater manifest
-        # Mirror the GitHub-pointing manifest with one whose URLs point at
-        # OSS, so mainland users can hit a CN-fast endpoint first and fall
-        # back to GitHub if OSS is unreachable.
+      - name: Upload Tauri macOS updater archives to OSS
+        # The .zip is for first-install; the auto-updater pulls .app.tar.gz.
+        if: hashFiles('tauri-updater-meta-macos-*/*.app.tar.gz') != ''
+        run: |
+          VERSION="${{ steps.version.outputs.version }}"
+          for variant in $VARIANTS; do
+            label="${variant^}"
+            APP_TAR_GZ=$(find tauri-updater-meta-macos-${variant} -name "QwenPaw-Tauri-*-macOS-${label}.app.tar.gz" 2>/dev/null | head -1)
+            if [ -z "$APP_TAR_GZ" ]; then
+              echo "No macOS ${variant} .app.tar.gz found, skipping"
+              continue
+            fi
+            ossutil cp "$APP_TAR_GZ" \
+              "oss://${OSS_BUCKET}/files/apps/desktop/mac-tauri-${variant}/QwenPaw-Tauri-${VERSION}-macOS-${label}.app.tar.gz" \
+              --acl public-read \
+              --force
+          done
+
+      - name: Generate and upload per-variant OSS updater manifests
+        # Mirror the GitHub-pointing manifests with OSS-pointing ones so
+        # mainland users hit a CN-fast endpoint first and fall back to GitHub.
+        # Each variant self-updates within its own channel.
         if: hashFiles('tauri-updater-meta-*/tauri-*-updater.json') != ''
         env:
           # Pass release.body via env so quotes/newlines/$ in markdown are safe.
@@ -819,28 +865,45 @@ jobs:
         run: |
           VERSION="${{ steps.version.outputs.version }}"
           OSS_BASE="${OSS_PUBLIC_BASE_URL%/}"
-          metadata_args=()
-          for f in tauri-updater-meta-windows/tauri-windows-*-updater.json \
-                   tauri-updater-meta-macos/tauri-darwin-*-updater.json; do
-            [ -f "$f" ] && metadata_args+=(--metadata "$f")
-          done
-          if [ ${#metadata_args[@]} -eq 0 ]; then
-            echo "No Tauri updater sidecars found, skipping OSS manifest"
-            exit 0
-          fi
           NOTES="${RELEASE_BODY:-QwenPaw Desktop ${VERSION}}"
-          python scripts/pack-tauri/generate_update_manifest.py manifest \
-            --version "$VERSION" \
-            --base-url "$OSS_BASE" \
-            --target-base "windows-x86_64=${OSS_BASE}/win-tauri" \
-            --target-base "darwin-aarch64=${OSS_BASE}/mac-tauri" \
-            "${metadata_args[@]}" \
-            --notes "$NOTES" \
-            --output qwenpaw-tauri-latest-oss.json
-          ossutil cp qwenpaw-tauri-latest-oss.json \
-            "oss://${OSS_BUCKET}/metadata/qwenpaw-tauri-latest.json" \
-            --acl public-read \
-            --force
+          for variant in $VARIANTS; do
+            label="${variant^}"
+            stage="oss-manifest-stage-${variant}"
+            rm -rf "$stage"; mkdir -p "$stage"
+            # Co-locate each platform sidecar with its artifact + .sig so the
+            # manifest generator can resolve them from a single directory.
+            cp tauri-updater-meta-windows-${variant}/* "$stage"/ 2>/dev/null || true
+            find QwenPaw-Desktop-Tauri-Windows-*-${variant} -name "QwenPaw-Tauri-*-Windows-${label}-setup.exe" -exec cp {} "$stage"/ \; 2>/dev/null || true
+            cp tauri-updater-meta-macos-${variant}/* "$stage"/ 2>/dev/null || true
+            metadata_args=()
+            for f in "$stage"/tauri-windows-*-updater.json "$stage"/tauri-darwin-*-updater.json; do
+              [ -f "$f" ] && metadata_args+=(--metadata "$f")
+            done
+            if [ ${#metadata_args[@]} -eq 0 ]; then
+              echo "No ${variant} updater sidecars found, skipping OSS manifest"
+              continue
+            fi
+            python scripts/pack-tauri/generate_update_manifest.py manifest \
+              --version "$VERSION" \
+              --base-url "$OSS_BASE" \
+              --target-base "windows-x86_64=${OSS_BASE}/win-tauri-${variant}" \
+              --target-base "darwin-aarch64=${OSS_BASE}/mac-tauri-${variant}" \
+              "${metadata_args[@]}" \
+              --notes "$NOTES" \
+              --output "qwenpaw-tauri-latest-oss-${variant}.json"
+            ossutil cp "qwenpaw-tauri-latest-oss-${variant}.json" \
+              "oss://${OSS_BUCKET}/metadata/qwenpaw-tauri-latest-${variant}.json" \
+              --acl public-read \
+              --force
+          done
+          # Mirror the default variant under the legacy unsuffixed name so
+          # existing installs keep updating via qwenpaw-tauri-latest.json.
+          if [ -f "qwenpaw-tauri-latest-oss-${DEFAULT_DESKTOP_VARIANT}.json" ]; then
+            ossutil cp "qwenpaw-tauri-latest-oss-${DEFAULT_DESKTOP_VARIANT}.json" \
+              "oss://${OSS_BUCKET}/metadata/qwenpaw-tauri-latest.json" \
+              --acl public-read \
+              --force
+          fi
 
       - name: Update desktop index
         run: |
@@ -899,16 +962,19 @@ jobs:
               --output-index desktop-index.json
           }
 
-          merge_tauri_metadata \
-            "win-tauri-metadata.json" \
-            "QwenPaw-Desktop-Tauri-Windows-*" \
-            "QwenPaw-Tauri-*-Windows-setup.exe" \
-            "win-tauri"
-          merge_tauri_metadata \
-            "mac-tauri-metadata.json" \
-            "QwenPaw-Desktop-Tauri-macOS-*" \
-            "QwenPaw-Tauri-*-macOS.zip" \
-            "mac-tauri"
+          for variant in $VARIANTS; do
+            label="${variant^}"
+            merge_tauri_metadata \
+              "win-tauri-${variant}-metadata.json" \
+              "QwenPaw-Desktop-Tauri-Windows-*-${variant}" \
+              "QwenPaw-Tauri-*-Windows-${label}-setup.exe" \
+              "win-tauri-${variant}"
+            merge_tauri_metadata \
+              "mac-tauri-${variant}-metadata.json" \
+              "QwenPaw-Desktop-Tauri-macOS-*-${variant}" \
+              "QwenPaw-Tauri-*-macOS-${label}.zip" \
+              "mac-tauri-${variant}"
+          done
 
           # Upload updated desktop/index.json
           ossutil cp desktop-index.json \

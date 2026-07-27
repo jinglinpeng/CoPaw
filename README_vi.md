@@ -294,8 +294,10 @@ Nếu bạn không quen với công cụ dòng lệnh, bạn có thể tải xu�
 #### Tải Xuống
 
 Tải ứng dụng desktop (bản Tauri) từ [trang tải xuống chính thức](https://qwenpaw.agentscope.io/downloads):
-- **Windows**: `QwenPaw-Tauri-<version>-Windows-setup.exe`
-- **macOS**: `QwenPaw-Tauri-<version>-macOS.zip` (khuyên dùng Apple Silicon)
+- **Windows**: `QwenPaw-Tauri-<version>-Windows-Full-setup.exe`
+- **macOS**: `QwenPaw-Tauri-<version>-macOS-Full.zip` (khuyên dùng Apple Silicon)
+
+Gói `Full` (khuyên dùng) đóng gói sẵn toàn bộ SDK kênh. Ngoài ra còn có gói `Lite` nhỏ gọn hơn (tên tệp có `-Lite`), cài đặt phụ thuộc kênh theo nhu cầu khi kênh được bật.
 
 #### Tính Năng
 

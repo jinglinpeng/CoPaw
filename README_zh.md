@@ -294,8 +294,10 @@ docker run -p 127.0.0.1:8088:8088 \
 #### 下载
 
 从 [官方下载页](https://qwenpaw.agentscope.io/downloads) 下载桌面应用（Tauri 版）：
-- **Windows**：`QwenPaw-Tauri-<version>-Windows-setup.exe`
-- **macOS**：`QwenPaw-Tauri-<version>-macOS.zip`（推荐 Apple Silicon）
+- **Windows**：`QwenPaw-Tauri-<version>-Windows-Full-setup.exe`
+- **macOS**：`QwenPaw-Tauri-<version>-macOS-Full.zip`（推荐 Apple Silicon）
+
+`Full` 全量包（推荐）内置全部渠道 SDK；另提供体积更小的 `Lite` 轻量包（文件名带 `-Lite`），启用渠道时按需在线安装对应依赖。
 
 #### 特点
 

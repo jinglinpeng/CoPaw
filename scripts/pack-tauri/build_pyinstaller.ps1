@@ -128,10 +128,23 @@ if (Test-PythonImport "import dotenv") {
 
 Write-Host ""
 
-# Install project dependencies (ensures ALL runtime deps are importable)
-Write-Host "== Installing project dependencies ==" -ForegroundColor Yellow
-Install-PythonPackages -Packages @("-e", ".[full]")
-Write-Host "Project dependencies installed with full extras" -ForegroundColor Green
+# Install project dependencies (ensures ALL runtime deps are importable).
+# The desktop variant controls which optional dependency set is frozen:
+#   full  -> .[full] (includes channels-all; every channel SDK is bundled)
+#   lite  -> .[local,whisper] (no optional channel SDKs; those are installed
+#           on demand at runtime into the user-writable channel runtime site)
+$Variant = $env:QWENPAW_DESKTOP_VARIANT
+if (-not $Variant) { $Variant = "full" }
+switch ($Variant) {
+    "full" { $Extras = ".[full]" }
+    "lite" { $Extras = ".[local,whisper]" }
+    default {
+        throw "unknown QWENPAW_DESKTOP_VARIANT: $Variant (expected 'full' or 'lite')"
+    }
+}
+Write-Host "== Installing project dependencies (variant: $Variant) ==" -ForegroundColor Yellow
+Install-PythonPackages -Packages @("-e", $Extras)
+Write-Host "Project dependencies installed ($Extras)" -ForegroundColor Green
 
 # Fix agent-client-protocol namespace collision
 # PyPI has an empty 'acp' stub that shadows the real package

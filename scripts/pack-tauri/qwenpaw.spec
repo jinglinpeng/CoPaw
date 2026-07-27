@@ -10,6 +10,7 @@ option.
 
 import os
 import sys
+import tempfile
 from pathlib import Path
 
 from PyInstaller.utils.hooks import (
@@ -61,6 +62,17 @@ datas = [
     (str(SRC / src), dst) for src, dst in _data_dirs if (SRC / src).is_dir()
 ]
 datas += collect_tree(CONSOLE_DIST, "qwenpaw/console")
+
+# Record the desktop variant (full|lite) inside the bundle so the running
+# backend can report which package was installed (About page / logs) and so the
+# on-demand channel installer can reason about the frozen dependency set. The
+# marker mirrors QWENPAW_DESKTOP_VARIANT passed by the build scripts.
+_variant = (os.environ.get("QWENPAW_DESKTOP_VARIANT", "full").strip().lower()
+            or "full")
+_variant_dir = Path(tempfile.mkdtemp(prefix="qwenpaw-variant-"))
+_variant_file = _variant_dir / "variant.txt"
+_variant_file.write_text(_variant + "\n", encoding="utf-8")
+datas += [(str(_variant_file), "qwenpaw")]
 
 # Include reme package data files (configs, tool yamls, etc.)
 datas += collect_data_files("reme")

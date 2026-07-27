@@ -294,8 +294,10 @@ QwenPaw を Alibaba Cloud（ECS）で実行するには、ワンクリックデ�
 #### ダウンロード
 
 [公式ダウンロードページ](https://qwenpaw.agentscope.io/downloads) からデスクトップアプリ（Tauri 版）をダウンロード:
-- **Windows**: `QwenPaw-Tauri-<version>-Windows-setup.exe`
-- **macOS**: `QwenPaw-Tauri-<version>-macOS.zip` (Apple Silicon 推奨)
+- **Windows**: `QwenPaw-Tauri-<version>-Windows-Full-setup.exe`
+- **macOS**: `QwenPaw-Tauri-<version>-macOS-Full.zip` (Apple Silicon 推奨)
+
+`Full` パッケージ（推奨）はすべてのチャネル SDK を同梱しています。より軽量な `Lite` パッケージ（ファイル名に `-Lite`）も利用でき、チャネルを有効化した際に依存関係をオンデマンドでインストールします。
 
 #### 特徴
 

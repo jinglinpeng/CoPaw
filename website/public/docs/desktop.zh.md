@@ -40,7 +40,7 @@
 ### 安装步骤
 
 1. **下载安装包**
-   从 [Release 页面][releases]下载 `QwenPaw-Tauri-<version>-Windows-setup.exe` 文件
+   从 [Release 页面][releases]下载 `QwenPaw-Tauri-<version>-Windows-Full-setup.exe` 全量包（推荐）；也可选择体积更小的 `QwenPaw-Tauri-<version>-Windows-Lite-setup.exe` 轻量包，启用渠道时按需安装依赖
 
 2. **运行安装程序**
    双击 `.exe` 文件，按照安装向导提示完成安装
@@ -107,7 +107,7 @@ A: 应用未经过 **Microsoft 代码签名**（成本 $200-800/年），Windows
 ### 安装步骤
 
 1. **下载压缩包**
-   从 [Release 页面][releases]下载 `QwenPaw-Tauri-<version>-macOS.zip` 文件
+   从 [Release 页面][releases]下载 `QwenPaw-Tauri-<version>-macOS-Full.zip` 全量包（推荐）；也可选择体积更小的 `QwenPaw-Tauri-<version>-macOS-Lite.zip` 轻量包，启用渠道时按需安装依赖
 
 2. **解压缩**
    双击 `.zip` 文件自动解压，得到 `QwenPaw Desktop.app` 应用

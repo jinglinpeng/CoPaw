@@ -224,8 +224,10 @@ docker run -p 127.0.0.1:8088:8088 \
 1. **下载安装包**
    前往 [GitHub Releases](https://github.com/agentscope-ai/QwenPaw/releases) 下载对应系统的 Tauri 版本：
 
-   - Windows: `QwenPaw-Tauri-<version>-Windows-setup.exe`
-   - macOS: `QwenPaw-Tauri-<version>-macOS.zip`
+   - Windows: `QwenPaw-Tauri-<version>-Windows-Full-setup.exe`
+   - macOS: `QwenPaw-Tauri-<version>-macOS-Full.zip`
+
+   `Full` 全量版（推荐）内置全部渠道 SDK；`Lite` 轻量版体积更小，启用渠道时按需安装依赖。
 
 2. **安装并启动**
 

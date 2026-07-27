@@ -294,8 +294,10 @@ docker run -p 127.0.0.1:8088:8088 \
 #### Загрузка
 
 Загрузите десктопное приложение (сборка Tauri) с [официальной страницы загрузки](https://qwenpaw.agentscope.io/downloads):
-- **Windows**: `QwenPaw-Tauri-<version>-Windows-setup.exe`
-- **macOS**: `QwenPaw-Tauri-<version>-macOS.zip` (рекомендуется для Apple Silicon)
+- **Windows**: `QwenPaw-Tauri-<version>-Windows-Full-setup.exe`
+- **macOS**: `QwenPaw-Tauri-<version>-macOS-Full.zip` (рекомендуется для Apple Silicon)
+
+Пакеты `Full` (рекомендуется) включают все SDK каналов. Также доступны более компактные пакеты `Lite` (с `-Lite` в имени файла), которые устанавливают зависимости каналов по требованию при их включении.
 
 #### Особенности
 
