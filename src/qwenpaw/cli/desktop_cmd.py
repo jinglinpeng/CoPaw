@@ -29,6 +29,78 @@ except ImportError:
 logger = logging.getLogger(__name__)
 
 
+def _install_webview2_recovery(url: str) -> None:
+    """Recover pywebview when its Windows WebView2 process exits."""
+    if sys.platform != "win32":
+        return
+
+    from webview.platforms.edgechromium import EdgeChrome
+
+    original = EdgeChrome.on_webview_ready
+    if getattr(original, "qwenpaw_recovery", False):
+        return
+
+    def on_webview_ready(self, sender, args) -> None:
+        original(self, sender, args)
+        if not args.IsSuccess:
+            if getattr(self.form, "qwenpaw_recovering", False):
+                webbrowser.open(url)
+            return
+
+        core = sender.CoreWebView2
+        self.form.qwenpaw_recovering = False
+        state = {"browser_failed": False}
+
+        def recreate() -> None:
+            form = self.form
+            if getattr(form, "qwenpaw_recovering", False):
+                return
+
+            form.qwenpaw_recovering = True
+            logger.warning("Recreating WebView2 after browser process failure")
+            try:
+                form.Controls.Remove(self.webview)
+                self.webview.Dispose()
+                browser = EdgeChrome(
+                    form,
+                    self.pywebview_window,
+                    self.user_data_folder,
+                )
+                form.browser = browser
+                form.webview = browser.webview
+            except Exception:
+                form.qwenpaw_recovering = False
+                logger.exception("Failed to recreate WebView2")
+                webbrowser.open(url)
+
+        def process_failed(_sender, event) -> None:
+            kind = str(event.ProcessFailedKind)
+            logger.error("WebView2 process failed: %s", kind)
+            if kind == "BrowserProcessExited":
+                state["browser_failed"] = True
+            elif kind == "RenderProcessExited":
+                try:
+                    core.Reload()
+                except Exception:
+                    logger.exception("Failed to reload WebView2 renderer")
+                    recreate()
+
+        def browser_process_exited(_sender, event) -> None:
+            exit_kind = str(event.BrowserProcessExitKind)
+            if state["browser_failed"] or exit_kind.endswith("Failed"):
+                recreate()
+
+        core.ProcessFailed += process_failed
+        core.Environment.BrowserProcessExited += browser_process_exited
+        self.qwenpaw_recovery_handlers = (
+            process_failed,
+            browser_process_exited,
+        )
+
+    on_webview_ready.qwenpaw_recovery = True
+    EdgeChrome.on_webview_ready = on_webview_ready
+
+
 class WebViewAPI:
     """API exposed to the webview for external links and file downloads."""
 
@@ -242,6 +314,8 @@ def desktop_cmd(
             if _wait_for_http(host, port):
                 logger.info("HTTP ready, creating webview window...")
                 api = WebViewAPI()
+                if is_windows:
+                    _install_webview2_recovery(url)
                 webview.create_window(
                     "QwenPaw Desktop",
                     url,
