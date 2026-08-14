@@ -227,6 +227,15 @@ fn active_menu(app: &AXUIElement, expected_pid: i32, content_window: i64) -> Opt
         .find_map(|point| menu_at_point(point, expected_pid))
 }
 
+pub(super) fn has_active_transient_surface(window: &WindowInfo) -> bool {
+    let Some(pid) = (window.owner_pid > 0).then_some(window.owner_pid) else {
+        return false;
+    };
+    let app = AXUIElement::application(pid);
+    let _ = app.set_messaging_timeout(super::AX_MESSAGING_TIMEOUT_SECONDS);
+    active_menu(&app, pid, window.hwnd as i64).is_some()
+}
+
 fn menu_at_point(point: CGPoint, expected_pid: i32) -> Option<AXUIElement> {
     menu_ancestor(interactive_element_at_point(point)?, expected_pid)
 }

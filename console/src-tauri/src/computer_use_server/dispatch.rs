@@ -16,8 +16,8 @@ use super::approval::request_approval;
 #[cfg(target_os = "macos")]
 use super::platform_macos::element_is_transient_menu_item;
 use super::state::{
-    accessibility_revision, Observation, PendingAction, ServerState, WindowInfo,
-    INPUT_GUARD_GRACE_MS,
+    accessibility_revision, Observation, ObservationOptions, PendingAction, ServerState,
+    WindowInfo, INPUT_GUARD_GRACE_MS,
 };
 use super::{
     active_window, click, close_window, desktop_locked, drag, ensure_permissions, input_sequence,
@@ -277,7 +277,7 @@ pub(super) fn dispatch_request(
     let mut result = match method {
         "observe_window" => {
             state.settle_before_observe(window.hwnd);
-            observe_window(state, &window)
+            observe_window(state, &window, observation_options(&params)?)
         }
         "close_window" => close_window(&window),
         "click" => click(observation(state, observation_id)?, &params),
@@ -434,7 +434,35 @@ fn refresh_after_action(state: &mut ServerState, previous: &WindowInfo) -> Optio
         return None;
     }
     state.settle_before_observe(current.hwnd);
-    observe_window(state, &current).ok()
+    observe_window(state, &current, ObservationOptions::default()).ok()
+}
+
+fn observation_options(
+    params: &serde_json::Map<String, Value>,
+) -> Result<ObservationOptions, (&'static str, String)> {
+    fn flag(
+        params: &serde_json::Map<String, Value>,
+        name: &str,
+    ) -> Result<bool, (&'static str, String)> {
+        match params.get(name) {
+            None => Ok(true),
+            Some(value) => value
+                .as_bool()
+                .ok_or(("invalid_request", format!("{name} must be a boolean."))),
+        }
+    }
+
+    let options = ObservationOptions {
+        include_screenshot: flag(params, "include_screenshot")?,
+        include_text: flag(params, "include_text")?,
+    };
+    if !options.include_screenshot && !options.include_text {
+        return Err((
+            "invalid_request",
+            "At least one observation source must be requested.".to_string(),
+        ));
+    }
+    Ok(options)
 }
 
 fn parse_input_steps(
@@ -739,7 +767,7 @@ fn requires_user_idle_on_mac(method: &str, target_is_frontmost: bool) -> bool {
 
 #[cfg(test)]
 mod tests {
-    use super::super::state::WindowInfo;
+    use super::super::state::{ScreenshotTarget, WindowInfo};
     use super::*;
     use std::io::Cursor;
 
@@ -754,14 +782,41 @@ mod tests {
                 title: String::new(),
                 class_name: String::new(),
             },
-            bounds: [0, 0, 100, 100],
-            display_width: 100,
-            display_height: 100,
+            window_bounds: [0, 0, 100, 100],
+            screenshots: std::collections::HashMap::from([(
+                "screenshot-1".to_string(),
+                ScreenshotTarget {
+                    hwnd,
+                    bounds: [0, 0, 100, 100],
+                    display_width: 100,
+                    display_height: 100,
+                },
+            )]),
+            #[cfg(windows)]
+            input_hwnd: hwnd,
             accessibility_revision: None,
             #[cfg(target_os = "macos")]
             transient_text_ready: false,
             elements: Default::default(),
         }
+    }
+
+    #[test]
+    fn observation_options_default_to_both_sources() {
+        let options = observation_options(&serde_json::Map::new()).unwrap();
+        assert!(options.include_screenshot);
+        assert!(options.include_text);
+    }
+
+    #[test]
+    fn observation_options_require_at_least_one_source() {
+        let params = json!({
+            "include_screenshot": false,
+            "include_text": false,
+        });
+        let error = observation_options(params.as_object().unwrap())
+            .expect_err("an empty observation is not useful");
+        assert_eq!(error.0, "invalid_request");
     }
 
     #[cfg(target_os = "macos")]
