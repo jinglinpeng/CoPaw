@@ -24,6 +24,7 @@ use core_graphics::window::{
 use objc2_app_kit::{NSApplicationActivationOptions, NSRunningApplication};
 use serde_json::{json, Map, Value};
 
+use super::super::input_contract::{click_count, native_scroll_delta};
 use super::super::state::{
     map_point, screenshot_target, Observation, PendingAction, WindowInfo, INPUT_GUARD_GRACE_MS,
 };
@@ -117,11 +118,20 @@ pub(crate) fn click(
         .get("button")
         .and_then(Value::as_str)
         .unwrap_or("left");
-    let count = params
-        .get("count")
-        .and_then(Value::as_i64)
-        .unwrap_or(1)
-        .clamp(1, 3);
+    let count = click_count(params)? as i64;
+    let (down, up, mouse_button) = match button {
+        "left" => (
+            CGEventType::LeftMouseDown,
+            CGEventType::LeftMouseUp,
+            CGMouseButton::Left,
+        ),
+        "right" => (
+            CGEventType::RightMouseDown,
+            CGEventType::RightMouseUp,
+            CGMouseButton::Right,
+        ),
+        _ => return Err(("invalid_request", "Unsupported mouse button.".to_string())),
+    };
     if params.contains_key("element_id") && button == "left" && count == 1 {
         if let Some(result) = activate_accessibility_element(observation, params)? {
             return Ok(result);
@@ -139,18 +149,6 @@ pub(crate) fn click(
         prepare_element_point(observation, params)?
     } else {
         prepare_point(observation, params, "x", "y")?
-    };
-    let (down, up, mouse_button) = match button {
-        "right" => (
-            CGEventType::RightMouseDown,
-            CGEventType::RightMouseUp,
-            CGMouseButton::Right,
-        ),
-        _ => (
-            CGEventType::LeftMouseDown,
-            CGEventType::LeftMouseUp,
-            CGMouseButton::Left,
-        ),
     };
     let source = event_source()?;
     post_mouse(&source, CGEventType::MouseMoved, point, CGMouseButton::Left)?;
@@ -183,10 +181,10 @@ pub(crate) fn scroll(
     params: &Map<String, Value>,
 ) -> Result<Value, (&'static str, String)> {
     let point = prepare_point(observation, params, "x", "y")?;
-    let delta_y = integer_param(params, "delta_y")? as i32;
+    let delta_y = native_scroll_delta(params)?;
     let source = event_source()?;
     post_mouse(&source, CGEventType::MouseMoved, point, CGMouseButton::Left)?;
-    let event = CGEvent::new_scroll_event(source, ScrollEventUnit::PIXEL, 1, -delta_y, 0, 0)
+    let event = CGEvent::new_scroll_event(source, ScrollEventUnit::PIXEL, 1, delta_y, 0, 0)
         .map_err(|_| {
             (
                 "input_failed",

@@ -259,11 +259,11 @@ pub(super) fn dispatch_request(
     if let Some(path) = launch_path {
         launch_at(&path)?;
         state.note_global_action();
-        return Ok(json!({
-            "launched": true,
-            "app_id": window.app_id,
-            "requires_observe": true,
-        }));
+        return Ok(action_receipt(
+            json!({"launched": true, "app_id": window.app_id}),
+            None,
+            None,
+        ));
     }
     let previous_revision = observation_id
         .and_then(|id| state.observations.get(id))

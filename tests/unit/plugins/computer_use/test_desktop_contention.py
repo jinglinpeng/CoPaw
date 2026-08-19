@@ -83,8 +83,14 @@ async def test_a_busy_desktop_is_retried_until_it_frees_up(
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("method", "next_action"),
+    [("click", "observe_window"), ("launch_app", "list_windows")],
+)
 async def test_a_desktop_busy_for_too_long_is_reported(
     monkeypatch: pytest.MonkeyPatch,
+    method: str,
+    next_action: str,
 ) -> None:
     """The model is told, rather than left waiting indefinitely."""
     monkeypatch.setattr(
@@ -100,9 +106,11 @@ async def test_a_desktop_busy_for_too_long_is_reported(
     client._observation_id = "observation-1"
 
     with pytest.raises(ComputerUseProtocolError) as refusal:
-        await client.execute("click", {})
+        await client.execute(method, {})
 
     assert refusal.value.code == "desktop_busy"
+    assert refusal.value.requires_observe is True
+    assert refusal.value.next_action == next_action
     assert transport.attempts == client_module._DESKTOP_BUSY_ATTEMPTS
 
 

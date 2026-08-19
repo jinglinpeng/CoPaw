@@ -72,9 +72,9 @@ function a(t, n) {
   }
   return I[t][n];
 }
-const B = "1.0.0", D = {
+const B = "1.0.1", D = {
   version: B
-}, o = window.QwenPaw.host, e = o.React, {
+}, i = window.QwenPaw.host, e = i.React, {
   Badge: J,
   Button: h,
   Empty: R,
@@ -86,14 +86,14 @@ const B = "1.0.0", D = {
   Tooltip: z,
   Typography: G,
   message: m
-} = o.antd, {
+} = i.antd, {
   CheckOutlined: M,
   CloseOutlined: H,
   DeleteOutlined: V,
   FolderOpenOutlined: X,
   ReloadOutlined: Y,
   SafetyCertificateOutlined: Z
-} = o.antdIcons, { Text: d, Title: ee } = G;
+} = i.antdIcons, { Text: d, Title: ee } = G;
 function te() {
   try {
     return _(localStorage.getItem("language"));
@@ -102,33 +102,33 @@ function te() {
   }
 }
 async function b(t, n) {
-  const s = o.fetch ? await o.fetch(t, n) : await fetch(o.getApiUrl(t), {
+  const s = i.fetch ? await i.fetch(t, n) : await fetch(i.getApiUrl(t), {
     ...n,
     headers: {
       ...(n == null ? void 0 : n.headers) || {},
-      ...o.getApiToken() ? { Authorization: `Bearer ${o.getApiToken()}` } : {}
+      ...i.getApiToken() ? { Authorization: `Bearer ${i.getApiToken()}` } : {}
     }
-  }), l = await s.text();
-  let r = null;
+  }), r = await s.text();
+  let l = null;
   try {
-    r = l ? JSON.parse(l) : null;
+    l = r ? JSON.parse(r) : null;
   } catch {
-    r = null;
+    l = null;
   }
   if (!s.ok) {
-    const u = r && typeof r == "object" && "detail" in r ? r.detail : void 0;
+    const u = l && typeof l == "object" && "detail" in l ? l.detail : void 0;
     throw new Error(
       typeof u == "string" ? u : `HTTP ${s.status}`
     );
   }
-  return r;
+  return l;
 }
 function ae(t, n) {
   const s = t.toolParams.display_name;
   if (typeof s == "string" && s.trim())
     return s;
-  const l = t.toolParams.canonical_app_id;
-  return typeof l == "string" && l.trim() ? l : a(n, "unknownApplication");
+  const r = t.toolParams.canonical_app_id;
+  return typeof r == "string" && r.trim() ? r : a(n, "unknownApplication");
 }
 function ne(t) {
   const n = t.toolParams.canonical_app_id;
@@ -139,8 +139,8 @@ function ne(t) {
 }
 function se({ approval: t, onResolved: n }) {
   var g;
-  const s = _((g = o.useLocale) == null ? void 0 : g.call(o)), [l, r] = e.useState(null), u = typeof t.toolParams.risk == "string" ? t.toolParams.risk : "", v = typeof t.toolParams.warning == "string" ? t.toolParams.warning : "", S = ae(t, s), p = ne(t), y = async (f) => {
-    r(f);
+  const s = _((g = i.useLocale) == null ? void 0 : g.call(i)), [r, l] = e.useState(null), u = typeof t.toolParams.risk == "string" ? t.toolParams.risk : "", v = typeof t.toolParams.warning == "string" ? t.toolParams.warning : "", S = ae(t, s), p = ne(t), y = async (f) => {
+    l(f);
     try {
       await b("/computer-use/session/pending/decision", {
         method: "POST",
@@ -156,11 +156,11 @@ function se({ approval: t, onResolved: n }) {
         E instanceof Error ? E.message : a(s, "failed")
       );
     } finally {
-      r(null);
+      l(null);
     }
   };
   return e.createElement(
-    o.antd.Card,
+    i.antd.Card,
     { size: "small", bordered: !0, style: { borderRadius: 8 } },
     e.createElement(
       "div",
@@ -226,8 +226,8 @@ function se({ approval: t, onResolved: n }) {
           {
             danger: !0,
             icon: e.createElement(H),
-            loading: l === "deny",
-            disabled: l !== null,
+            loading: r === "deny",
+            disabled: r !== null,
             onClick: () => void y("deny")
           },
           a(s, "deny")
@@ -236,8 +236,8 @@ function se({ approval: t, onResolved: n }) {
           h,
           {
             icon: e.createElement(M),
-            loading: l === "session",
-            disabled: l !== null,
+            loading: r === "session",
+            disabled: r !== null,
             onClick: () => void y("session")
           },
           a(s, "allowSession")
@@ -247,8 +247,8 @@ function se({ approval: t, onResolved: n }) {
           {
             type: "primary",
             icon: e.createElement(M),
-            loading: l === "always",
-            disabled: l !== null,
+            loading: r === "always",
+            disabled: r !== null,
             onClick: () => void y("always")
           },
           a(s, "allowAlways")
@@ -257,19 +257,19 @@ function se({ approval: t, onResolved: n }) {
     )
   );
 }
-function oe() {
+function ie() {
   var P, T, x;
-  const t = _((P = o.useLocale) == null ? void 0 : P.call(o)), n = (T = o.useCurrentSession) == null ? void 0 : T.call(o), s = (n == null ? void 0 : n.id) ?? ((x = o.getCurrentSessionId) == null ? void 0 : x.call(o)) ?? null, [l, r] = e.useState(null), [u, v] = e.useState([]), [S, p] = e.useState(!0), [y, g] = e.useState(!1), [f, E] = e.useState(!0), [U, A] = e.useState(null), w = e.useCallback(async () => {
+  const t = _((P = i.useLocale) == null ? void 0 : P.call(i)), n = (T = i.useCurrentSession) == null ? void 0 : T.call(i), s = (n == null ? void 0 : n.id) ?? ((x = i.getCurrentSessionId) == null ? void 0 : x.call(i)) ?? null, [r, l] = e.useState(null), [u, v] = e.useState([]), [S, p] = e.useState(!0), [y, g] = e.useState(!1), [f, E] = e.useState(!0), [U, A] = e.useState(null), w = e.useCallback(async () => {
     E(!0);
     try {
-      const [i, c] = await Promise.all([
+      const [o, c] = await Promise.all([
         b("/computer-use/status"),
         b("/computer-use/access")
       ]);
-      r(i), v(c.access || []), p(i.enabled !== !1);
-    } catch (i) {
+      l(o), v(c.access || []), p(o.enabled !== !1);
+    } catch (o) {
       m.error(
-        i instanceof Error ? i.message : a(t, "failed")
+        o instanceof Error ? o.message : a(t, "failed")
       );
     } finally {
       E(!1);
@@ -278,13 +278,13 @@ function oe() {
   e.useEffect(() => {
     w();
   }, [w]);
-  const $ = async (i) => {
-    A(`revoke:${i.canonical_app_id}`);
+  const $ = async (o) => {
+    A(`revoke:${o.canonical_app_id}`);
     try {
       await b("/computer-use/access", {
         method: "DELETE",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ canonical_app_id: i.canonical_app_id })
+        body: JSON.stringify({ canonical_app_id: o.canonical_app_id })
       }), await w();
     } catch (c) {
       m.error(
@@ -293,14 +293,14 @@ function oe() {
     } finally {
       A(null);
     }
-  }, W = async (i) => {
+  }, W = async (o) => {
     g(!0);
     try {
       await b("/computer-use/feature", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ enabled: i, session_id: s })
-      }), p(i), m.success(a(t, i ? "enabledMsg" : "disabledMsg")), await w();
+        body: JSON.stringify({ enabled: o, session_id: s })
+      }), p(o), m.success(a(t, o ? "enabledMsg" : "disabledMsg")), await w();
     } catch (c) {
       m.error(
         c instanceof Error ? c.message : a(t, "failed")
@@ -313,18 +313,18 @@ function oe() {
       title: a(t, "application"),
       dataIndex: "display_name",
       key: "display_name",
-      render: (i) => e.createElement(d, { strong: !0 }, i)
+      render: (o) => e.createElement(d, { strong: !0 }, o)
     },
     {
       title: a(t, "applicationId"),
       dataIndex: "canonical_app_id",
       key: "canonical_app_id",
-      render: (i) => e.createElement(d, { code: !0 }, i)
+      render: (o) => e.createElement(d, { code: !0 }, o)
     },
     {
       key: "actions",
       width: 56,
-      render: (i, c) => e.createElement(
+      render: (o, c) => e.createElement(
         F,
         {
           title: a(t, "revokeConfirm"),
@@ -344,7 +344,7 @@ function oe() {
         )
       )
     }
-  ], C = (l == null ? void 0 : l.runtime_available) === !0;
+  ], C = (r == null ? void 0 : r.runtime_available) === !0;
   return e.createElement(
     "main",
     {
@@ -417,7 +417,7 @@ function oe() {
             checked: S,
             loading: y,
             disabled: !C,
-            onChange: (i) => void W(i),
+            onChange: (o) => void W(o),
             "aria-label": a(t, "feature")
           })
         )
@@ -457,7 +457,7 @@ var L, N;
 (N = (L = window.QwenPaw).registerRoutes) == null || N.call(L, "computer-use", [
   {
     path: "/plugin/computer-use",
-    component: oe,
+    component: ie,
     label: a(te(), "routeLabel"),
     icon: "🖥️",
     priority: 43

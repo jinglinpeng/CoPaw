@@ -10,9 +10,10 @@
 import asyncio
 import json
 import logging
+import sys
 import threading
 import time
-from typing import Any, Literal, Mapping
+from typing import Any, Literal, Mapping, get_args
 
 from agentscope.message import DataBlock, TextBlock, ToolResultState, URLSource
 from agentscope.tool import ToolChunk
@@ -21,7 +22,25 @@ from qwenpaw.runtime.tool_registry import tool_descriptor
 
 from .client import get_computer_use_client
 from .feature_state import get_computer_use_feature_state
+from .input_contract import ClickCount, normalize_scroll_delta
 from .protocol import ComputerUseProtocolError
+
+if sys.platform == "win32":
+    from .input_windows import (
+        KEY_DESCRIPTION as _PLATFORM_KEY_DESCRIPTION,
+        MOUSE_BUTTONS as _PLATFORM_MOUSE_BUTTONS,
+        SCROLL_DESCRIPTION as _PLATFORM_SCROLL_DESCRIPTION,
+        MouseButton,
+        normalize_key as _normalize_key,
+    )
+else:
+    from .input_macos import (
+        KEY_DESCRIPTION as _PLATFORM_KEY_DESCRIPTION,
+        MOUSE_BUTTONS as _PLATFORM_MOUSE_BUTTONS,
+        SCROLL_DESCRIPTION as _PLATFORM_SCROLL_DESCRIPTION,
+        MouseButton,
+        normalize_key as _normalize_key,
+    )
 
 _LOGGER = logging.getLogger(__name__)
 _MAX_ACTIONS_PER_MINUTE = 60
@@ -30,7 +49,7 @@ _rate_limit_lock = threading.Lock()
 _SCREENSHOT_URL_PLACEHOLDER = "<image delivered as a separate attachment>"
 _MAX_ACCESSIBILITY_DEPTH = 40
 
-ComputerUseAction = Literal[
+_CommonComputerUseAction = Literal[
     "list_apps",
     "list_windows",
     "observe_window",
@@ -45,11 +64,24 @@ ComputerUseAction = Literal[
     "press_key",
     "sequence",
     "invoke",
-    "begin_text_edit",
     "set_value",
     "wait",
     "stop",
 ]
+if sys.platform == "darwin":
+    ComputerUseAction = Literal[
+        _CommonComputerUseAction,
+        "begin_text_edit",
+    ]
+    _PLATFORM_ACTION_DESCRIPTION = (
+        "``begin_text_edit`` invokes a menu command that must accept "
+        "immediate text input. "
+    )
+else:
+    ComputerUseAction = _CommonComputerUseAction
+    _PLATFORM_ACTION_DESCRIPTION = ""
+
+_VALID_ACTIONS = get_args(ComputerUseAction)
 
 
 def _check_rate_limit(cost: int = 1) -> None:
@@ -112,6 +144,8 @@ def _sequence_steps(steps: Any) -> list[dict[str, str]]:
             text_length += len(value)
             if text_length > 512:
                 raise ValueError("sequence text is limited to 512 characters.")
+        else:
+            value = _normalize_key(value)
         normalized.append({"action": action, field: value})
     return normalized
 
@@ -146,6 +180,18 @@ def _without_screenshot_urls(
     return {**payload, "screenshots": sanitized}
 
 
+def _compact_string(value: Any) -> str:
+    """Encode application text without creating lines or fake markers."""
+    encoded = json.dumps(str(value), ensure_ascii=False)
+    return (
+        encoded.replace("[", r"\u005b")
+        .replace("]", r"\u005d")
+        .replace("\u0085", r"\u0085")
+        .replace("\u2028", r"\u2028")
+        .replace("\u2029", r"\u2029")
+    )
+
+
 def _element_line(element: Mapping[str, Any]) -> str:
     """Render one accessibility element as a single compact line.
 
@@ -156,14 +202,14 @@ def _element_line(element: Mapping[str, Any]) -> str:
     parts = [
         str(element.get("id") or "?"),
         str(element.get("control_type_name") or element.get("role") or "?"),
-        f'"{element.get("name") or ""}"',
+        _compact_string(element.get("name") or ""),
     ]
     value = element.get("value")
     if isinstance(value, str) and value:
-        parts.append(f"={value}")
+        parts.append(f"={_compact_string(value)}")
     identifier = element.get("identifier") or element.get("automation_id")
     if isinstance(identifier, str) and identifier:
-        parts.append(f"[identifier={identifier}]")
+        parts.append(f"[identifier={_compact_string(identifier)}]")
     # Both states stay visible: an offscreen entry may become reachable
     # after scrolling, and a disabled control tells the model not to try.
     if element.get("enabled") is False:
@@ -180,7 +226,8 @@ def _element_line(element: Mapping[str, Any]) -> str:
     if isinstance(actions, list):
         names = [str(action) for action in actions if str(action)]
         if names:
-            parts.append(f"[actions={','.join(names)}]")
+            encoded = ",".join(_compact_string(name) for name in names)
+            parts.append(f"[actions={encoded}]")
     depth = element.get("depth")
     indent = (
         "  " * min(depth, _MAX_ACCESSIBILITY_DEPTH)
@@ -246,12 +293,25 @@ def _response(
     return ToolChunk(content=content, state=state, is_last=True)
 
 
-def _error(code: str, message: str) -> ToolChunk:
+def _error(
+    code: str,
+    message: str,
+    *,
+    requires_observe: bool = False,
+    next_action: str | None = None,
+) -> ToolChunk:
     payload = {
         "ok": False,
         "error": {"code": code, "message": message},
     }
-    if code in {
+    if requires_observe:
+        payload["requires_observe"] = True
+        if next_action:
+            payload["next_action"] = next_action
+    elif code in {"stale_window", "window_not_found"}:
+        payload["requires_observe"] = True
+        payload["next_action"] = "list_windows"
+    elif code in {
         "desktop_busy",
         "focus_failed",
         "input_failed",
@@ -263,9 +323,6 @@ def _error(code: str, message: str) -> ToolChunk:
     }:
         payload["requires_observe"] = True
         payload["next_action"] = "observe_window"
-    elif code in {"stale_window", "window_not_found"}:
-        payload["requires_observe"] = True
-        payload["next_action"] = "list_windows"
     return _response(
         payload,
         state=ToolResultState.ERROR,
@@ -278,8 +335,9 @@ def _error(code: str, message: str) -> ToolChunk:
     async_execution=True,
     description=(
         "Control approved desktop applications through the native "
-        "Computer Use runtime. Observe a window before acting; the runtime "
-        "keeps the current observation synchronized between actions."
+        "Computer Use runtime. Discover or launch the target, then observe "
+        "its window before window-bound actions. Element IDs, screenshot "
+        "IDs, and coordinates are valid only for their current observation."
     ),
     requires_skills=("computer_use",),
 )
@@ -289,17 +347,17 @@ async def computer_use(
     window_id: str = "",
     screenshot_id: str = "",
     element_id: str = "",
-    x: int = 0,
-    y: int = 0,
-    start_x: int = 0,
-    start_y: int = 0,
-    end_x: int = 0,
-    end_y: int = 0,
+    x: int | None = None,
+    y: int | None = None,
+    start_x: int | None = None,
+    start_y: int | None = None,
+    end_x: int | None = None,
+    end_y: int | None = None,
     source_element_id: str = "",
     target_element_id: str = "",
-    button: str = "left",
-    count: int = 1,
-    delta_y: int = 0,
+    button: MouseButton | None = None,
+    count: ClickCount | None = None,
+    delta_y: int | None = None,
     text: str = "",
     value: str = "",
     key: str = "",
@@ -311,9 +369,11 @@ async def computer_use(
 ) -> ToolChunk:
     """Control one observed window at a time.
 
-    Use ``list_apps`` or ``list_windows`` first. Observe a target with
-    ``observe_window`` before acting. The client advances the native
-    observation after every successful action; native rejects stale state.
+    Use ``list_apps`` or ``list_windows`` to discover a target, or launch one
+    with ``launch_app``. Observe its window before any window-bound action.
+    A successful mutation consumes its input observation and normally returns
+    a replacement; otherwise follow its handoff or recovery instruction.
+    Native rejects stale state.
     ``launch_app`` accepts an App ID returned by ``list_apps`` or an absolute
     platform-native application path.
     ``observe_window`` can request screenshots, accessibility text, or both.
@@ -322,6 +382,44 @@ async def computer_use(
     Inspect the replacement observation after an action changes selection,
     focus, menus, editors, dialogs, or windows. Confirm editable focus before
     typing, and observe again after committing an edit.
+
+    Args:
+        action: Operation to perform. Discover the target, then observe its
+            window before window-bound mutation. ``invoke`` performs an
+            element's advertised primary action. __PLATFORM_ACTION_CONTRACT__
+            ``set_value`` requests complete replacement of a settable element.
+        app: Optional App ID filter for ``list_windows``; required App ID or
+            absolute platform-native path for ``launch_app``.
+        window_id: Window ID from ``list_windows`` for ``observe_window``.
+        screenshot_id: Current attached screenshot ID for coordinate input.
+        element_id: Current observed element ID for semantic input.
+        x: Required screenshot-local horizontal coordinate for click or scroll.
+        y: Required screenshot-local vertical coordinate for click or scroll.
+        start_x: Required screenshot-local horizontal drag start.
+        start_y: Required screenshot-local vertical drag start.
+        end_x: Required screenshot-local horizontal drag end.
+        end_y: Required screenshot-local vertical drag end.
+        source_element_id: Current observed semantic drag source.
+        target_element_id: Current observed semantic drag target.
+        button: Optional mouse button available on the current platform for
+            ``click``.
+            ``double_click`` is fixed to left and ``right_click`` to right.
+        count: Optional click count from 1 through 3 for ``click``.
+            ``double_click`` is fixed to 2 and ``right_click`` to 1.
+        delta_y: __PLATFORM_SCROLL_CONTRACT__
+        text: Literal text sent by ``type`` to the current focus.
+        value: Complete replacement value requested by ``set_value``.
+        key: __PLATFORM_KEY_CONTRACT__
+        steps: One to twenty deterministic steps, as an array or JSON string.
+            Each step is either ``{"action":"type","text":"..."}`` or
+            ``{"action":"press_key","key":"..."}``, with at most 512
+            total text characters. Step keys follow the same key grammar.
+        include_screenshot: Include screenshot evidence in ``observe_window``.
+        include_text: Include accessibility text in ``observe_window``; at
+            least one observation source must be enabled.
+        wait_ms: Delay for ``wait``, clamped to 0 through 30000 milliseconds.
+        timeout_ms: Native request deadline, clamped to 100 through 30000
+            milliseconds.
     """
     # Each early return maps to one refusal reason the model must be able to
     # tell apart, so they are reported individually rather than merged.
@@ -338,9 +436,10 @@ async def computer_use(
             )
         if action == "wait":
             _check_rate_limit()
-            await asyncio.sleep(max(0, min(wait_ms, 30_000)) / 1000)
+            waited_ms = max(0, min(wait_ms, 30_000))
+            await asyncio.sleep(waited_ms / 1000)
             return _response(
-                {"ok": True, "action": action, "waited_ms": wait_ms},
+                {"ok": True, "action": action, "waited_ms": waited_ms},
             )
 
         client = get_computer_use_client()
@@ -393,7 +492,12 @@ async def computer_use(
             state=ToolResultState.ERROR if failed else ToolResultState.SUCCESS,
         )
     except ComputerUseProtocolError as error:
-        return _error(error.code, str(error))
+        return _error(
+            error.code,
+            str(error),
+            requires_observe=error.requires_observe,
+            next_action=error.next_action,
+        )
     except ValueError as error:
         return _error("invalid_request", str(error))
     except (
@@ -406,6 +510,21 @@ async def computer_use(
         # them diagnosable rather than lost behind "Computer Use failed".
         _LOGGER.exception("Computer Use tool call failed unexpectedly")
         return _error("tool_failed", f"Computer Use failed: {error}")
+
+
+# FunctionTool reads the docstring after import, so expose only the selected
+# platform contract without duplicating the full tool entry point.
+_tool_doc = computer_use.__doc__ or ""
+_contract_descriptions = {
+    "__PLATFORM_ACTION_CONTRACT__": _PLATFORM_ACTION_DESCRIPTION,
+    "__PLATFORM_KEY_CONTRACT__": _PLATFORM_KEY_DESCRIPTION,
+    "__PLATFORM_SCROLL_CONTRACT__": _PLATFORM_SCROLL_DESCRIPTION,
+}
+if any(marker not in _tool_doc for marker in _contract_descriptions):
+    raise RuntimeError("Computer Use platform contract marker is missing.")
+for marker, description in _contract_descriptions.items():
+    _tool_doc = _tool_doc.replace(marker, description)
+computer_use.__doc__ = _tool_doc
 
 
 def _native_request(
@@ -425,7 +544,8 @@ def _native_request(
         app = str(values["app"] or "").strip()
         if not app:
             raise ValueError(
-                "launch_app requires an App ID or an absolute .exe path.",
+                "launch_app requires an App ID or an absolute application "
+                "path.",
             )
         return action, {"app": app}, False
 
@@ -460,24 +580,27 @@ def _native_request(
     if action in {"click", "double_click", "right_click"}:
         params = {}
         element_id = str(values.get("element_id") or "").strip()
+        if element_id and _has_coordinate_target(values, ("x", "y")):
+            raise ValueError(
+                f"{action} accepts either element_id or a screenshot target, "
+                "not both.",
+            )
         if element_id:
             params["element_id"] = element_id
         else:
             params["screenshot_id"] = _screenshot_id(values)
-            params["x"] = values["x"]
-            params["y"] = values["y"]
-        params["button"] = (
-            "right" if action == "right_click" else values["button"]
-        )
-        params["count"] = 2 if action == "double_click" else values["count"]
+            params["x"] = _required_integer(values, "x", action)
+            params["y"] = _required_integer(values, "y", action)
+        params["button"], params["count"] = _click_input(action, values)
         return "click", params, False
     if action == "scroll":
+        delta_y = normalize_scroll_delta(values.get("delta_y"))
         params = {
             "screenshot_id": _screenshot_id(values),
-            "x": values["x"],
-            "y": values["y"],
+            "x": _required_integer(values, "x", action),
+            "y": _required_integer(values, "y", action),
+            "delta_y": delta_y,
         }
-        params["delta_y"] = values["delta_y"]
         return action, params, False
     if action == "drag":
         source_element_id = str(
@@ -493,6 +616,14 @@ def _native_request(
             )
         params = {}
         if source_element_id:
+            if _has_coordinate_target(
+                values,
+                ("start_x", "start_y", "end_x", "end_y"),
+            ):
+                raise ValueError(
+                    "drag accepts either source/target element IDs or a "
+                    "screenshot target, not both.",
+                )
             params.update(
                 source_element_id=source_element_id,
                 target_element_id=target_element_id,
@@ -500,10 +631,10 @@ def _native_request(
         else:
             params.update(
                 screenshot_id=_screenshot_id(values),
-                start_x=values["start_x"],
-                start_y=values["start_y"],
-                end_x=values["end_x"],
-                end_y=values["end_y"],
+                start_x=_required_integer(values, "start_x", action),
+                start_y=_required_integer(values, "start_y", action),
+                end_x=_required_integer(values, "end_x", action),
+                end_y=_required_integer(values, "end_y", action),
             )
         return action, params, False
     if action == "type":
@@ -516,6 +647,8 @@ def _native_request(
             False,
         )
     if action in {"invoke", "begin_text_edit", "set_value"}:
+        if action == "begin_text_edit" and sys.platform != "darwin":
+            raise ValueError("begin_text_edit is available only on macOS.")
         element_id = str(values["element_id"] or "").strip()
         if not element_id:
             raise ValueError(
@@ -536,18 +669,58 @@ def _native_request(
             False,
         )
     if action == "press_key":
-        key = str(values["key"] or "").strip()
-        if not key:
-            raise ValueError("press_key requires key.")
-        return action, {"key": key}, False
+        return action, {"key": _normalize_key(values.get("key"))}, False
     if action == "sequence":
         return action, {"steps": _sequence_steps(values.get("steps"))}, False
     raise ValueError(
-        "Unknown action. Valid actions: list_apps, list_windows, "
-        "observe_window, launch_app, close_window, click, "
-        "double_click, right_click, scroll, drag, type, press_key, invoke, "
-        "begin_text_edit, set_value, sequence, wait, stop.",
+        f"Unknown action. Valid actions: {', '.join(_VALID_ACTIONS)}."
     )
+
+
+def _has_coordinate_target(
+    values: Mapping[str, Any],
+    coordinate_names: tuple[str, ...],
+) -> bool:
+    return bool(str(values.get("screenshot_id") or "").strip()) or any(
+        values.get(name) is not None for name in coordinate_names
+    )
+
+
+def _click_input(
+    action: str,
+    values: Mapping[str, Any],
+) -> tuple[str, int]:
+    button = values.get("button")
+    count = values.get("count")
+    if button is not None and button not in _PLATFORM_MOUSE_BUTTONS:
+        allowed = ", ".join(sorted(_PLATFORM_MOUSE_BUTTONS))
+        raise ValueError(f"button must be one of: {allowed}.")
+    if count is not None and (
+        not isinstance(count, int)
+        or isinstance(count, bool)
+        or not 1 <= count <= 3
+    ):
+        raise ValueError("count must be an integer from 1 through 3.")
+
+    fixed = {
+        "double_click": ("left", 2),
+        "right_click": ("right", 1),
+    }
+    if action not in fixed:
+        return button or "left", 1 if count is None else count
+
+    expected_button, expected_count = fixed[action]
+    if button is not None and button != expected_button:
+        raise ValueError(
+            f"{action} uses button={expected_button}; use click for another "
+            "button/count combination.",
+        )
+    if count is not None and count != expected_count:
+        raise ValueError(
+            f"{action} uses count={expected_count}; use click for another "
+            "button/count combination.",
+        )
+    return expected_button, expected_count
 
 
 def _screenshot_id(values: Mapping[str, Any]) -> str:
@@ -557,3 +730,14 @@ def _screenshot_id(values: Mapping[str, Any]) -> str:
             "Coordinate input requires screenshot_id from observe_window.",
         )
     return screenshot_id
+
+
+def _required_integer(
+    values: Mapping[str, Any],
+    name: str,
+    action: str,
+) -> int:
+    value = values.get(name)
+    if not isinstance(value, int) or isinstance(value, bool):
+        raise ValueError(f"{action} requires integer {name}.")
+    return value

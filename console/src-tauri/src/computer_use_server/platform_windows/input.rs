@@ -21,6 +21,7 @@ use windows::Win32::UI::WindowsAndMessaging::{
     SetForegroundWindow, ShowWindow, WindowFromPoint, SW_RESTORE,
 };
 
+use super::super::input_contract::{click_count, native_scroll_delta};
 use super::super::state::{
     map_point, screenshot_target, Observation, ScreenshotTarget, WindowInfo,
 };
@@ -43,11 +44,7 @@ pub(crate) fn click(
         .get("button")
         .and_then(Value::as_str)
         .unwrap_or("left");
-    let count = params
-        .get("count")
-        .and_then(Value::as_u64)
-        .unwrap_or(1)
-        .clamp(1, 3);
+    let count = click_count(params)?;
     let (down, up) = match button {
         "left" => (MOUSEEVENTF_LEFTDOWN, MOUSEEVENTF_LEFTUP),
         "right" => (MOUSEEVENTF_RIGHTDOWN, MOUSEEVENTF_RIGHTUP),
@@ -69,14 +66,10 @@ pub(crate) fn scroll(
     params: &Map<String, Value>,
 ) -> Result<Value, (&'static str, String)> {
     let point = verify_point(observation, params)?;
-    let delta = params
-        .get("delta_y")
-        .and_then(Value::as_i64)
-        .unwrap_or(0)
-        .clamp(-1200, 1200);
+    let delta = native_scroll_delta(params)?;
     unsafe {
         SetCursorPos(point.x, point.y).map_err(|error| ("input_failed", error.to_string()))?;
-        mouse_event(MOUSEEVENTF_WHEEL, 0, 0, delta as i32, 0);
+        mouse_event(MOUSEEVENTF_WHEEL, 0, 0, delta, 0);
     }
     Ok(json!({"applied": true}))
 }

@@ -174,10 +174,12 @@ class ComputerUseClient:
                     # A failed observation never replaces the old snapshot, and
                     # a failed action may have changed the desktop before it
                     # reported the error. Require fresh state in both cases.
-                    if (
-                        method == "observe_window"
+                    observation_invalidated = (
+                        method == "launch_app"
+                        or method == "observe_window"
                         or method in _OBSERVED_METHODS
-                    ):
+                    )
+                    if observation_invalidated:
                         self._observation_id = None
                     if error.code == "request_timeout":
                         if method not in _READ_ONLY_METHODS:
@@ -194,6 +196,25 @@ class ComputerUseClient:
                         or request_attempt + 1 >= request_attempts
                         or turn_id == self._stopped_turn
                     ):
+                        if (
+                            observation_invalidated
+                            and not error.requires_observe
+                        ):
+                            next_action = None
+                            if turn_id != self._stopped_turn:
+                                next_action = (
+                                    "list_windows"
+                                    if method == "launch_app"
+                                    or error.code
+                                    in {"stale_window", "window_not_found"}
+                                    else "observe_window"
+                                )
+                            raise ComputerUseProtocolError(
+                                error.code,
+                                str(error),
+                                requires_observe=True,
+                                next_action=next_action,
+                            ) from error
                         raise
                     transport = await self._ensure_transport()
                     self._turn_id = turn_id

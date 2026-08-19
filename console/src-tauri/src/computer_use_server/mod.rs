@@ -13,6 +13,7 @@ mod approval;
 mod connection;
 mod dispatch;
 mod framing;
+mod input_contract;
 mod state;
 
 pub(super) use connection::run;

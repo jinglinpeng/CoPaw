@@ -7,9 +7,10 @@ import uuid
 from dataclasses import dataclass
 from typing import Any, Mapping
 
-from qwenpaw.app.computer_use import COMPUTER_USE_PROTOCOL_VERSION
-
-PROTOCOL_VERSION = COMPUTER_USE_PROTOCOL_VERSION
+# The plugin is hot-installable independently of the desktop host. Keep its
+# expected version local so a new plugin rejects an older host/helper instead
+# of inheriting the host's version and silently speaking changed semantics.
+PROTOCOL_VERSION = 3
 
 # Every method name this adapter may put on the wire. The helper matches on
 # these, so the two sides have to agree exactly -- a name only one of them
@@ -45,9 +46,18 @@ NATIVE_METHODS = frozenset(
 class ComputerUseProtocolError(RuntimeError):
     """A stable native protocol failure with an actionable error code."""
 
-    def __init__(self, code: str, message: str) -> None:
+    def __init__(
+        self,
+        code: str,
+        message: str,
+        *,
+        requires_observe: bool = False,
+        next_action: str | None = None,
+    ) -> None:
         super().__init__(message)
         self.code = code
+        self.requires_observe = requires_observe
+        self.next_action = next_action
 
 
 @dataclass(frozen=True)

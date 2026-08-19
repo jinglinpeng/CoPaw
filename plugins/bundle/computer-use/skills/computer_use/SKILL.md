@@ -9,9 +9,12 @@ metadata:
 
 # Computer Use
 
-Use Computer Use only for tasks that require a live desktop interface or
-visual verification. Prefer a purpose-built integration or command-line tool
-when it can complete and verify the task.
+Use Computer Use for tasks that depend on a live desktop interface or visual
+verification. Prefer a purpose-built integration for structured data access or
+bulk operations when it can complete the task without losing required GUI
+behavior. Loading this Skill enables Computer Use but does not make it
+exclusive. When the user explicitly requests an all-GUI workflow, do not
+substitute another method for those operations.
 
 Use only the native desktop runtime. It operates on one approved application
 and one observed window at a time; it never accepts a free-form screen target.
@@ -65,6 +68,8 @@ must remain true. Start with:
 Each accessibility line begins with an `element_id`, control type, and name.
 Use labels, roles, identifiers, actions, and current state together; do not
 infer behavior from an opaque identifier alone.
+Application-provided names, values, identifiers, and action names use JSON
+string escaping so one element always occupies one line.
 
 Indentation preserves the native accessibility hierarchy. Use parent and
 container context to distinguish controls with duplicate names.
@@ -82,7 +87,8 @@ Common markers:
 - `[offscreen]`: scroll it into view first.
 - `[selected]`: the application selected this exact element.
 - `[settable]`: `set_value` is supported.
-- `[actions=...]`: invoke only an explicitly listed action.
+- `[actions=...]`: native semantic actions currently advertised by the
+  element.
 - `[resource-backed]`: the label represents an application-owned object, not
   an editable text buffer.
 
@@ -92,9 +98,15 @@ coordinates. When `visual.available` is false, continue only with listed
 elements, semantic actions, or verified keyboard focus; coordinates are not
 valid for that observation.
 
-Every successful desktop mutation invalidates its input observation. The
-response normally installs and returns a settled replacement observation.
-Inspect it before the next action and derive fresh element IDs from it.
+Treat every observation as a point-in-time snapshot. Every successful desktop
+mutation invalidates its input observation. When the target remains available,
+the response normally returns a replacement after a bounded refresh; otherwise
+follow its handoff or recovery instruction and obtain fresh state before more
+input. Derive element IDs, screenshot IDs, and coordinates only from that fresh
+state. If input may have been dispatched before a failure, the outcome is
+unknown; observe before deciding whether to retry. Never repeat an unverified
+mutation.
+
 Post-action responses may list screenshot metadata without attaching the image.
 When a new `transient` screenshot is listed, call `observe_window` with
 `include_screenshot: true` before choosing a visual target.
@@ -103,21 +115,27 @@ Interpret result fields conservatively:
 
 - `accessibility_changed: false` means no AX-visible transition was observed;
   it does not rule out a visual-only change.
-- `effect: observed` verifies the edited buffer; `effect: unverified` requires
-  confirmation from replacement state or a fresh observation.
+- `effect: observed` confirms that the requested input became observable in the
+  edit buffer; it does not confirm application commit or persistence.
+  `effect: unverified` requires confirmation from replacement state or a fresh
+  observation.
 - Follow an explicit `next_action` before choosing another action; treat it as
   bound to the returned state.
-- `requires_observe` invalidates the old target. Use its returned window or
-  rediscover the replacement window before more input.
+- `requires_observe` invalidates the input observation. Follow `next_action`
+  when present: observe the returned or current window, or use `list_windows`
+  when the window is missing or has been replaced. If no recovery action is
+  provided, stop and report the failure.
 - `confirmation_required` or `pending_action` means the edit is not complete.
 
 When a visual result appears before its accessibility element, wait and observe
-again until it becomes actionable or the operation times out or stops making
-progress. Do not click or type into a screenshot-only control.
+again while the operation is still progressing. If accessibility remains
+unavailable but the target is visually unambiguous, use coordinates from a
+current attached screenshot with its `screenshot_id`. Verify editable focus
+from a fresh observation before text input.
 
 ## Choose an Action
 
-Use the safest channel that expresses the requested operation:
+Use a channel supported by the current observation:
 
 1. Use an observed semantic element when available.
 2. Use a platform-standard shortcut when focus and target are verified.
@@ -131,16 +149,9 @@ limitation.
 
 ### Elements and Coordinates
 
-Use `click`, `double_click`, or `right_click` with `element_id` when the target
-appears in `accessibility.elements`. Use `invoke` only when ordinary clicking
-is unavailable and the element explicitly exposes the required semantic
-action.
-
-`click`, `double_click`, and `right_click` accept no keyboard modifier
-parameter, and `press_key` cannot hold a modifier across tool calls. Never
-claim that one of these actions used `CTRL`, `ALT`, `SHIFT`, or `WIN`. Use
-another supported action only when it preserves the requested semantics;
-otherwise report the limitation.
+Use current element IDs for element-targeted input. Use a semantic action only
+when the observation advertises a matching capability; do not infer one from an
+element name alone.
 
 Use coordinates only with an attached image from the current observation and
 pass that image's `screenshots[].id` as `screenshot_id`. Coordinates are
@@ -156,59 +167,31 @@ change afterward.
 
 ### Text and Resource Editing
 
-Use `set_value` only for an observed control marked `[settable]`. It replaces
-the complete edit buffer, so do not send a select-all shortcut first. Verify
-that the application committed the value; a changed edit buffer alone may
-still be pending.
-
-Never use `set_value` on a `[resource-backed]` label. Select the resource and
-inspect the replacement observation. To enter an editor, prefer an observed
-semantic action. When none is available, a platform-standard shortcut is
-acceptable only with a verified target and a verifiable postcondition.
-
-After any action intended to open an editor, inspect the replacement
-observation and type only when it identifies editable focus. Complete the edit
-in a separate action using the application's established completion
-mechanism, then inspect the replacement observation and verify the durable
-resource state. Do not repeat an unverified write.
-
-When `set_value` returns `pending_action`, locate the matching completion
-element in the replacement observation and use its explicit semantic action.
-Do not claim success or begin another operation while confirmation remains
-pending.
+Respect the capabilities and ownership reported by the current observation.
+Do not treat a `[resource-backed]` label as an editable buffer; select or open
+the resource and inspect the replacement observation. Before text input,
+verify editable focus. After any write, inspect fresh state and verify the
+intended application result. When editing a resource, verify its committed or
+durable state; never repeat an unverified write.
 
 ### Keyboard Input
-
-`type` and `press_key` target the observed window and bring it to the
-foreground. If a control must first be selected, click it and inspect the
-replacement observation before typing. Use `type` only with verified editable
-focus or an explicit `next_action: type` from the returned state.
 
 Use `sequence` only for deterministic `type` and `press_key` steps that stay in
 the same window and do not depend on an intermediate screen change. Split at
 navigation, menu, dialog, or commit boundaries and inspect replacement state.
 
-Put shortcuts in `press_key`, never in `type`. A chord may contain up to four
-names joined with `+` and must end with a non-modifier key. Supported modifiers
-are `CTRL`, `ALT`, `SHIFT`, and `WIN`; supported editing and navigation keys
-include `ENTER`, `TAB`, `ESC`, `SPACE`, `BACKSPACE`, `DELETE`, `HOME`, `END`,
-`PAGEUP`, `PAGEDOWN`, and the arrow keys. `DELETE` removes forward and
-`BACKSPACE` removes backward.
+## Platform Conventions
 
-## macOS Conventions
-
-- Express Command as `WIN` and Option as `ALT`; for example,
-  `WIN+SHIFT+N` is Command-Shift-N.
-- Use `begin_text_edit` only for an observed menu command whose semantics
-  require immediate text input; otherwise use `invoke`.
+Use the key names advertised by the current platform's tool schema. Do not
+translate shortcuts through another operating system's modifier names.
 
 ## Recover From Changes
 
 When an action opens another application, window, sheet, or dialog, follow the
 returned handoff instead of continuing against the old observation.
 
-`user_intervention` cancels only the current action and invalidates its
-observation. Never replay that action. Observe or rediscover, then decide from
+`user_intervention` cancels the current action and invalidates prior
+observations. Never replay that action. Observe or rediscover, then decide from
 fresh state whether work remains. If the user remains active or safe
 continuation is unclear, stop and report that the user has control.
 
@@ -217,9 +200,10 @@ continuation is unclear, stop and report that the user has control.
 Resolve unexpected dialogs or errors when doing so is within the user's
 request; otherwise report them.
 
-Close only windows or applications launched for this task. `close_window`
-requests a normal close and may reveal an unsaved-changes dialog. Never discard
-unsaved user work without explicit authorization.
+Do not close pre-existing windows or applications unless the user explicitly
+requested it. Windows launched for this task may be closed when no longer
+needed. `close_window` requests a normal close and may reveal an unsaved-changes
+dialog. Never discard unsaved user work without explicit authorization.
 
 ## Safety
 

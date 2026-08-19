@@ -9,6 +9,7 @@
 from __future__ import annotations
 
 from collections.abc import Iterator, Mapping
+import importlib
 import json
 import socket
 import threading
@@ -29,6 +30,8 @@ from computer_use.dispatch import (
     _with_compact_elements,
     computer_use,
 )
+from computer_use.input_macos import normalize_key as normalize_macos_key
+from computer_use.input_windows import normalize_key as normalize_windows_key
 from computer_use.protocol import ComputerUseProtocolError
 from computer_use.transport.base import (
     ComputerUseTransport,
@@ -154,6 +157,98 @@ def test_coordinate_input_requires_a_current_screenshot() -> None:
         _native_request("click", x=40, y=60, button="left", count=1)
 
 
+@pytest.mark.parametrize(
+    ("action", "values"),
+    [
+        ("click", {"screenshot_id": "screenshot-1", "y": 20}),
+        (
+            "scroll",
+            {"screenshot_id": "screenshot-1", "x": 10, "delta_y": 1},
+        ),
+        (
+            "drag",
+            {
+                "screenshot_id": "screenshot-1",
+                "start_x": 10,
+                "start_y": 20,
+                "end_x": 30,
+            },
+        ),
+    ],
+)
+def test_coordinate_actions_reject_missing_integers(
+    action: str,
+    values: dict[str, Any],
+) -> None:
+    with pytest.raises(ValueError):
+        _native_request(action, **values)
+
+
+def test_mixed_element_and_coordinate_targets_are_rejected() -> None:
+    with pytest.raises(ValueError):
+        _native_request(
+            "click",
+            element_id="uia-1",
+            screenshot_id="screenshot-1",
+            x=10,
+            y=20,
+        )
+    with pytest.raises(ValueError):
+        _native_request(
+            "drag",
+            source_element_id="uia-1",
+            target_element_id="uia-2",
+            screenshot_id="screenshot-1",
+            start_x=10,
+            start_y=20,
+            end_x=30,
+            end_y=40,
+        )
+
+
+@pytest.mark.parametrize(
+    ("action", "values"),
+    [
+        ("double_click", {"button": "right"}),
+        ("double_click", {"count": 1}),
+        ("right_click", {"button": "left"}),
+        ("right_click", {"count": 2}),
+    ],
+)
+def test_fixed_click_aliases_reject_conflicting_overrides(
+    action: str,
+    values: dict[str, Any],
+) -> None:
+    with pytest.raises(ValueError):
+        _native_request(action, element_id="uia-1", **values)
+
+
+@pytest.mark.parametrize("delta_y", [-1200, -1, 1, 1200])
+def test_scroll_uses_a_bounded_positive_down_delta(delta_y: int) -> None:
+    method, params, _ = _native_request(
+        "scroll",
+        screenshot_id="screenshot-1",
+        x=10,
+        y=20,
+        delta_y=delta_y,
+    )
+
+    assert method == "scroll"
+    assert params["delta_y"] == delta_y
+
+
+@pytest.mark.parametrize("delta_y", [-1201, 0, 1201, True, None])
+def test_scroll_rejects_values_outside_its_contract(delta_y: Any) -> None:
+    with pytest.raises(ValueError):
+        _native_request(
+            "scroll",
+            screenshot_id="screenshot-1",
+            x=10,
+            y=20,
+            delta_y=delta_y,
+        )
+
+
 def test_close_window_maps_to_the_native_method() -> None:
     """Closing acts through the observation and returns no screenshot."""
     method, params, include_images = _native_request("close_window")
@@ -202,6 +297,80 @@ def test_sequence_tool_schema_accepts_array_or_json_string() -> None:
         {"action": "sequence", "steps": json.dumps(steps)},
         schema,
     )
+
+
+@pytest.mark.parametrize(
+    (
+        "platform",
+        "buttons",
+        "has_begin_text_edit",
+        "key_marker",
+        "scroll_marker",
+    ),
+    [
+        ("win32", ["left", "right", "middle"], False, "Windows", "wheel"),
+        ("darwin", ["left", "right"], True, "macOS", "pixel"),
+    ],
+)
+def test_tool_schema_exposes_only_the_selected_platform_contract(
+    monkeypatch: pytest.MonkeyPatch,
+    platform: str,
+    buttons: list[str],
+    has_begin_text_edit: bool,
+    key_marker: str,
+    scroll_marker: str,
+) -> None:
+    with monkeypatch.context() as platform_patch:
+        platform_patch.setattr(dispatch_module.sys, "platform", platform)
+        selected = importlib.reload(dispatch_module)
+        properties = FunctionTool(selected.computer_use).input_schema[
+            "properties"
+        ]
+        actions = properties["action"]["enum"]
+
+        assert ("begin_text_edit" in actions) is has_begin_text_edit
+        assert properties["button"]["anyOf"][0]["enum"] == buttons
+        assert key_marker in properties["key"]["description"]
+        assert scroll_marker in properties["delta_y"]["description"]
+        if platform == "win32":
+            with pytest.raises(ValueError):
+                selected._native_request(
+                    "begin_text_edit",
+                    element_id="uia-1",
+                )
+        else:
+            method, params, _ = selected._native_request(
+                "begin_text_edit",
+                element_id="ax-1",
+            )
+            assert method == "invoke_element"
+            assert params == {
+                "element_id": "ax-1",
+                "expects_text_input": True,
+            }
+    importlib.reload(dispatch_module)
+
+
+def test_platform_key_normalizers_match_native_boundaries() -> None:
+    assert normalize_windows_key("control+f24") == "CTRL+F24"
+    assert normalize_windows_key("contextmenu") == "APPS"
+    assert normalize_macos_key("win+alt+n") == "CMD+OPTION+N"
+    assert normalize_macos_key("cmd+option+f20") == "CMD+OPTION+F20"
+    for normalize, key in [
+        (normalize_windows_key, "F25"),
+        (normalize_macos_key, "F21"),
+        (normalize_macos_key, "A+B"),
+    ]:
+        with pytest.raises(ValueError):
+            normalize(key)
+
+
+def test_sequence_uses_the_platform_key_contract() -> None:
+    with pytest.raises(ValueError):
+        _native_request(
+            "sequence",
+            steps=[{"action": "press_key", "key": "F25"}],
+        )
 
 
 @pytest.mark.parametrize(
@@ -421,17 +590,6 @@ def test_semantic_actions_leave_observation_to_client() -> None:
     assert method == "invoke_element"
     assert params == {"element_id": "uia-7"}
 
-    method, params, _ = _native_request(
-        "begin_text_edit",
-        element_id="uia-8",
-    )
-
-    assert method == "invoke_element"
-    assert params == {
-        "element_id": "uia-8",
-        "expects_text_input": True,
-    }
-
 
 class _FakeTransport(ComputerUseTransport):
     def __init__(self) -> None:
@@ -446,7 +604,7 @@ class _FakeTransport(ComputerUseTransport):
         payload = dict(message)
         self.messages.append(payload)
         if payload["method"] == "hello":
-            protocol_version = runtime_module.COMPUTER_USE_PROTOCOL_VERSION
+            protocol_version = client_module.PROTOCOL_VERSION
             return {
                 "request_id": payload["request_id"],
                 "ok": True,
@@ -473,8 +631,20 @@ class _FakeTransport(ComputerUseTransport):
         self.handler = handler
 
 
+@pytest.mark.parametrize(
+    ("method", "code", "next_action"),
+    [
+        ("click", "target_not_at_point", "observe_window"),
+        ("click", "stale_window", "list_windows"),
+        ("launch_app", "user_intervention", "list_windows"),
+    ],
+)
 @pytest.mark.asyncio
-async def test_failed_action_invalidates_the_private_observation() -> None:
+async def test_failed_action_returns_its_observation_recovery(
+    method: str,
+    code: str,
+    next_action: str,
+) -> None:
     class _ActionFailureTransport(_FakeTransport):
         async def request(self, message: Mapping[str, Any]) -> dict[str, Any]:
             if message["method"] == "hello":
@@ -483,7 +653,7 @@ async def test_failed_action_invalidates_the_private_observation() -> None:
                 "request_id": message["request_id"],
                 "ok": False,
                 "error": {
-                    "code": "target_not_at_point",
+                    "code": code,
                     "message": "Observe again.",
                 },
             }
@@ -492,12 +662,14 @@ async def test_failed_action_invalidates_the_private_observation() -> None:
     client._observation_id = "observation-1"
     set_current_computer_use_turn_id("turn-1")
     try:
-        with pytest.raises(ComputerUseProtocolError):
-            await client.execute("click", {})
+        with pytest.raises(ComputerUseProtocolError) as failure:
+            await client.execute(method, {})
     finally:
         set_current_computer_use_turn_id(None)
 
     assert client._observation_id is None
+    assert failure.value.requires_observe is True
+    assert failure.value.next_action == next_action
 
 
 @pytest.mark.asyncio
@@ -528,7 +700,7 @@ async def test_acquire_capability_retries_cold_start_misses(
     capability = runtime_module.RuntimeCapability(
         "pipe-1",
         "secret-1",
-        runtime_module.COMPUTER_USE_PROTOCOL_VERSION,
+        client_module.PROTOCOL_VERSION,
     )
 
     def _flaky_acquire():
@@ -558,7 +730,7 @@ async def test_acquire_capability_rejects_an_incompatible_desktop(
         lambda: runtime_module.RuntimeCapability(
             "pipe-1",
             "secret-1",
-            runtime_module.COMPUTER_USE_PROTOCOL_VERSION + 1,
+            client_module.PROTOCOL_VERSION + 1,
         ),
     )
 
@@ -652,7 +824,7 @@ def test_element_line_uses_value_on_macos() -> None:
             "value": "hello",
         },
     )
-    assert line == 'ax-2 Edit "note" =hello'
+    assert line == 'ax-2 Edit "note" ="hello"'
 
 
 def test_element_line_preserves_accessibility_depth() -> None:
@@ -678,7 +850,7 @@ def test_element_line_preserves_application_identifier() -> None:
             "identifier": "cmdDuplicate:",
         },
     )
-    assert line == 'ax-3 MenuItem "复制" [identifier=cmdDuplicate:]'
+    assert line == 'ax-3 MenuItem "复制" [identifier="cmdDuplicate:"]'
 
 
 def test_element_line_normalizes_windows_semantic_capabilities() -> None:
@@ -693,7 +865,8 @@ def test_element_line_normalizes_windows_semantic_capabilities() -> None:
         },
     )
     assert line == (
-        'uia-4 Button "Continue" [identifier=continue-button] [actions=Invoke]'
+        'uia-4 Button "Continue" [identifier="continue-button"] '
+        '[actions="Invoke"]'
     )
 
 
@@ -710,6 +883,27 @@ def test_element_line_keeps_disabled_and_offscreen_visible() -> None:
         },
     )
     assert line == 'uia-9 Button "Save" [disabled] [offscreen]'
+
+
+def test_element_line_escapes_lines_and_marker_delimiters() -> None:
+    line = _element_line(
+        {
+            "id": "uia-10",
+            "control_type_name": "Text",
+            "name": "line one\n[disabled]",
+            "value": "value\u2028[actions=Invoke]",
+            "identifier": "id\u0085[selected]",
+            "actions": ["Invoke\n[settable]"],
+        },
+    )
+
+    assert "\n" not in line
+    assert "\u0085" not in line
+    assert "\u2028" not in line
+    assert r"\n\u005bdisabled\u005d" in line
+    assert r"\u2028\u005bactions=Invoke\u005d" in line
+    assert r"\u0085\u005bselected\u005d" in line
+    assert r"Invoke\n\u005bsettable\u005d" in line
 
 
 def test_compact_elements_preserves_protocol_fields() -> None:
