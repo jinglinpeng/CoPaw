@@ -12,6 +12,7 @@ import shutil
 import subprocess
 import sys
 import threading
+import time
 from contextlib import asynccontextmanager
 from contextvars import ContextVar
 from pathlib import Path
@@ -616,12 +617,18 @@ class PluginLoader:
             # plain bare imports would otherwise pick up the residue).
             # Shared dependency locations (plugin site dir) are
             # untouched — only paths under the plugin's own tree go.
+            cleanup_started = time.perf_counter()
             strip_plugin_sys_path(source_path)
             # sys.modules is the other residue channel: a bypass import
             # or a data-directory fallthrough during load can cache a
             # bare name rooted in this plugin's tree, which would keep
             # serving later plugins even with sys.path clean.
             sweep_bare_tree_modules(source_path, modules_before)
+            logger.info(
+                "[startup] plugin=%s phase=module_cleanup duration=%.3fs",
+                plugin_id,
+                time.perf_counter() - cleanup_started,
+            )
 
         return plugin_def
 
@@ -731,7 +738,9 @@ class PluginLoader:
             return record
 
         # Ensure plugin dependencies are installed before loading
+        load_started = time.perf_counter()
         await self._ensure_dependencies_installed(source_path, plugin_id)
+        dependencies_ready = time.perf_counter()
 
         backend_entry = manifest.entry.backend
         frontend_entry = manifest.entry.frontend
@@ -779,7 +788,15 @@ class PluginLoader:
             instance=plugin_def,
         )
         self._loaded_plugins[plugin_id] = record
-        logger.info(f"✓ Loaded plugin '{plugin_id}' successfully")
+        loaded_at = time.perf_counter()
+        logger.info(
+            "✓ Loaded plugin '%s' successfully in %.3fs "
+            "(dependencies=%.3fs, module=%.3fs)",
+            plugin_id,
+            loaded_at - load_started,
+            dependencies_ready - load_started,
+            loaded_at - dependencies_ready,
+        )
         return record
 
     async def load_all_plugins(
@@ -807,10 +824,16 @@ class PluginLoader:
                 continue
             config = configs.get(manifest.id) if configs else None
 
+            load_started = time.perf_counter()
             try:
                 await self.load_plugin(manifest, plugin_dir, config)
             except Exception as e:
-                logger.error(f"Failed to load plugin '{manifest.id}': {e}")
+                logger.error(
+                    "Failed to load plugin '%s' after %.3fs: %s",
+                    manifest.id,
+                    time.perf_counter() - load_started,
+                    e,
+                )
 
         return self._loaded_plugins
 

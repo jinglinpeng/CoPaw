@@ -5,7 +5,7 @@ use std::{
         atomic::{AtomicU64, Ordering},
         Mutex,
     },
-    time::Duration,
+    time::{Duration, Instant},
 };
 
 use tauri::Manager;
@@ -353,6 +353,7 @@ fn desktop_log_level() -> log::LevelFilter {
 
 /// Starts the sidecar and records startup failures for the frontend retry UI.
 fn start(app: &tauri::AppHandle) {
+    let started = Instant::now();
     let state = app.state::<BackendState>();
     let generation = state.next_generation();
     state.clear_startup_state();
@@ -372,8 +373,13 @@ fn start(app: &tauri::AppHandle) {
     .env("QWENPAW_DESKTOP_APP", "1")
     .env(DESKTOP_SHUTDOWN_TOKEN_ENV, &shutdown_token);
 
+    log::info!(
+        "[startup] generation={generation} phase=backend_command duration={:.3}s",
+        started.elapsed().as_secs_f64()
+    );
     log::info!("[backend] starting generation={generation}");
 
+    let spawn_started = Instant::now();
     let (rx, child) = match command.spawn() {
         Ok(child) => child,
         Err(err) => {
@@ -383,7 +389,10 @@ fn start(app: &tauri::AppHandle) {
     };
 
     let child_pid = child.pid();
-    log::info!("[backend] spawned generation={generation} pid={child_pid}");
+    log::info!(
+        "[backend] spawned generation={generation} pid={child_pid} duration={:.3}s",
+        spawn_started.elapsed().as_secs_f64()
+    );
     let (terminated_sender, terminated_receiver) = watch::channel(false);
     state.with_inner(|inner| {
         inner.child = Some(child);
@@ -391,5 +400,11 @@ fn start(app: &tauri::AppHandle) {
         inner.terminated = Some(terminated_receiver);
         inner.stopping = false;
     });
-    events::watch(app.clone(), generation, rx, terminated_sender);
+    events::watch(
+        app.clone(),
+        generation,
+        rx,
+        terminated_sender,
+        spawn_started,
+    );
 }

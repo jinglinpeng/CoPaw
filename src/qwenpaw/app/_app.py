@@ -135,6 +135,20 @@ async def lifespan(  # pylint: disable=too-many-statements,too-many-branches
     app: FastAPI,
 ):
     startup_start_time = time.time()
+    startup_started = time.perf_counter()
+    phase_started = startup_started
+
+    def record_phase(phase: str) -> None:
+        nonlocal phase_started
+        now = time.perf_counter()
+        logger.info(
+            "[startup] phase=%s duration=%.3fs since_lifespan=%.3fs",
+            phase,
+            now - phase_started,
+            now - startup_started,
+        )
+        phase_started = now
+
     add_project_file_handler(LOG_FILE_PATH)
 
     # ================================================================
@@ -156,6 +170,7 @@ async def lifespan(  # pylint: disable=too-many-statements,too-many-branches
 
     auto_register_from_env()
     check_proxy_config_sanity()
+    record_phase("restore_and_auth")
 
     try:
         from ..utils.telemetry import (
@@ -174,11 +189,13 @@ async def lifespan(  # pylint: disable=too-many-statements,too-many-branches
             exc_info=True,
         )
 
+    record_phase("telemetry")
     logger.debug("Checking for legacy config migration...")
     migrate_legacy_workspace_to_default_agent()
     ensure_default_agent_exists()
     migrate_legacy_skills_to_skill_pool()
     ensure_qa_agent_exists()
+    record_phase("config_migration")
 
     # Migrate old conversations from sessions/*.json into each scroll agent's
     # history.db, so chats from before scroll existed stay recallable. This is
@@ -190,12 +207,15 @@ async def lifespan(  # pylint: disable=too-many-statements,too-many-branches
     # Note: being pure backfill, this could later run asynchronously (off the
     # boot path) to speed up startup.
     await _sync_scroll_history_on_startup()
+    record_phase("history_backfill")
 
     # Provider initialization scans and may migrate persisted configuration.
     provider_manager = await asyncio.to_thread(ProviderManager.get_instance)
+    record_phase("providers")
     local_model_manager = await asyncio.to_thread(
         LocalModelManager.get_instance,
     )
+    record_phase("local_models")
 
     # --- AppServiceManager + WorkspaceRegistry ---
     app_services = None
@@ -308,6 +328,7 @@ async def lifespan(  # pylint: disable=too-many-statements,too-many-branches
             exc_info=True,
         )
 
+    record_phase("app_services_and_caches")
     backup_manager = BackupManager()
 
     # Start token usage manager background tasks
@@ -353,7 +374,8 @@ async def lifespan(  # pylint: disable=too-many-statements,too-many-branches
     except Exception:
         logger.warning("Bridge token priming failed", exc_info=True)
 
-    fast_elapsed = time.time() - startup_start_time
+    record_phase("runtime_setup")
+    fast_elapsed = time.perf_counter() - startup_started
     logger.info(
         f"Server ready in {fast_elapsed:.3f}s (agents loading in background)",
     )
@@ -399,23 +421,36 @@ async def lifespan(  # pylint: disable=too-many-statements,too-many-branches
             )
 
             # Phase 1: load channel plugins before agents start
+            plugins_started = time.perf_counter()
             await plugin_loader.load_all_plugins(
                 configs=plugin_configs,
                 types=["channel"],
             )
-            logger.debug("Phase 1: channel plugins loaded")
+            logger.info(
+                "[startup] phase=channel_plugins duration=%.3fs",
+                time.perf_counter() - plugins_started,
+            )
 
             def _mark_core_agents_ready(_results: dict[str, bool]) -> None:
                 """Publish readiness after the core agent phase."""
-                core_elapsed = time.time() - startup_start_time
+                core_elapsed = time.perf_counter() - startup_started
                 startup_display.mark_core_ready(core_elapsed)
                 app.state.startup_ready.set()
+                logger.info(
+                    "[startup] phase=core_agents_ready since_lifespan=%.3fs",
+                    core_elapsed,
+                )
 
+            workspaces_started = time.perf_counter()
             startup_results = (
                 await workspace_registry.start_all_configured_agents(
                     on_core_ready=_mark_core_agents_ready,
                     startup_display=startup_display,
                 )
+            )
+            logger.info(
+                "[startup] phase=workspaces duration=%.3fs",
+                time.perf_counter() - workspaces_started,
             )
             if startup_results.get("default") is False:
                 startup_display.mark_failed(
@@ -439,10 +474,15 @@ async def lifespan(  # pylint: disable=too-many-statements,too-many-branches
 
             # Phase 2: load remaining plugins (channel plugins already
             # loaded — load_plugin skips them automatically)
+            plugins_started = time.perf_counter()
             loaded_plugins = await plugin_loader.load_all_plugins(
                 configs=plugin_configs,
             )
-            logger.debug(f"Loaded {len(loaded_plugins)} plugin(s)")
+            logger.info(
+                "[startup] phase=remaining_plugins duration=%.3fs count=%s",
+                time.perf_counter() - plugins_started,
+                len(loaded_plugins),
+            )
 
             runtime_helpers = RuntimeHelpers(
                 provider_manager=provider_manager,
@@ -506,6 +546,7 @@ async def lifespan(  # pylint: disable=too-many-statements,too-many-branches
             logger.debug("Executing plugin startup hooks...")
             startup_hooks = plugin_loader.registry.get_startup_hooks()
             for hook in startup_hooks:
+                hook_started = time.perf_counter()
                 try:
                     logger.debug(
                         f"Executing startup hook '{hook.hook_name}' "
@@ -519,15 +560,18 @@ async def lifespan(  # pylint: disable=too-many-statements,too-many-branches
                     ) or inspect.isawaitable(result):
                         await result
 
-                    logger.debug(
-                        f"Completed startup hook '{hook.hook_name}' "
-                        f"from plugin '{hook.plugin_id}'",
+                    logger.info(
+                        "[startup] plugin=%s hook=%s duration=%.3fs",
+                        hook.plugin_id,
+                        hook.hook_name,
+                        time.perf_counter() - hook_started,
                     )
                 except Exception as e:
                     logger.error(
                         f"✗ Failed to execute startup hook "
                         f"'{hook.hook_name}' "
-                        f"from plugin '{hook.plugin_id}': {e}",
+                        f"from plugin '{hook.plugin_id}' after "
+                        f"{time.perf_counter() - hook_started:.3f}s: {e}",
                         exc_info=True,
                     )
 
@@ -546,6 +590,7 @@ async def lifespan(  # pylint: disable=too-many-statements,too-many-branches
                 logger.warning(f"Approval service setup skipped: {e}")
 
             # ---- Skill Pool builtin update + workspace auto-sync ----
+            skill_pool_started = time.perf_counter()
             try:
                 from ..agents.skill_system import run_pool_automation_pipeline
                 from .routers.skills import post_pool_automation_inbox
@@ -560,7 +605,11 @@ async def lifespan(  # pylint: disable=too-many-statements,too-many-branches
                     exc_info=True,
                 )
 
-            startup_elapsed = time.time() - startup_start_time
+            logger.info(
+                "[startup] phase=skill_pool duration=%.3fs",
+                time.perf_counter() - skill_pool_started,
+            )
+            startup_elapsed = time.perf_counter() - startup_started
             logger.info(
                 "Background startup completed in "
                 f"{startup_elapsed:.3f} seconds",

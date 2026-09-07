@@ -9,17 +9,22 @@ import multiprocessing as mp
 import os
 import socket
 import sys
+import time
 from collections.abc import Sequence
 
-import click
+_ENTRY_STARTED = time.perf_counter()
 
-from qwenpaw.tauri.env import (
+# Timed imports include the package bootstrap in the frozen entry script.
+# pylint: disable=wrong-import-position
+import click  # noqa: E402
+
+from qwenpaw.tauri.env import (  # noqa: E402
     DESKTOP_APP_ENV,
     DESKTOP_CORS_ORIGINS_ENV,
     DESKTOP_READY_PREFIX,
     ensure_desktop_cors_origins,
 )
-from qwenpaw.tauri.sidecar_logging import install_sidecar_logging
+from qwenpaw.tauri.sidecar_logging import install_sidecar_logging  # noqa: E402
 
 logger = logging.getLogger(__name__)
 
@@ -286,6 +291,7 @@ def _emit_backend_ready(port: int) -> None:
 
 
 def _run_backend_server(log_level: str) -> None:
+    phase_started = time.perf_counter()
     import uvicorn
 
     from qwenpaw.browser.control_link.chrome.protocol import (
@@ -314,12 +320,21 @@ def _run_backend_server(log_level: str) -> None:
     os.environ[LOG_LEVEL_ENV] = normalized_log_level
     os.environ.pop("QWENPAW_RELOAD_MODE", None)
     setup_logger(normalized_log_level)
+    logger.info(
+        "[startup] phase=server_imports duration=%.3fs",
+        time.perf_counter() - phase_started,
+    )
 
     # Ensure only one desktop backend runs: terminate any orphan left by a
     # crashed/force-quit previous launch before we bind a new port (#5550).
+    phase_started = time.perf_counter()
     from qwenpaw.tauri.backend_guard import reconcile_singleton_backend
 
     reconcile_singleton_backend(WORKING_DIR)
+    logger.info(
+        "[startup] phase=backend_reconciliation duration=%.3fs",
+        time.perf_counter() - phase_started,
+    )
     if normalized_log_level in ("debug", "trace"):
         from qwenpaw.cli.main import log_init_timings
 
@@ -331,12 +346,23 @@ def _run_backend_server(log_level: str) -> None:
 
     # Reuse the previous port so localStorage origin stays stable across
     # restarts, preserving user preferences (selected agent, etc.).
+    phase_started = time.perf_counter()
     port_file = str(WORKING_DIR / "desktop_port")
     port, reused_socket = get_stable_port(port_file, host)
+    logger.info(
+        "[startup] phase=port_selection duration=%.3fs",
+        time.perf_counter() - phase_started,
+    )
 
     # Import the app instance (instead of the import string) so the desktop
     # shutdown endpoint can reach the uvicorn server via app.state.
+    phase_started = time.perf_counter()
     from qwenpaw.app._app import app as fastapi_app
+
+    logger.info(
+        "[startup] phase=app_import duration=%.3fs",
+        time.perf_counter() - phase_started,
+    )
 
     config = uvicorn.Config(
         fastapi_app,
@@ -366,6 +392,10 @@ def _run_backend_server(log_level: str) -> None:
         # Exposed so /api/desktop/shutdown can trigger a graceful exit.
         fastapi_app.state.uvicorn_server = server
         _emit_backend_ready(port)
+        logger.info(
+            "[startup] phase=uvicorn_handoff since_entry=%.3fs",
+            time.perf_counter() - _ENTRY_STARTED,
+        )
         server.run(sockets=[backend_socket])
     except Exception:
         backend_socket.close()
@@ -388,6 +418,7 @@ def main() -> None:
     if _is_frozen_desktop() and _looks_like_python_invocation(sys.argv[1:]):
         _reexec_as_bundled_python(sys.argv[1:])
         return
+    runtime_started = time.perf_counter()
     _ensure_utf8_stdio()
     _install_subprocess_guard()
     _install_desktop_runtime()
@@ -395,6 +426,15 @@ def main() -> None:
     from qwenpaw.constant import LOG_LEVEL_ENV, WORKING_DIR
 
     install_sidecar_logging(WORKING_DIR / "desktop.log")
+    logger.info(
+        "[startup] phase=desktop_runtime duration=%.3fs "
+        "entry_bootstrap=%.3fs since_entry=%.3fs pid=%s",
+        time.perf_counter() - runtime_started,
+        runtime_started - _ENTRY_STARTED,
+        time.perf_counter() - _ENTRY_STARTED,
+        os.getpid(),
+    )
+    phase_started = time.perf_counter()
     _install_certifi_env()
 
     # Auto-initialize if no config exists
@@ -413,6 +453,10 @@ def main() -> None:
     from qwenpaw.utils.platform import warn_unelevated_sandbox
 
     warn_unelevated_sandbox()
+    logger.info(
+        "[startup] phase=desktop_config duration=%.3fs",
+        time.perf_counter() - phase_started,
+    )
 
     _run_backend_server(os.environ.get(LOG_LEVEL_ENV, "info"))
 

@@ -281,15 +281,24 @@ class ServiceManager:
                 descriptor,
                 is_reused,
             )
+            created_at = time.perf_counter()
             service = await self._run_post_init(descriptor, service, name)
+            initialized_at = time.perf_counter()
             await self._run_start_method(descriptor, service, is_reused)
 
-            elapsed = time.perf_counter() - t0
+            ready_at = time.perf_counter()
+            elapsed = ready_at - t0
             if elapsed > 0.05:
-                logger.debug(
-                    f"Service '{name}' ready for "
-                    f"{sanitize_log_value(self.workspace.agent_id)} "
-                    f"({elapsed:.3f}s)",
+                logger.info(
+                    "[startup] agent=%s service=%s duration=%.3fs "
+                    "create=%.3fs post_init=%.3fs start=%.3fs reused=%s",
+                    sanitize_log_value(self.workspace.agent_id),
+                    name,
+                    elapsed,
+                    created_at - t0,
+                    initialized_at - created_at,
+                    ready_at - initialized_at,
+                    is_reused,
                 )
 
         except Exception as e:
@@ -314,12 +323,14 @@ class ServiceManager:
                 logger.warning(
                     f"Optional service '{name}' failed to start for "
                     f"{sanitize_log_value(self.workspace.agent_id)} "
+                    f"after {time.perf_counter() - t0:.3f}s "
                     f"(continuing without it): {sanitize_log_value(e)}",
                 )
                 return
             logger.exception(
                 f"Failed to start service '{name}' "
-                f"for {sanitize_log_value(self.workspace.agent_id)}: "
+                f"for {sanitize_log_value(self.workspace.agent_id)} "
+                f"after {time.perf_counter() - t0:.3f}s: "
                 f"{sanitize_log_value(e)}",
             )
             raise
