@@ -129,15 +129,23 @@ class ChannelManager:
             on_last_dispatch: Callback for dispatch events
             workspace_dir: Agent workspace directory for channel state files
         """
-        available = get_available_channels()
         ch = config.channels
         show_tool_details = getattr(config, "show_tool_details", True)
         extra = getattr(ch, "__pydantic_extra__", None) or {}
+        configured = {**vars(ch), **extra}
+        enabled_keys = {
+            key
+            for key, channel_config in configured.items()
+            if (
+                channel_config.get("enabled", False)
+                if isinstance(channel_config, dict)
+                else getattr(channel_config, "enabled", False)
+            )
+        }
+        available = get_available_channels(enabled_keys)
 
         channels: list[BaseChannel] = []
-        for key, ch_cls in get_channel_registry().items():
-            if key not in available:
-                continue
+        for key, ch_cls in get_channel_registry(available).items():
             ch_cfg = getattr(ch, key, None)
             if ch_cfg is None and key in extra:
                 ch_cfg = extra[key]

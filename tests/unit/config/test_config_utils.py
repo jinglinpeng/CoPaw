@@ -439,6 +439,28 @@ class TestGetAvailableChannels:
         monkeypatch.setenv("QWENPAW_DISABLED_CHANNELS", "feishu")
         assert cu.get_available_channels() == ("console",)
 
+    @pytest.mark.parametrize(
+        "enabled,disabled,expected",
+        [
+            ("feishu", "", ()),
+            ("ghost", "", ("console",)),
+            ("", "console", ()),
+            ("", "console,dingtalk,feishu", ("console",)),
+            ("console", "console", ("console",)),
+        ],
+    )
+    def test_candidates_preserve_global_filter_fallback(
+        self,
+        monkeypatch,
+        fake_registry,
+        enabled,
+        disabled,
+        expected,
+    ):
+        monkeypatch.setenv("QWENPAW_ENABLED_CHANNELS", enabled)
+        monkeypatch.setenv("QWENPAW_DISABLED_CHANNELS", disabled)
+        assert cu.get_available_channels({"console"}) == expected
+
 
 # ---------------------------------------------------------------------------
 # is_running_in_container

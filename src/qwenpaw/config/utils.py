@@ -12,6 +12,7 @@ import subprocess
 import sys
 import threading
 import uuid
+from collections.abc import Collection
 from pathlib import Path
 from typing import Any, Callable, Optional, Tuple
 
@@ -384,7 +385,9 @@ def get_system_default_browser() -> Tuple[Optional[str], Optional[str]]:
     return (None, None)
 
 
-def get_available_channels() -> Tuple[str, ...]:
+def get_available_channels(
+    channel_keys: Collection[str] | None = None,
+) -> Tuple[str, ...]:
     """Return channel keys enabled for this run (built-in + entry point
     qwenpaw.channels), filtered by QWENPAW_ENABLED_CHANNELS or
     QWENPAW_DISABLED_CHANNELS when set.
@@ -393,26 +396,33 @@ def get_available_channels() -> Tuple[str, ...]:
     * QWENPAW_DISABLED_CHANNELS — blacklist (all channels *except* these).
     * If both are set, QWENPAW_ENABLED_CHANNELS takes precedence.
     * If neither is set, all discovered channels are returned.
+
+    With channel_keys, resolve only those candidates unless an environment
+    filter needs full discovery to preserve its fallback behavior.
     """
     from ..app.channels.registry import get_channel_registry
 
-    registry = get_channel_registry()
-    all_keys = tuple(registry.keys())
-
     raw_enabled = EnvVarLoader.get_str("QWENPAW_ENABLED_CHANNELS", "").strip()
-    if raw_enabled:
-        enabled = {ch.strip() for ch in raw_enabled.split(",") if ch.strip()}
-        return tuple(k for k in all_keys if k in enabled) or all_keys
-
     raw_disabled = EnvVarLoader.get_str(
         "QWENPAW_DISABLED_CHANNELS",
         "",
     ).strip()
-    if raw_disabled:
+    registry = (
+        get_channel_registry()
+        if channel_keys is None or raw_enabled or raw_disabled
+        else get_channel_registry(channel_keys)
+    )
+    all_keys = tuple(registry.keys())
+    if raw_enabled:
+        enabled = {ch.strip() for ch in raw_enabled.split(",") if ch.strip()}
+        all_keys = tuple(k for k in all_keys if k in enabled) or all_keys
+    elif raw_disabled:
         disabled = {ch.strip() for ch in raw_disabled.split(",") if ch.strip()}
-        return tuple(k for k in all_keys if k not in disabled) or all_keys
+        all_keys = tuple(k for k in all_keys if k not in disabled) or all_keys
 
-    return all_keys
+    return tuple(
+        k for k in all_keys if channel_keys is None or k in channel_keys
+    )
 
 
 def is_running_in_container() -> bool:

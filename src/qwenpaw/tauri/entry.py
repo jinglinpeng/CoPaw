@@ -26,7 +26,7 @@ from qwenpaw.tauri.env import (  # noqa: E402
 )
 from qwenpaw.tauri.sidecar_logging import install_sidecar_logging  # noqa: E402
 
-logger = logging.getLogger(__name__)
+logger = logging.getLogger("qwenpaw.tauri.entry")
 
 
 def _is_frozen_desktop() -> bool:
