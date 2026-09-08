@@ -72,7 +72,11 @@ def manager_runtime(tmp_path: Path):
             return [
                 DriverCapability(
                     capability_id=format_capability_id(
-                        "mcp", self.name, "tool", "invoke", "echo"
+                        "mcp",
+                        self.name,
+                        "tool",
+                        "invoke",
+                        "echo",
                     ),
                     driver_name=self.name,
                     protocol="mcp",
@@ -80,7 +84,8 @@ def manager_runtime(tmp_path: Path):
                     action="invoke",
                     name="echo",
                     description=self.card.config.get(
-                        "description", "Echo input"
+                        "description",
+                        "Echo input",
                     ),
                     input_schema={
                         "type": "object",
@@ -88,9 +93,10 @@ def manager_runtime(tmp_path: Path):
                     },
                     enabled=self.card.config.get("tools") != [],
                     exposure=CapabilityExposure(
-                        as_tool=True, tool_name=f"{self.name}__echo"
+                        as_tool=True,
+                        tool_name=f"{self.name}__echo",
                     ),
-                )
+                ),
             ]
 
         async def invoke_capability(self, invocation):
@@ -160,7 +166,7 @@ async def test_background_start_shares_connections_and_preserves_first_tools(
         assert [tool.name for tool in tools] == ["service__echo"]
         assert tools[0].description == "Echo input"
         assert tools[0].input_schema["properties"] == {
-            "text": {"type": "string"}
+            "text": {"type": "string"},
         }
         assert hints
         assert connections["old"].count == 1
@@ -170,7 +176,8 @@ async def test_background_start_shares_connections_and_preserves_first_tools(
 
 
 async def test_tool_wait_includes_discovery_before_tasks_exist(
-    runtime, monkeypatch
+    runtime,
+    monkeypatch,
 ):
     manager, connections, card = runtime
     await manager.card_store.save(card())
@@ -219,10 +226,12 @@ async def test_partial_failure_settles_and_keeps_healthy_tools(runtime):
 
 
 @pytest.mark.parametrize(
-    "mutation", ["register", "reload", "refresh", "delete", "disable"]
+    "mutation",
+    ["register", "reload", "refresh", "delete", "disable"],
 )
 async def test_late_old_connection_cannot_publish_after_mutation(
-    runtime, mutation
+    runtime,
+    mutation,
 ):
     manager, connections, card = runtime
     await manager.card_store.save(card())
@@ -275,7 +284,7 @@ async def test_pending_metadata_and_policy_changes_do_not_reconnect(runtime):
     await manager.card_store.save(latest)
     await manager.refresh_driver("service")
     latest.policy = DriverPolicy(
-        rules=[PolicyRule(subject="user:alice", effect="allow")]
+        rules=[PolicyRule(subject="user:alice", effect="allow")],
     )
     await manager.sync_driver_policy(latest)
     connections["old"].release.set()
@@ -318,7 +327,8 @@ async def test_disable_unpublishes_active_tools_before_slow_cleanup(runtime):
     connections["old"].hold_cleanup = True
     try:
         await manager.register_driver(
-            replace(original, enabled=False), wait=False
+            replace(original, enabled=False),
+            wait=False,
         )
         await asyncio.wait_for(connections["old"].closing.wait(), 2)
         assert await manager.list_capabilities() == []
@@ -390,7 +400,8 @@ async def test_pending_persistent_name_rejects_transient_scope(runtime):
 
 
 async def test_api_save_queues_owned_connection_and_returns_pending_status(
-    runtime, tmp_path
+    runtime,
+    tmp_path,
 ):
     manager, connections, card = runtime
     workspace = SimpleNamespace(workspace_dir=tmp_path, driver_manager=manager)
@@ -408,10 +419,10 @@ async def test_api_save_queues_owned_connection_and_returns_pending_status(
         await manager.wait_for_startup()
         assert (await mcp.list_clients())[0].runtime_status == "active"
         assert [tool.name for tool in await mcp.list_tools("service")] == [
-            "echo"
+            "echo",
         ]
         stored = await manager.card_store.load_path(
-            await manager.card_store.stored_path("service")
+            await manager.card_store.stored_path("service"),
         )
         assert "runtime_status" not in stored.config
     finally:
@@ -437,7 +448,8 @@ async def test_cancelled_config_request_does_not_cancel_owned_connection(
 
 
 async def test_same_name_in_another_workspace_is_independent(
-    runtime, tmp_path
+    runtime,
+    tmp_path,
 ):
     manager, connections, card = runtime
     other = DriverManager(
@@ -477,7 +489,7 @@ async def test_shutdown_immediately_after_queuing_leaves_no_pending_task(
 async def test_shutdown_also_reaps_inflight_transient_connection(runtime):
     manager, connections, card = runtime
     request = asyncio.create_task(
-        manager.replace_transient_drivers("session", [card()])
+        manager.replace_transient_drivers("session", [card()]),
     )
     await _entered(connections["old"])
     await asyncio.wait_for(manager.shutdown_all(), 2)
@@ -490,7 +502,8 @@ async def test_shutdown_also_reaps_inflight_transient_connection(runtime):
 
 
 async def test_discovery_failure_is_reported_and_does_not_become_empty_tools(
-    runtime, monkeypatch
+    runtime,
+    monkeypatch,
 ):
     manager, _, _ = runtime
 
@@ -521,7 +534,7 @@ async def test_watcher_applies_metadata_to_pending_connection_without_restart(
     await watcher.start()
     try:
         await manager.card_store.save(
-            replace(original, config={"description": "from watcher"})
+            replace(original, config={"description": "from watcher"}),
         )
         await watcher._check_once()
         await watcher.stop()
@@ -536,7 +549,9 @@ async def test_watcher_applies_metadata_to_pending_connection_without_restart(
 
 
 async def test_workspace_factory_allows_later_services_before_mcp_ready(
-    runtime, tmp_path, monkeypatch
+    runtime,
+    tmp_path,
+    monkeypatch,
 ):
     from qwenpaw.app.workspace.service_factories import create_driver_service
     from qwenpaw.app.workspace.service_manager import (
@@ -548,7 +563,9 @@ async def test_workspace_factory_allows_later_services_before_mcp_ready(
     handler_type = manager._handler_types["mcp"]
     await manager.card_store.save(card())
     workspace = SimpleNamespace(
-        agent_id="test", workspace_dir=tmp_path, _config=SimpleNamespace()
+        agent_id="test",
+        workspace_dir=tmp_path,
+        _config=SimpleNamespace(),
     )
     services = ServiceManager(workspace)
     order = []
@@ -564,7 +581,8 @@ async def test_workspace_factory_allows_later_services_before_mcp_ready(
         publish(SimpleNamespace())
 
     monkeypatch.setattr(
-        "qwenpaw.drivers.handlers.MCPDriverHandler", handler_type
+        "qwenpaw.drivers.handlers.MCPDriverHandler",
+        handler_type,
     )
     monkeypatch.setattr(
         "qwenpaw.drivers.adapters.mcp_legacy_config."
@@ -577,10 +595,10 @@ async def test_workspace_factory_allows_later_services_before_mcp_ready(
             post_init=create_driver_service,
             stop_method="shutdown_all",
             priority=20,
-        )
+        ),
     )
     services.register(
-        ServiceDescriptor(name="later", post_init=later_service, priority=30)
+        ServiceDescriptor(name="later", post_init=later_service, priority=30),
     )
     try:
         await asyncio.wait_for(services.start_all(), 2)

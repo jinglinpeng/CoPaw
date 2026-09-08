@@ -35,7 +35,9 @@ def test_console_only_skips_disabled_imports(monkeypatch, tmp_path):
 
     monkeypatch.setattr(registry.importlib, "import_module", import_channel)
     manager = ChannelManager.from_config(
-        Mock(), Config(), workspace_dir=tmp_path
+        Mock(),
+        Config(),
+        workspace_dir=tmp_path,
     )
     assert [channel.channel for channel in manager.channels] == ["console"]
     assert imported_channels == [".console"]
