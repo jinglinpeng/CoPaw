@@ -1,5 +1,6 @@
 import { createRoot } from "react-dom/client";
 import "../i18n";
+import "../styles/tokens.css";
 import { ThemeProvider } from "../contexts/ThemeContext";
 import BackendReadyGate from "./BackendReadyGate";
 import CloseWindowPrompt from "./CloseWindowPrompt";
