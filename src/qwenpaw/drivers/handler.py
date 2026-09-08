@@ -103,6 +103,8 @@ def _resolve_driver_execution_level(
 
 
 class DriverHandler(ABC):
+    capabilities_are_context_free = False
+
     def __init__(
         self,
         card: DriverCard,

@@ -174,6 +174,7 @@ class QwenPawAgent(CodingModeMixin, Agent):
         context_manager: ContextManager | None = None,
         effective_skills: Optional[list[str]] = None,
         governor: Any = None,
+        driver_manager: Any = None,
     ):
         """Initialize QwenPawAgent.
 
@@ -183,6 +184,7 @@ class QwenPawAgent(CodingModeMixin, Agent):
         """
         self._agent_config = agent_config
         self._request_context = dict(request_context or {})
+        self._driver_manager = driver_manager
         self._workspace_dir = workspace_dir
         self._language = agent_config.language
         # Optional context-management strategy. When None, the agent keeps its
@@ -608,7 +610,17 @@ class QwenPawAgent(CodingModeMixin, Agent):
         )
 
     async def _prepare_model_input(self) -> dict[str, Any]:
-        """Freeze local images before they enter a provider request."""
+        """Capture tools and freeze local images before a provider request."""
+        if getattr(self, "_driver_manager", None) is not None:
+            from ..drivers.adapters.agentscope_tool import (
+                refresh_driver_agent_tools,
+            )
+
+            await refresh_driver_agent_tools(
+                self.toolkit,
+                self._driver_manager,
+                self._request_context,
+            )
         await freeze_local_images_async(self.state.context)
         return await super()._prepare_model_input()
 

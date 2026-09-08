@@ -118,12 +118,12 @@ async def test_build_driver_agent_tools_omits_disabled() -> None:
     )
 
     class _Manager:
-        async def wait_for_startup(self) -> None:
-            pass
+        def bind_capability(self, _capability):
+            return self.invoke_capability
 
-        async def list_capabilities(
+        async def capture_tool_catalog(
             self,
-            **_kwargs: Any,
+            _request_context: dict,
         ) -> list[DriverCapability]:
             return [enabled, disabled]
 
@@ -144,10 +144,10 @@ async def test_build_driver_agent_tools_missing_enabled_stays_open() -> None:
     )
 
     class _Manager:
-        async def wait_for_startup(self) -> None:
-            pass
+        def bind_capability(self, _capability):
+            return self.invoke_capability
 
-        async def list_capabilities(self, **_kwargs: Any) -> list[Any]:
+        async def capture_tool_catalog(self, _context: dict) -> list[Any]:
             return [cap]
 
         async def invoke_capability(self, *_args: Any, **_kwargs: Any) -> Any:
@@ -210,12 +210,12 @@ async def test_list_capabilities_disabled_tools_omitted_from_toolkit() -> None:
     capabilities = await handler.list_capabilities()
 
     class _Manager:
-        async def wait_for_startup(self) -> None:
-            pass
+        def bind_capability(self, _capability):
+            return self.invoke_capability
 
-        async def list_capabilities(
+        async def capture_tool_catalog(
             self,
-            **_kwargs: Any,
+            _request_context: dict,
         ) -> list[DriverCapability]:
             return capabilities
 

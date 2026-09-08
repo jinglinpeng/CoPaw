@@ -6,6 +6,7 @@ from __future__ import annotations
 import asyncio
 import logging
 from collections.abc import Callable, Iterable
+from copy import deepcopy
 from dataclasses import dataclass
 from pathlib import Path
 from time import perf_counter
@@ -43,6 +44,7 @@ from .contracts import (
 from .storage import (
     AsyncDriverCardStore,
 )
+from .tool_catalog import DriverToolCatalog
 
 logger = logging.getLogger(__name__)
 _SHUTDOWN_TIMEOUT_SECONDS = 10.0
@@ -70,6 +72,8 @@ class DriverManager:  # pylint: disable=too-many-public-methods
         credential_store: AsyncCredentialStore,
         approval_gate: ApprovalGate | None = None,
         card_store: AsyncDriverCardStore | None = None,
+        *,
+        optional_startup_grace: float = 1.0,
     ) -> None:
         self._cards_dir = cards_dir
         self._credential_store = credential_store
@@ -91,6 +95,9 @@ class DriverManager:  # pylint: disable=too-many-public-methods
         self._closing = False
         self._shutdown_task: asyncio.Task[None] | None = None
         self._lock = asyncio.Lock()
+        self._tool_catalog = DriverToolCatalog()
+        self._optional_startup_grace = max(0.0, optional_startup_grace)
+        self._tool_catalog_deadline: float | None = None
 
     def register_handler_type(
         self,
@@ -396,6 +403,7 @@ class DriverManager:  # pylint: disable=too-many-public-methods
 
                 for name, handler in built.items():
                     self._handlers[name] = handler
+                    self._tool_catalog.prime(handler)
                     self._handler_scopes[name] = scope_id
 
                 if built:
@@ -442,6 +450,7 @@ class DriverManager:  # pylint: disable=too-many-public-methods
             for task in tasks:
                 self._cancel_initialization(task)
         await asyncio.gather(*tasks, return_exceptions=True)
+        await self._tool_catalog.close()
         async with self._lock:
             handlers = list(self._handlers.values())
             self._handlers.clear()
@@ -504,6 +513,144 @@ class DriverManager:  # pylint: disable=too-many-public-methods
                 if kind is None or capability.kind == kind:
                     capabilities.append(capability)
         return sorted(capabilities, key=lambda item: item.capability_id)
+
+    async def capture_tool_catalog(
+        self,
+        request_context: dict[str, str],
+    ) -> list[DriverCapability]:
+        """Capture tools with one shared optional startup budget."""
+        self._ensure_open()
+        deadline = None
+        if self._optional_startup_grace == 0:
+            await self.wait_for_startup()
+        else:
+            if self._tool_catalog_deadline is None:
+                self._tool_catalog_deadline = (
+                    perf_counter() + self._optional_startup_grace
+                )
+            deadline = self._tool_catalog_deadline
+            pending = {
+                attempt.task
+                for name, attempt in self._initializations.items()
+                if attempt.task is not None
+                and (
+                    name not in self._handlers
+                    or not self._tool_catalog.has_snapshot(
+                        self._handlers[name],
+                        request_context,
+                    )
+                )
+            }
+            if self._startup_task is not None and not self._discovery_complete:
+                pending.add(self._startup_task)
+            if pending:
+                await asyncio.wait(
+                    pending,
+                    timeout=max(0, deadline - perf_counter()),
+                )
+        self._ensure_open()
+        if self._startup_task is not None and self._startup_task.done():
+            # Storage/discovery errors must not masquerade as an empty catalog.
+            self._startup_task.result()
+        scope = str(request_context.get(DRIVER_SCOPE_CONTEXT_KEY) or "")
+        handlers = self._iter_handlers(scope_id=scope)
+        capabilities = await self._tool_catalog.capture(
+            handlers,
+            request_context,
+            deadline,
+        )
+        self._ensure_open()
+        current = {
+            handler.name
+            for handler in handlers
+            if self._handlers.get(handler.name) is handler
+        }
+        return [tool for tool in capabilities if tool.driver_name in current]
+
+    def bind_capability(self, capability: DriverCapability):
+        """Bind a tool description to its connection identity."""
+        capability = deepcopy(capability)
+        original = self._get_handler(capability.driver_name)
+        identity = deepcopy(
+            (
+                original.card.protocol,
+                original.card.endpoint,
+                original.card.credentials,
+            ),
+        )
+
+        async def invoke(
+            invocation: DriverInvocation,
+        ) -> DriverInvocationResult:
+            name = capability.driver_name
+            if invocation.capability_id != capability.capability_id:
+                return DriverInvocationResult(
+                    ok=False,
+                    error_type="invalid_capability_id",
+                    message="Invocation does not match its bound tool.",
+                )
+            try:
+                while name in self._initializations:
+                    attempt = self._initializations[name]
+                    if attempt.task is not None:
+                        await asyncio.shield(
+                            asyncio.gather(
+                                attempt.task,
+                                return_exceptions=True,
+                            ),
+                        )
+                    self._ensure_open()
+                handler = self._get_handler(name)
+                card = handler.card
+                if identity != (
+                    card.protocol,
+                    card.endpoint,
+                    card.credentials,
+                ):
+                    return DriverInvocationResult(
+                        ok=False,
+                        error_type="driver_changed",
+                        message=(
+                            "Driver connection changed; refresh the tool "
+                            "catalog before retrying."
+                        ),
+                    )
+                tools = await self.list_driver_capabilities(
+                    name,
+                    kind="tool",
+                    request_context=invocation.request_context,
+                )
+                current = next(
+                    (
+                        tool
+                        for tool in tools
+                        if tool.capability_id == capability.capability_id
+                    ),
+                    None,
+                )
+                if (
+                    self._handlers.get(name) is not handler
+                    or current is None
+                    or not current.enabled
+                    or current != capability
+                ):
+                    return DriverInvocationResult(
+                        ok=False,
+                        error_type="driver_tool_changed",
+                        message=(
+                            "Driver tool changed or was disabled; refresh "
+                            "the tool catalog before retrying."
+                        ),
+                    )
+                return await self.invoke_capability(invocation)
+            except DriverRuntimeError as exc:
+                return DriverInvocationResult(
+                    ok=False,
+                    error_type="driver_not_ready",
+                    message=str(exc),
+                )
+
+        return invoke
 
     async def list_driver_capabilities(
         self,
@@ -697,6 +844,7 @@ class DriverManager:  # pylint: disable=too-many-public-methods
                 old = self._handlers.pop(attempt.card.name, None)
                 if handler is not None:
                     self._handlers[attempt.card.name] = handler
+                    self._tool_catalog.prime(handler)
                     handler = None
                 cleanup = self._schedule_handler_cleanup([old] if old else [])
             if cleanup is not None:
@@ -830,6 +978,8 @@ class DriverManager:  # pylint: disable=too-many-public-methods
         ]
         if not retired:
             return None
+        for handler in retired:
+            self._tool_catalog.forget(handler)
         handler_ids = {id(handler) for handler in retired}
         self._cleanup_handler_ids.update(handler_ids)
         task = asyncio.create_task(

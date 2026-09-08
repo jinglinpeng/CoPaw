@@ -54,6 +54,8 @@ _CAPABILITY_CACHE_TTL_SECONDS = 10.0
 
 
 class MCPDriverHandler(DriverHandler):
+    capabilities_are_context_free = True
+
     def __init__(self, *args, **kwargs) -> None:
         super().__init__(*args, **kwargs)
         self._client: Any | None = None

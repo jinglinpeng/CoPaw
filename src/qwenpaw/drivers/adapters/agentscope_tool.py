@@ -192,22 +192,25 @@ async def build_driver_agent_tools(
     if driver_manager is None:
         return [], []
 
-    await driver_manager.wait_for_startup()
+    driver_capabilities = await driver_manager.capture_tool_catalog(
+        request_context,
+    )
 
     try:
-        driver_capabilities = await driver_manager.list_capabilities(
-            kind="tool",
-            request_context=request_context,
-        )
+        allowed = request_context.get("subagent_allowed_tools")
         tools: list[ToolBase] = [
             DriverCapabilityTool(
                 capability,
-                driver_manager.invoke_capability,
+                driver_manager.bind_capability(capability),
                 request_context,
             )
             for capability in driver_capabilities
             if getattr(capability.exposure, "as_tool", False)
             and getattr(capability, "enabled", True)
+            and (
+                not isinstance(allowed, list)
+                or capability.exposure.tool_name in allowed
+            )
         ]
     except Exception:
         logger.debug(
@@ -216,9 +219,21 @@ async def build_driver_agent_tools(
         )
         return [], []
 
-    if not tools:
-        return [], []
-
     from ...agents.prompt import build_driver_policy_recheck_hint
 
     return tools, [build_driver_policy_recheck_hint()]
+
+
+async def refresh_driver_agent_tools(
+    toolkit: Any,
+    driver_manager: Any,
+    request_context: dict[str, str],
+) -> None:
+    """Replace Driver bindings between model requests."""
+    tools, _ = await build_driver_agent_tools(driver_manager, request_context)
+    basic = toolkit.tool_groups[0]
+    basic.tools = [
+        tool
+        for tool in basic.tools
+        if not isinstance(tool, DriverCapabilityTool)
+    ] + tools

@@ -15,13 +15,16 @@ from qwenpaw.drivers.credentials.store import AsyncCredentialStore
 from qwenpaw.drivers.handlers.mcp import MCPDriverHandler
 from qwenpaw.drivers.handlers.mcp_stateful_client import StdIOStatefulClient
 from qwenpaw.drivers.manager import DriverManager
+from qwenpaw.drivers.policy_types import DriverPolicy
 
 
 @pytest.mark.integration
 @pytest.mark.p1
 @pytest.mark.parametrize("outcome", ["ready", "cancel", "timeout"])
 async def test_background_stdio_process_is_reaped(
-    tmp_path, monkeypatch, outcome
+    tmp_path,
+    monkeypatch,
+    outcome,
 ):
     pid_file = tmp_path / "pid"
     release = tmp_path / "release"
@@ -37,6 +40,7 @@ async def test_background_stdio_process_is_reaped(
     manager = DriverManager(
         tmp_path / "drivers",
         AsyncCredentialStore(tmp_path / "credentials.yaml"),
+        optional_startup_grace=0.15,
     )
     manager.register_handler_type("mcp", MCPDriverHandler)
     await manager.card_store.save(
@@ -55,7 +59,8 @@ async def test_background_stdio_process_is_reaped(
                 ],
             },
             config={"tools": ["echo"]},
-        )
+            policy=DriverPolicy(default_effect="allow"),
+        ),
     )
     process = None
     if outcome == "timeout":
@@ -76,20 +81,42 @@ async def test_background_stdio_process_is_reaped(
         process = psutil.Process(int(pid_file.read_text()))
         assert manager.get_driver_status("echo") == "connecting"
         if outcome == "ready":
-            release.touch()
-            tools, _ = await asyncio.wait_for(
-                build_driver_agent_tools(manager, {}), 15
+            # The first model catalog must not wait for this real subprocess.
+            assert (
+                await asyncio.wait_for(
+                    manager.capture_tool_catalog({}),
+                    0.5,
+                )
+                == []
             )
+            release.touch()
+            await asyncio.wait_for(manager.wait_for_startup(), 15)
+
+            async def ready_tools():
+                while True:
+                    tools, _ = await build_driver_agent_tools(
+                        manager,
+                        {"approval_level": "off"},
+                    )
+                    if tools:
+                        return tools
+                    await asyncio.sleep(0.02)
+
+            tools = await asyncio.wait_for(ready_tools(), 5)
             assert len(tools) == 1
             assert (
                 tools[0].input_schema["properties"]["text"]["type"] == "string"
             )
             assert manager.get_driver_status("echo") == "active"
+            result = await tools[0](text="catalog-ready")
+            assert result.state.value == "success"
         elif outcome == "timeout":
             await asyncio.wait_for(manager.wait_for_startup(), 10)
             assert manager.get_driver_status("echo") == "error"
         await asyncio.wait_for(manager.shutdown_all(), 15)
-        assert not process.is_running()
+        # Windows can retain the PID of a terminated process while handles
+        # remain open. Waiting for exit verifies termination directly.
+        await asyncio.to_thread(process.wait, 5)
     finally:
         await manager.shutdown_all()
         # Keep the test's own child from surviving an assertion failure.

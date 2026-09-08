@@ -529,6 +529,7 @@ class AgentBuilder:
             ),
             effective_skills=effective_skills,
             governor=governor,
+            driver_manager=getattr(workspace, "driver_manager", None),
         )
 
         # Load session state if SessionLoadHook populated it.
