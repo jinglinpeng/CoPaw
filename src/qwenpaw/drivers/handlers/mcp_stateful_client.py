@@ -407,10 +407,11 @@ class _MCPClientMixin:
 
         try:
             await asyncio.wait_for(self._ready_event.wait(), timeout=timeout)
-        except asyncio.TimeoutError:
-            logger.error(
-                f"Timeout waiting for MCP client '{self.name}' to connect",
-            )
+        except (asyncio.TimeoutError, asyncio.CancelledError) as exc:
+            if isinstance(exc, asyncio.TimeoutError):
+                logger.error(
+                    f"Timeout waiting for MCP client '{self.name}' to connect",
+                )
             self._stop_event.set()
             lifecycle_task = self._lifecycle_task
             if lifecycle_task:

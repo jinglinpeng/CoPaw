@@ -1091,6 +1091,12 @@
   },
   "mcp": {
     "title": "MCP 客户端",
+    "runtime": {
+      "connecting": "连接中",
+      "active": "已连接",
+      "inactive": "未连接",
+      "error": "连接失败"
+    },
     "qwenpawManaged": "QwenPaw 管理",
     "qwenpawManagedHint": "由统一控制面管理，并在运行时注入支持的第三方智能体。",
     "providerManaged": "{{provider}} 本地 MCP",

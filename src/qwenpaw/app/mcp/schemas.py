@@ -32,6 +32,9 @@ class MCPClientInfo(BaseModel):
     name: str = Field(..., description="Client display name")
     description: str = Field(default="", description="Client description")
     enabled: bool = Field(..., description="Whether the client is enabled")
+    runtime_status: Optional[
+        Literal["connecting", "active", "inactive", "disabled", "error"]
+    ] = Field(default=None, description="Current workspace connection state")
     transport: Literal["stdio", "streamable_http", "sse"] = Field(
         ...,
         description="MCP transport type",

@@ -192,6 +192,8 @@ async def build_driver_agent_tools(
     if driver_manager is None:
         return [], []
 
+    await driver_manager.wait_for_startup()
+
     try:
         driver_capabilities = await driver_manager.list_capabilities(
             kind="tool",

@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, vi } from "vitest";
+import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import { renderHook, act, waitFor } from "@testing-library/react";
 import type { MCPClientInfo } from "../../../api/types";
 
@@ -17,7 +17,15 @@ const hoisted = vi.hoisted(() => {
   // A stable translation function so useCallback dependencies don't change on
   // every render and trigger an infinite loadClients loop via useEffect.
   const stableT = (k: string) => k;
-  return { messageMock, apiMocks, stableT };
+  const agentState = {
+    selectedAgent: "agent-1",
+    agents: [] as {
+      id: string;
+      backend: string;
+      backend_capabilities?: { provider_mcp_discovery: boolean };
+    }[],
+  };
+  return { messageMock, apiMocks, stableT, agentState, discoverMCP: vi.fn() };
 });
 
 vi.mock("../../../api", () => ({
@@ -26,7 +34,11 @@ vi.mock("../../../api", () => ({
 }));
 
 vi.mock("../../../stores/agentStore", () => ({
-  useAgentStore: () => ({ selectedAgent: "agent-1", agents: [] }),
+  useAgentStore: () => hoisted.agentState,
+}));
+
+vi.mock("../../../api/modules/harness", () => ({
+  harnessApi: { listMCP: hoisted.discoverMCP },
 }));
 
 vi.mock("../../../hooks/useAppMessage", () => ({
@@ -65,6 +77,14 @@ describe("useMCP", () => {
     messageMock.error.mockReset();
 
     apiMocks.listMCPClients.mockResolvedValue([]);
+    hoisted.agentState.selectedAgent = "agent-1";
+    hoisted.agentState.agents = [];
+    vi.spyOn(document, "visibilityState", "get").mockReturnValue("visible");
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+    vi.restoreAllMocks();
   });
 
   it("mounts and calls listMCPClients, sets clients, loading true->false", async () => {
@@ -199,5 +219,125 @@ describe("useMCP", () => {
 
     expect(apiMocks.deleteMCPClient).toHaveBeenCalledWith("client-1");
     expect(messageMock.success).toHaveBeenCalledWith("mcp.deleteSuccess");
+  });
+
+  it("polls pending status without page loading or provider discovery and stops on settlement", async () => {
+    vi.useFakeTimers();
+    const pending = makeClient({ enabled: true, runtime_status: "connecting" });
+    let resolvePoll!: (clients: MCPClientInfo[]) => void;
+    apiMocks.listMCPClients
+      .mockResolvedValueOnce([pending])
+      .mockImplementationOnce(
+        () =>
+          new Promise<MCPClientInfo[]>((resolve) => {
+            resolvePoll = resolve;
+          }),
+      );
+    const { result } = renderHook(() => useMCP());
+    await act(async () => {});
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(2000);
+    });
+    expect(apiMocks.listMCPClients).toHaveBeenCalledTimes(2);
+    expect(result.current.loading).toBe(false);
+    await act(async () => {
+      resolvePoll([{ ...pending, runtime_status: "active" }]);
+    });
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(6000);
+    });
+    expect(apiMocks.listMCPClients).toHaveBeenCalledTimes(2);
+    expect(hoisted.discoverMCP).not.toHaveBeenCalled();
+  });
+
+  it("pauses when hidden and stops after unmount", async () => {
+    vi.useFakeTimers();
+    apiMocks.listMCPClients.mockResolvedValue([
+      makeClient({ enabled: true, runtime_status: "connecting" }),
+    ]);
+    const { unmount } = renderHook(() => useMCP());
+    await act(async () => {});
+    const visibility = vi.spyOn(document, "visibilityState", "get");
+    visibility.mockReturnValue("hidden");
+    act(() => {
+      document.dispatchEvent(new Event("visibilitychange"));
+    });
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(6000);
+    });
+    expect(apiMocks.listMCPClients).toHaveBeenCalledTimes(1);
+    visibility.mockReturnValue("visible");
+    act(() => {
+      document.dispatchEvent(new Event("visibilitychange"));
+    });
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(2000);
+    });
+    expect(apiMocks.listMCPClients).toHaveBeenCalledTimes(2);
+    unmount();
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(6000);
+    });
+    expect(apiMocks.listMCPClients).toHaveBeenCalledTimes(2);
+  });
+
+  it("discards an old agent's pending poll after switching agents", async () => {
+    vi.useFakeTimers();
+    const pending = makeClient({ enabled: true, runtime_status: "connecting" });
+    const other = makeClient({
+      key: "other",
+      enabled: true,
+      runtime_status: "active",
+    });
+    let resolveOld!: (clients: MCPClientInfo[]) => void;
+    apiMocks.listMCPClients
+      .mockResolvedValueOnce([pending])
+      .mockImplementationOnce(
+        () =>
+          new Promise<MCPClientInfo[]>((resolve) => {
+            resolveOld = resolve;
+          }),
+      )
+      .mockResolvedValueOnce([other]);
+    const { result, rerender } = renderHook(() => useMCP());
+    await act(async () => {});
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(2000);
+    });
+    hoisted.agentState.selectedAgent = "agent-2";
+    rerender();
+    await act(async () => {});
+    expect(result.current.clients).toEqual([other]);
+    await act(async () => {
+      resolveOld([pending]);
+    });
+    expect(result.current.clients).toEqual([other]);
+    expect(result.current.loading).toBe(false);
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(6000);
+    });
+    expect(apiMocks.listMCPClients).toHaveBeenCalledTimes(3);
+  });
+
+  it("does not poll third-party provider MCPs", async () => {
+    vi.useFakeTimers();
+    hoisted.agentState.agents = [
+      {
+        id: "agent-1",
+        backend: "claude_code",
+        backend_capabilities: { provider_mcp_discovery: true },
+      },
+    ];
+    hoisted.discoverMCP.mockResolvedValue({ servers: [] });
+    apiMocks.listMCPClients.mockResolvedValue([
+      makeClient({ enabled: true, runtime_status: "connecting" }),
+    ]);
+    renderHook(() => useMCP());
+    await act(async () => {});
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(6000);
+    });
+    expect(apiMocks.listMCPClients).toHaveBeenCalledTimes(1);
+    expect(hoisted.discoverMCP).toHaveBeenCalledTimes(1);
   });
 });

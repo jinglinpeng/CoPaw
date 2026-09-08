@@ -334,6 +334,33 @@
   gap: 4px;
   font-size: 11px;
   flex-shrink: 0;
+
+  &[data-status="connecting"] {
+    .statusDot {
+      background-color: var(--app-warning-text);
+    }
+    .statusText {
+      color: var(--app-warning-text);
+    }
+  }
+
+  &[data-status="error"] {
+    .statusDot {
+      background-color: var(--app-error);
+    }
+    .statusText {
+      color: var(--app-error);
+    }
+  }
+
+  &[data-status="inactive"] {
+    .statusDot {
+      background-color: var(--app-status-idle);
+    }
+    .statusText {
+      color: var(--app-text-tertiary);
+    }
+  }
 }
 
 .statusDot {

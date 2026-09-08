@@ -56,6 +56,12 @@ class DriverNotFoundError(DriverRuntimeError):
         self.name = name
 
 
+class DriverNotReadyError(DriverRuntimeError):
+    def __init__(self, name: str) -> None:
+        super().__init__(f"Driver is still connecting: {name}")
+        self.name = name
+
+
 class UnsupportedProtocolError(DriverConfigurationError):
     def __init__(self, protocol: str) -> None:
         super().__init__(f"Unsupported driver protocol: {protocol}")

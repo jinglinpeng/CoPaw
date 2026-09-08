@@ -86,9 +86,9 @@ async def create_driver_service(
     # endpoint validator and tests.  This PR intentionally keeps the concrete
     # runtime surface to MCP while leaving DriverManager protocol-neutral.
     await migrate_legacy_mcp_if_needed(ws, driver_manager)
-    await driver_manager.start()
+    driver_manager.start_background()
     logger.debug(
-        "DriverManager external capability runtime initialized for agent: %s",
+        "DriverManager background connections started for agent: %s",
         ws.agent_id,
     )
     return driver_manager

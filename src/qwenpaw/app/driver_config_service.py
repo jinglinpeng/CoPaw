@@ -33,7 +33,6 @@ class DriverConfigService:
 
     def __init__(self, workspace: Any) -> None:
         self._workspace = workspace
-        self._reload_tasks: set[asyncio.Task] = set()
 
     @property
     def cards_dir(self) -> Path:
@@ -110,9 +109,11 @@ class DriverConfigService:
         *,
         reload_driver: bool = True,
     ) -> Path:
+        manager = getattr(self._workspace, "driver_manager", None)
+        if reload_driver and manager is not None:
+            await manager.register_driver(card, wait=False)
+            return self.card_path(card.name, protocol=card.protocol)
         path = await self.card_store.save(card)
-        if reload_driver:
-            await self.reload_driver_best_effort(card.name)
         return path
 
     async def save_policy(self, card: DriverCard) -> Path:
@@ -129,23 +130,14 @@ class DriverConfigService:
         if manager is None:
             return
 
-        async def reload_background() -> None:
-            try:
-                await manager.reload_driver(name)
-                logger.info("Driver '%s' reloaded and active", name)
-            except Exception as exc:
-                logger.info(
-                    "Driver '%s' saved but not active yet: %s",
-                    name,
-                    exc,
-                )
-
-        task = asyncio.create_task(
-            reload_background(),
-            name=f"driver-reload:{name}",
-        )
-        self._reload_tasks.add(task)
-        task.add_done_callback(self._reload_tasks.discard)
+        try:
+            await manager.reload_driver(name, wait=False)
+        except Exception as exc:
+            logger.info(
+                "Driver '%s' saved but not active yet: %s",
+                name,
+                exc,
+            )
 
     async def delete_driver_best_effort(self, name: str) -> None:
         manager = getattr(self._workspace, "driver_manager", None)

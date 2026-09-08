@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useAppMessage } from "../../../hooks/useAppMessage";
 import api from "../../../api";
 import type { MCPAccessPolicy, MCPClientInfo } from "../../../api/types";
@@ -22,38 +22,93 @@ export function useMCP() {
     HarnessDiscoveredMCPServer[]
   >([]);
   const [loading, setLoading] = useState(false);
+  const [visible, setVisible] = useState(document.visibilityState !== "hidden");
+  const mounted = useRef(false);
+  const requestGeneration = useRef(0);
+  const currentAgent = useRef(selectedAgent);
+  currentAgent.current = selectedAgent;
   const { message } = useAppMessage();
 
-  const loadClients = useCallback(async () => {
-    setLoading(true);
-    try {
-      const data = await api.listMCPClients();
-      setClients(data);
-      if (selectedBackend !== "qwenpaw" && canDiscoverProviderMCP) {
-        try {
-          const discovered = await harnessApi.listMCP(selectedBackend);
-          setProviderServers(discovered.servers);
-          if (discovered.message) {
-            message.warning(discovered.message);
+  useEffect(() => {
+    mounted.current = true;
+    const onVisibility = () =>
+      setVisible(document.visibilityState !== "hidden");
+    document.addEventListener("visibilitychange", onVisibility);
+    return () => {
+      mounted.current = false;
+      requestGeneration.current += 1;
+      document.removeEventListener("visibilitychange", onVisibility);
+    };
+  }, []);
+
+  const loadClients = useCallback(
+    async (silent = false) => {
+      const generation = ++requestGeneration.current;
+      const isCurrent = () =>
+        mounted.current &&
+        generation === requestGeneration.current &&
+        selectedAgent === currentAgent.current;
+      if (!silent) setLoading(true);
+      try {
+        const data = await api.listMCPClients();
+        if (!isCurrent() || (silent && document.visibilityState === "hidden"))
+          return;
+        setClients(data);
+        if (silent) return;
+        if (selectedBackend !== "qwenpaw" && canDiscoverProviderMCP) {
+          try {
+            const discovered = await harnessApi.listMCP(selectedBackend);
+            if (!isCurrent()) return;
+            setProviderServers(discovered.servers);
+            if (discovered.message) {
+              message.warning(discovered.message);
+            }
+          } catch (error) {
+            if (!isCurrent()) return;
+            console.warn("Failed to discover Provider MCP servers:", error);
+            setProviderServers([]);
           }
-        } catch (error) {
-          console.warn("Failed to discover Provider MCP servers:", error);
+        } else {
           setProviderServers([]);
         }
-      } else {
-        setProviderServers([]);
+      } catch (error) {
+        if (!isCurrent()) return;
+        console.error("Failed to load MCP clients:", error);
+        if (!silent) message.error(t("mcp.loadError"));
+      } finally {
+        if (!silent && isCurrent()) setLoading(false);
       }
-    } catch (error) {
-      console.error("Failed to load MCP clients:", error);
-      message.error(t("mcp.loadError"));
-    } finally {
-      setLoading(false);
-    }
-  }, [canDiscoverProviderMCP, message, selectedBackend, t]);
+    },
+    [canDiscoverProviderMCP, message, selectedAgent, selectedBackend, t],
+  );
 
   useEffect(() => {
     loadClients();
-  }, [loadClients, selectedAgent]);
+  }, [loadClients]);
+
+  const hasPendingClients = clients.some(
+    (client) => client.enabled && client.runtime_status === "connecting",
+  );
+  useEffect(() => {
+    if (
+      !visible ||
+      loading ||
+      !hasPendingClients ||
+      selectedBackend !== "qwenpaw"
+    )
+      return;
+    let disposed = false;
+    let timer: ReturnType<typeof setTimeout>;
+    const poll = async () => {
+      await loadClients(true);
+      if (!disposed) timer = setTimeout(poll, 2000);
+    };
+    timer = setTimeout(poll, 2000);
+    return () => {
+      disposed = true;
+      clearTimeout(timer);
+    };
+  }, [hasPendingClients, loadClients, loading, selectedBackend, visible]);
 
   const createClient = useCallback(
     async (

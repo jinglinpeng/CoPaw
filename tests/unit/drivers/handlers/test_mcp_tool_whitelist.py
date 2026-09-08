@@ -118,6 +118,9 @@ async def test_build_driver_agent_tools_omits_disabled() -> None:
     )
 
     class _Manager:
+        async def wait_for_startup(self) -> None:
+            pass
+
         async def list_capabilities(
             self,
             **_kwargs: Any,
@@ -141,6 +144,9 @@ async def test_build_driver_agent_tools_missing_enabled_stays_open() -> None:
     )
 
     class _Manager:
+        async def wait_for_startup(self) -> None:
+            pass
+
         async def list_capabilities(self, **_kwargs: Any) -> list[Any]:
             return [cap]
 
@@ -204,6 +210,9 @@ async def test_list_capabilities_disabled_tools_omitted_from_toolkit() -> None:
     capabilities = await handler.list_capabilities()
 
     class _Manager:
+        async def wait_for_startup(self) -> None:
+            pass
+
         async def list_capabilities(
             self,
             **_kwargs: Any,

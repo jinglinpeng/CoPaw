@@ -63,6 +63,8 @@ export const MCPClientCard = React.memo(function MCPClientCard({
   const isRemote =
     client.transport === "streamable_http" || client.transport === "sse";
   const clientType = isRemote ? "Remote" : "Local";
+  const { runtime_status: runtimeStatus, ...clientConfiguration } = client;
+  const status = client.enabled ? runtimeStatus : "disabled";
 
   const oauthStatus = client.oauth_status;
   const now = Date.now() / 1000;
@@ -88,7 +90,7 @@ export const MCPClientCard = React.memo(function MCPClientCard({
   };
 
   const handleCardClick = () => {
-    const jsonStr = JSON.stringify(client, null, 2);
+    const jsonStr = JSON.stringify(clientConfiguration, null, 2);
     setEditedJson(jsonStr);
     setIsEditing(false);
     setJsonModalOpen(true);
@@ -110,7 +112,7 @@ export const MCPClientCard = React.memo(function MCPClientCard({
     }
   };
 
-  const clientJson = JSON.stringify(client, null, 2);
+  const clientJson = JSON.stringify(clientConfiguration, null, 2);
 
   return (
     <>
@@ -167,10 +169,14 @@ export const MCPClientCard = React.memo(function MCPClientCard({
               </Tooltip>
             )}
           </div>
-          <div className={styles.statusContainer}>
+          <div className={styles.statusContainer} data-status={status}>
             <span className={styles.statusDot} />
             <span className={styles.statusText}>
-              {client.enabled ? t("common.enabled") : t("common.disabled")}
+              {status && status !== "disabled"
+                ? t(`mcp.runtime.${status}`)
+                : client.enabled
+                ? t("common.enabled")
+                : t("common.disabled")}
             </span>
           </div>
         </div>
@@ -180,6 +186,7 @@ export const MCPClientCard = React.memo(function MCPClientCard({
         <div className={styles.cardFooter}>
           <Button
             className={styles.toolsButton}
+            disabled={status === "connecting"}
             onClick={(e) => {
               e.stopPropagation();
               setAccessModalOpen(true);

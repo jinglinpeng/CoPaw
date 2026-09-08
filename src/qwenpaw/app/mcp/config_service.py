@@ -32,6 +32,7 @@ from ...drivers.adapters.mcp_console import (
     mcp_oauth_credential_ref,
 )
 from ...drivers.capabilities import mcp_tool_is_enabled, mcp_tool_whitelist
+from ...drivers.errors import DriverNotReadyError
 from ...drivers.constants import (
     CAPABILITY_KIND_TOOL,
     CREDENTIAL_ALIAS_OAUTH,
@@ -112,9 +113,17 @@ class MCPConfigService:
                 else mcp_oauth_credential_ref(card.name)
             ),
         )
-        return MCPClientInfo.model_validate(
+        info = MCPClientInfo.model_validate(
             build_mcp_client_info_payload(card, credential, oauth_credential),
         )
+        manager = getattr(self._workspace, "driver_manager", None)
+        if manager is not None:
+            info.runtime_status = (
+                manager.get_driver_status(card.name)
+                if card.enabled
+                else "disabled"
+            )
+        return info
 
     async def list_clients(self) -> list[MCPClientInfo]:
         return list(
@@ -137,6 +146,14 @@ class MCPConfigService:
                 kind=MCP_TOOL_KIND,
                 request_context={},
             )
+        except HTTPException:
+            raise
+        except DriverNotReadyError as exc:
+            raise HTTPException(
+                503,
+                detail=str(exc),
+                headers={"Retry-After": "2"},
+            ) from exc
         except Exception as exc:
             logger.warning(
                 "Failed to list tools for MCP client '%s': %s",

@@ -1252,6 +1252,12 @@
   },
   "mcp": {
     "title": "MCP Clients",
+    "runtime": {
+      "connecting": "Connecting",
+      "active": "Connected",
+      "inactive": "Not connected",
+      "error": "Connection failed"
+    },
     "qwenpawManaged": "QwenPaw managed",
     "qwenpawManagedHint": "Shared control-plane configuration injected into supported third-party Agents at runtime.",
     "providerManaged": "{{provider}} local MCP",

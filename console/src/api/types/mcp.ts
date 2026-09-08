@@ -29,6 +29,14 @@ export interface MCPClientInfo {
   description: string;
   /** Whether the client is enabled */
   enabled: boolean;
+  /** Runtime state only; never persisted as client configuration. */
+  runtime_status?:
+    | "connecting"
+    | "active"
+    | "inactive"
+    | "disabled"
+    | "error"
+    | null;
   /** MCP transport type */
   transport: "stdio" | "streamable_http" | "sse";
   /** Remote MCP endpoint URL for HTTP/SSE transport */
