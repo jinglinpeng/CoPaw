@@ -21,7 +21,6 @@ from pydantic import Field
 from .provider import ModelInfo
 from .capping_formatter import MAX_INLINE_MEDIA_BYTES
 from .capping_formatter import _CappingDashScopeFormatter
-from .openai_chat_model_compat import _sanitize_nullable_tool_schemas
 from .openai_provider import (
     CODING_DASHSCOPE_BASE_URL,
     DASHSCOPE_BASE_URLS,
@@ -303,6 +302,8 @@ class _DashScopeChatModelCompat:
 
     def __new__(cls, **kwargs: Any) -> Any:
         from agentscope.model import DashScopeChatModel
+
+        from .openai_chat_model_compat import _sanitize_nullable_tool_schemas
 
         default_headers = kwargs.pop("default_headers", None)
         thinking_explicitly_set = kwargs.pop(

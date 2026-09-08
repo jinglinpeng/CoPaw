@@ -44,12 +44,8 @@ from agentscope.formatter import OpenAIResponseFormatter
 from agentscope.message import Base64Source, URLSource
 from pydantic import Field
 
+from ..constant import MAX_INLINE_MEDIA_BYTES
 from ..utils.media_paths import local_media_path
-
-# Maximum size (in bytes) of a local media file we are willing to inline as
-# base64 into the model request body.  See the module docstring for the
-# rationale.
-MAX_INLINE_MEDIA_BYTES = 2 * 1024 * 1024  # 2 MB
 
 _DASHSCOPE_AUDIO_FORMAT_BY_MIME = {
     "audio/mpeg": "mp3",

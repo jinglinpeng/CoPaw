@@ -10,10 +10,10 @@ from pathlib import Path
 from typing import Iterator
 from typing import Optional, TYPE_CHECKING
 from fastapi import Request
-from .multi_agent_manager import MultiAgentManager
 from ..config.utils import load_config
 
 if TYPE_CHECKING:
+    from .multi_agent_manager import MultiAgentManager
     from .workspace import Workspace
     from ..services.project_directory import ResolvedProjectDirs
 

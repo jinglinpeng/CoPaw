@@ -17,7 +17,7 @@ from agentscope.message import (
 )
 from PIL import Image, UnidentifiedImageError
 
-from ...providers.capping_formatter import MAX_INLINE_MEDIA_BYTES
+from ...constant import MAX_INLINE_MEDIA_BYTES
 from ...utils.io_utils import run_sync_io
 
 _NATIVE_IMAGE_MEDIA_TYPES = frozenset(

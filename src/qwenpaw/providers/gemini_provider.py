@@ -10,9 +10,6 @@ import time
 from typing import Any, List
 
 from agentscope.model import ChatModelBase
-from google import genai
-from google.genai import errors as genai_errors
-from google.genai import types as genai_types
 from pydantic import Field
 
 from qwenpaw.providers.multimodal_prober import (
@@ -188,6 +185,9 @@ class GeminiProvider(Provider):
         return dict(self.custom_headers) if self.custom_headers else {}
 
     def _client(self, timeout: float = 10) -> Any:
+        from google import genai
+        from google.genai import types as genai_types
+
         headers = self._build_default_headers() or None
         return genai.Client(
             api_key=self.api_key,
@@ -240,6 +240,8 @@ class GeminiProvider(Provider):
 
     async def check_connection(self, timeout: float = 10) -> tuple[bool, str]:
         """Check if Google Gemini provider is reachable."""
+        from google.genai import errors as genai_errors
+
         client = None
         response = None
         try:
@@ -267,6 +269,8 @@ class GeminiProvider(Provider):
 
     async def fetch_models(self, timeout: float = 10) -> List[ModelInfo]:
         """Fetch available models from Gemini API."""
+        from google.genai import errors as genai_errors
+
         client = None
         response = None
         try:
@@ -292,6 +296,8 @@ class GeminiProvider(Provider):
         timeout: float = 10,
     ) -> ModelConnectionResult:
         """Check if a specific Gemini model is reachable/usable."""
+        from google.genai import errors as genai_errors
+
         target = (model_id or "").strip()
         if not target:
             return ModelConnectionResult(
@@ -444,6 +450,9 @@ class GeminiProvider(Provider):
         """
         import base64
 
+        from google.genai import errors as genai_errors
+        from google.genai import types as genai_types
+
         log_model = sanitize_log_value(model_id)
         logger.info(
             "Image probe start: model=%s url=%s",
@@ -508,6 +517,9 @@ class GeminiProvider(Provider):
 
         Asks the model whether the video contains moving content.
         """
+        from google.genai import errors as genai_errors
+        from google.genai import types as genai_types
+
         log_model = sanitize_log_value(model_id)
         logger.info(
             "Video probe start: model=%s url=%s",
@@ -591,6 +603,7 @@ class _GeminiChatModelCompat:
 
     def __new__(cls, **kwargs: Any) -> Any:
         from agentscope.model import GeminiChatModel
+        from google.genai import types as genai_types
 
         default_headers = kwargs.pop("default_headers", None)
         extra_config_kwargs = kwargs.pop("extra_config_kwargs", None) or {}

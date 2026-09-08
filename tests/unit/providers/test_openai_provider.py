@@ -2,10 +2,12 @@
 # pylint: disable=protected-access
 from __future__ import annotations
 
+import sys
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
 from agentscope.model import OpenAIChatModel
+import openai
 import pytest
 
 import qwenpaw.providers.openai_provider as openai_provider_module
@@ -27,6 +29,44 @@ def _make_provider(is_custom: bool = False) -> OpenAIProvider:
         is_custom=is_custom,
         chat_model="OpenAIChatModel",
     )
+
+
+@pytest.mark.parametrize("tracing_available", [True, False])
+def test_client_selects_tracing_at_first_use(
+    monkeypatch,
+    tracing_available: bool,
+) -> None:
+    monkeypatch.setenv("LANGFUSE_SECRET_KEY", "test-secret")
+    monkeypatch.setattr(
+        openai_provider_module.importlib.util,
+        "find_spec",
+        lambda _name: object() if tracing_available else None,
+    )
+    monkeypatch.setattr(
+        openai,
+        "AsyncOpenAI",
+        lambda **kwargs: SimpleNamespace(source="openai", **kwargs),
+    )
+    monkeypatch.setitem(
+        sys.modules,
+        "langfuse.openai",
+        SimpleNamespace(
+            AsyncOpenAI=lambda **kwargs: SimpleNamespace(
+                source="langfuse",
+                **kwargs,
+            ),
+        ),
+    )
+    provider = _make_provider()
+    provider.custom_headers = {"X-Test": "enabled"}
+
+    client = provider._client(timeout=2)
+
+    assert client.source == ("langfuse" if tracing_available else "openai")
+    assert client.base_url == provider.base_url
+    assert client.api_key == provider.api_key
+    assert client.timeout == 2
+    assert client.default_headers == {"X-Test": "enabled"}
 
 
 async def test_check_connection_success(monkeypatch) -> None:
@@ -60,7 +100,7 @@ async def test_check_connection_api_error_returns_false(monkeypatch) -> None:
     close = AsyncMock()
     fake_client = SimpleNamespace(models=FakeModels(), close=close)
     monkeypatch.setattr(provider, "_client", lambda timeout=5: fake_client)
-    monkeypatch.setattr(openai_provider_module, "APIError", Exception)
+    monkeypatch.setattr(openai, "APIError", Exception)
 
     ok, msg = await provider.check_connection(timeout=1)
 
@@ -567,7 +607,7 @@ async def test_check_model_connection_api_error_returns_false(
         chat=SimpleNamespace(completions=FakeCompletions()),
     )
     monkeypatch.setattr(provider, "_client", lambda timeout=5: fake_client)
-    monkeypatch.setattr(openai_provider_module, "APIError", Exception)
+    monkeypatch.setattr(openai, "APIError", Exception)
 
     ok, msg = await provider.check_model_connection("gpt-4o-mini", timeout=4)
 
@@ -868,7 +908,7 @@ async def test_check_model_connection_api_type_mismatch_treated_as_ok(
         chat=SimpleNamespace(completions=FakeCompletions()),
     )
     monkeypatch.setattr(provider, "_client", lambda timeout=5: fake_client)
-    monkeypatch.setattr(openai_provider_module, "APIError", Exception)
+    monkeypatch.setattr(openai, "APIError", Exception)
 
     # A generation model whose id does not match the non-chat patterns
     ok, msg = await provider.check_model_connection("my-video-gen", timeout=4)
@@ -889,7 +929,7 @@ async def test_connection_error_redacts_credentials(monkeypatch) -> None:
 
     fake_client = SimpleNamespace(models=FakeModels())
     monkeypatch.setattr(provider, "_client", lambda timeout=5: fake_client)
-    monkeypatch.setattr(openai_provider_module, "APIError", Exception)
+    monkeypatch.setattr(openai, "APIError", Exception)
 
     ok, message = await provider.check_connection()
 

@@ -166,6 +166,7 @@ DOCS_DIR: Path | None = _resolve_docs_dir()
 
 # Default media directory for channels (cross-platform)
 DEFAULT_MEDIA_DIR = WORKING_DIR / "media"
+MAX_INLINE_MEDIA_BYTES = 2 * 1024 * 1024  # 2 MB per inline model media file
 
 # Default local provider directory
 DEFAULT_LOCAL_PROVIDER_DIR = WORKING_DIR / "local_models"

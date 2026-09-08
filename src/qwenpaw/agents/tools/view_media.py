@@ -25,10 +25,9 @@ from agentscope.message import (
 from agentscope.tool import ToolChunk
 
 from ...config.context import get_current_workspace_dir
-from ...constant import EnvVarLoader, WORKING_DIR
+from ...constant import EnvVarLoader, MAX_INLINE_MEDIA_BYTES, WORKING_DIR
 from ...runtime.tool_registry import tool_descriptor
 from ...utils.io_utils import make_dirs_async, run_sync_io, write_bytes_async
-from ...providers.capping_formatter import MAX_INLINE_MEDIA_BYTES
 from .file_io import _path_to_file_url, _resolve_file_path
 from ..utils.image_freezing import (
     freeze_image_bytes,
