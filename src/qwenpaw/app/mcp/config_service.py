@@ -19,6 +19,7 @@ from .schemas import (
     MCPAccessRule,
     MCPClientCreateRequest,
     MCPClientInfo,
+    MCPClientSummary,
     MCPClientUpdateRequest,
     MCPToolAccessOverride,
     MCPToolDefaultPolicy,
@@ -134,6 +135,25 @@ class MCPConfigService:
                 ],
             ),
         )
+
+    async def list_summaries(self) -> list[MCPClientSummary]:
+        manager = getattr(self._workspace, "driver_manager", None)
+        return [
+            MCPClientSummary(
+                key=card.name,
+                name=_card_display_name(card),
+                description=str(card.config.get("description") or ""),
+                enabled=card.enabled,
+                runtime_status=(
+                    manager.get_driver_status(card.name)
+                    if manager is not None and card.enabled
+                    else "disabled"
+                    if not card.enabled
+                    else None
+                ),
+            )
+            for card in await self.list_cards()
+        ]
 
     async def list_tools(self, client_key: str) -> list[MCPToolInfo]:
         card = await self.load_card(client_key)

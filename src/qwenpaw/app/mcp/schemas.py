@@ -25,6 +25,18 @@ class MCPAccessSummary(BaseModel):
     overrides_count: int = 0
 
 
+class MCPClientSummary(BaseModel):
+    """Configuration-only information for selecting an MCP."""
+
+    key: str
+    name: str
+    description: str = ""
+    enabled: bool
+    runtime_status: Optional[
+        Literal["connecting", "active", "inactive", "disabled", "error"]
+    ] = None
+
+
 class MCPClientInfo(BaseModel):
     """MCP client information for API responses."""
 

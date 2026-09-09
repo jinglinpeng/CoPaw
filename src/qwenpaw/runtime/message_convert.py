@@ -16,6 +16,28 @@ from .._compat.message import _ensure_url_scheme
 logger = logging.getLogger(__name__)
 
 
+def selected_mcp_servers(input_list: List[Any]) -> tuple[str, ...]:
+    """Read this request's explicit dependencies, never session history."""
+    selected = []
+    for message in input_list:
+        role = getattr(message, "role", None)
+        if getattr(role, "value", role) != "user":
+            continue
+        metadata = getattr(message, "metadata", None) or {}
+        ids = metadata.get("mcp_server_ids", [])
+        if not isinstance(ids, list) or any(
+            not isinstance(name, str)
+            or not name.strip()
+            or any(ord(char) < 32 for char in name)
+            for name in ids
+        ):
+            raise ValueError(
+                "mcp_server_ids must be a list of non-empty server IDs",
+            )
+        selected.extend(ids)
+    return tuple(dict.fromkeys(selected))
+
+
 def _request_message_metadata(
     role: str,
     metadata: dict[str, Any] | None,

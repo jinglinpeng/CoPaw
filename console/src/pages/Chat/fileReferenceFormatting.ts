@@ -11,6 +11,7 @@ export interface ParsedFileReference {
 }
 
 export type RichComposerSegment =
+  | { kind: "mcp"; raw: string; serverId: string }
   | {
       kind: "text";
       raw: string;
@@ -143,6 +144,11 @@ const LEADING_CODE_FENCE_PATTERN =
  */
 export function splitRichComposerValue(value: string): RichComposerSegment[] {
   const result: RichComposerSegment[] = [];
+  const mcp = parseMcpSelection(value);
+  if (mcp) {
+    result.push({ kind: "mcp", raw: mcp.raw, serverId: mcp.serverId });
+    value = value.slice(mcp.raw.length);
+  }
 
   for (const segment of splitFileReferences(value)) {
     if (segment.reference) {
@@ -176,3 +182,4 @@ export function splitRichComposerValue(value: string): RichComposerSegment[] {
 
   return result;
 }
+import { parseMcpSelection } from "./mcpSlash";

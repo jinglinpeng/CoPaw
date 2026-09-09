@@ -20,7 +20,7 @@ from qwenpaw.drivers.policy_types import DriverPolicy
 
 @pytest.mark.integration
 @pytest.mark.p1
-@pytest.mark.parametrize("outcome", ["ready", "cancel", "timeout"])
+@pytest.mark.parametrize("outcome", ["ready", "selected", "cancel", "timeout"])
 async def test_background_stdio_process_is_reaped(
     tmp_path,
     monkeypatch,
@@ -80,7 +80,7 @@ async def test_background_stdio_process_is_reaped(
         await asyncio.wait_for(started(), 5)
         process = psutil.Process(int(pid_file.read_text()))
         assert manager.get_driver_status("echo") == "connecting"
-        if outcome == "ready":
+        if outcome in {"ready", "selected"}:
             # The first model catalog must not wait for this real subprocess.
             assert (
                 await asyncio.wait_for(
@@ -89,6 +89,17 @@ async def test_background_stdio_process_is_reaped(
                 )
                 == []
             )
+            selected_task = None
+            if outcome == "selected":
+                selected_task = asyncio.create_task(
+                    build_driver_agent_tools(
+                        manager,
+                        {"approval_level": "off"},
+                        required_mcp_servers=("echo",),
+                    ),
+                )
+                await asyncio.sleep(0.2)
+                assert not selected_task.done()
             release.touch()
             await asyncio.wait_for(manager.wait_for_startup(), 15)
 
@@ -102,7 +113,10 @@ async def test_background_stdio_process_is_reaped(
                         return tools
                     await asyncio.sleep(0.02)
 
-            tools = await asyncio.wait_for(ready_tools(), 5)
+            if selected_task is not None:
+                tools, _ = await asyncio.wait_for(selected_task, 5)
+            else:
+                tools = await asyncio.wait_for(ready_tools(), 5)
             assert len(tools) == 1
             assert (
                 tools[0].input_schema["properties"]["text"]["type"] == "string"

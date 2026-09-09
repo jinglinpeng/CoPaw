@@ -163,7 +163,11 @@ class MCPDriverHandler(DriverHandler):
         """Delegate to underlying MCP client list_tools."""
         if self._client is None:
             raise RuntimeError(f"MCP driver '{self.name}' is not connected")
-        return await self._client.list_tools()
+        timeout = getattr(self._client, "read_timeout_seconds", 300.0)
+        if hasattr(timeout, "total_seconds"):
+            timeout = timeout.total_seconds()
+        async with asyncio.timeout(float(timeout)):
+            return await self._client.list_tools()
 
     async def list_capabilities(
         self,

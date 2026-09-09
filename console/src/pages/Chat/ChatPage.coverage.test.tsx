@@ -8,6 +8,9 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { screen, waitFor, act } from "@testing-library/react";
 import { renderWithProviders } from "@/test/common_setup";
 import ChatPage from "./index";
+import { mcpApi } from "../../api/modules/mcp";
+import type { MCPClientSummary } from "../../api/types/mcp";
+import ResponseBuilder from "@agentscope-ai/chat/lib/AgentScopeRuntimeWebUI/core/AgentScopeRuntime/Response/Builder";
 import { chatExtensions } from "@/plugins/registry/chatExtensions";
 
 // ---------------------------------------------------------------------------
@@ -40,6 +43,10 @@ const {
 }));
 
 let capturedOptions: any = null;
+
+vi.mock("../../api/modules/mcp", () => ({
+  mcpApi: { listMCPSummaries: vi.fn().mockResolvedValue([]) },
+}));
 
 // ---------------------------------------------------------------------------
 // Module mocks
@@ -506,7 +513,67 @@ vi.mock("./utils", async () => {
 // Tests
 // ---------------------------------------------------------------------------
 describe("ChatPage coverage", () => {
+  it("loads the selected agent's lightweight MCP choices without delaying chat", async () => {
+    let complete!: (value: MCPClientSummary[]) => void;
+    vi.mocked(mcpApi.listMCPSummaries).mockReturnValue(
+      new Promise((resolve) => {
+        complete = resolve;
+      }),
+    );
+    renderWithProviders(<ChatPage />, { initialEntries: ["/chat"] });
+    await screen.findByTestId("chat-ui");
+    expect(mcpApi.listMCPSummaries).toHaveBeenCalledWith(
+      "default",
+      expect.any(AbortSignal),
+    );
+    expect(
+      capturedOptions.sender.suggestions.some(
+        (item: { value: string }) => item.value === "mcp:echo",
+      ),
+    ).toBe(false);
+    await act(async () =>
+      complete([{ key: "echo", name: "Echo", description: "", enabled: true }]),
+    );
+    expect(capturedOptions.sender.suggestions).toContainEqual({
+      label: "/Echo · MCP",
+      value: "mcp:echo",
+    });
+  });
+
+  it("submits clean text and MCP metadata, including on message retry", async () => {
+    vi.spyOn(globalThis, "fetch").mockResolvedValue({
+      ok: true,
+      status: 200,
+    } as Response);
+    renderWithProviders(<ChatPage />, { initialEntries: ["/chat"] });
+    await screen.findByTestId("chat-ui");
+    const input = [
+      {
+        role: "user",
+        content: [{ type: "text", text: "/mcp:echo hello" }],
+        metadata: { client_message_id: "client-1" },
+        session: { session_id: "session-1" },
+      },
+    ];
+    await capturedOptions.api.fetch({ input });
+    const body = JSON.parse(
+      String(vi.mocked(fetch).mock.calls.slice(-1)[0][1]!.body),
+    );
+    expect(body.input[0]).toMatchObject({
+      content: [{ type: "text", text: "hello" }],
+      metadata: { client_message_id: "client-1", mcp_server_ids: ["echo"] },
+    });
+    await capturedOptions.api.fetch({ input: body.input });
+    const retry = JSON.parse(
+      String(vi.mocked(fetch).mock.calls.slice(-1)[0][1]!.body),
+    );
+    expect(retry.input[0].metadata.mcp_server_ids).toEqual(["echo"]);
+    expect(input[0].content[0].text).toBe("/mcp:echo hello");
+  });
+
   beforeEach(() => {
+    vi.mocked(mcpApi.listMCPSummaries).mockResolvedValue([]);
+    mockSelectedAgent.mockReturnValue("default");
     chatExtensions.__resetForTests();
     capturedOptions = null;
     mockCopyText.mockClear();
@@ -550,6 +617,94 @@ describe("ChatPage coverage", () => {
   afterEach(() => {
     chatExtensions.__resetForTests();
     vi.clearAllMocks();
+  });
+
+  it("keeps MCP progress out of the real SDK response builder on live and replayed streams", async () => {
+    renderWithProviders(<ChatPage />, {
+      initialEntries: ["/chat/test-session"],
+    });
+    await screen.findByTestId("chat-ui");
+    const builder = new ResponseBuilder({
+      id: "response-1",
+      status: "created" as ConstructorParameters<
+        typeof ResponseBuilder
+      >[0]["status"],
+      created_at: 0,
+    });
+    const statuses = ["preparing", "preparing", "catalog_failed", "ready"];
+    for (const status of statuses) {
+      let parsed!: Parameters<ResponseBuilder["handle"]>[0];
+      await act(async () => {
+        parsed = capturedOptions.api.responseParser(
+          JSON.stringify({
+            object: "message",
+            type: "mcp_preparation",
+            sequence_number: 1,
+            data: {
+              agent_id: "default",
+              session_id: "test-session",
+              name: "Echo",
+              status,
+            },
+          }),
+        );
+      });
+      const result = builder.handle(parsed);
+      expect(result.status).not.toBe("failed");
+      expect(result.output).toEqual([]);
+    }
+    expect(() =>
+      builder.handle(
+        capturedOptions.api.responseParser('{"type":"mcp_preparation"}'),
+      ),
+    ).not.toThrow();
+  });
+
+  it("ignores an old agent's late summary and preparation events", async () => {
+    let resolveOld!: (value: MCPClientSummary[]) => void;
+    vi.mocked(mcpApi.listMCPSummaries).mockImplementation((agentId) =>
+      agentId === "default"
+        ? new Promise((resolve) => {
+            resolveOld = resolve;
+          })
+        : Promise.resolve([
+            { key: "new", name: "New", description: "", enabled: true },
+          ]),
+    );
+    const { rerender } = renderWithProviders(<ChatPage />, {
+      initialEntries: ["/chat/test-session"],
+    });
+    await screen.findByTestId("chat-ui");
+    const oldSignal = vi.mocked(mcpApi.listMCPSummaries).mock.calls[0][1]!;
+    mockSelectedAgent.mockReturnValue("agent-b");
+    rerender(<ChatPage />);
+    await waitFor(() =>
+      expect(capturedOptions.sender.suggestions).toContainEqual({
+        label: "/New · MCP",
+        value: "mcp:new",
+      }),
+    );
+    expect(oldSignal.aborted).toBe(true);
+    await act(async () => {
+      resolveOld([{ key: "old", name: "Old", description: "", enabled: true }]);
+      capturedOptions.api.responseParser(
+        JSON.stringify({
+          type: "mcp_preparation",
+          data: {
+            agent_id: "default",
+            session_id: "test-session",
+            name: "Old",
+            status: "preparing",
+          },
+        }),
+      );
+    });
+    expect(
+      capturedOptions.sender.suggestions.some(
+        (item: { value: string }) => item.value === "mcp:old",
+      ),
+    ).toBe(false);
+    mockSelectedAgent.mockReturnValue("default");
   });
 
   it("renders ChatPage and captures options", async () => {

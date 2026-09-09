@@ -34,6 +34,9 @@ class _Server:
     schema_type: str = "string"
     description: str = "Echo input"
     connect_count: int = 0
+    listing_error: Exception | None = None
+    startup_error: Exception | None = None
+    read_timeout: float = 300
 
     def __post_init__(self):
         self.listing.set()
@@ -46,11 +49,14 @@ async def _catalog_runtime(tmp_path):
     class Client:
         def __init__(self, server):
             self.server = server
+            self.read_timeout_seconds = server.read_timeout
 
         async def list_tools(self):
             self.server.listed += 1
             self.server.listing_started.set()
             await self.server.listing.wait()
+            if self.server.listing_error is not None:
+                raise self.server.listing_error
             return [
                 SimpleNamespace(
                     name="echo",
@@ -77,6 +83,8 @@ async def _catalog_runtime(tmp_path):
             server.connect_count += 1
             server.connect_started.set()
             await server.connect.wait()
+            if server.startup_error is not None:
+                raise server.startup_error
             self._client = Client(server)
 
     manager = DriverManager(
@@ -105,6 +113,387 @@ async def _catalog_runtime(tmp_path):
     finally:
         await manager.shutdown_all()
         assert not manager._tool_catalog._tasks
+
+
+async def test_explicit_target_waits_without_waiting_for_other_servers(
+    catalog_runtime,
+):
+    manager, _, add = catalog_runtime
+    _, selected = await add("selected")
+    _, other = await add("other")
+    selected.listing.clear()
+    statuses = []
+
+    async def status(*args):
+        statuses.append(args)
+
+    request = asyncio.create_task(
+        build_driver_agent_tools(
+            manager,
+            {},
+            required_mcp_servers=("selected",),
+            on_mcp_preparation=status,
+        ),
+    )
+    try:
+        await asyncio.sleep(0.2)
+        assert not request.done()
+        selected.connect.set()
+        await asyncio.wait_for(selected.listing_started.wait(), 1)
+        assert not request.done()
+        selected.listing.set()
+        tools, _ = await asyncio.wait_for(request, 1)
+        assert [tool.name for tool in tools] == ["selected__echo"]
+        assert not other.connect.is_set()
+        assert statuses[-1] == ("selected", "selected", "ready")
+    finally:
+        request.cancel()
+        await asyncio.gather(request, return_exceptions=True)
+
+
+async def test_explicit_callers_share_connection_and_cancellation(
+    catalog_runtime,
+):
+    manager, _, add = catalog_runtime
+    _, server = await add("shared")
+    requests = [
+        asyncio.create_task(
+            build_driver_agent_tools(
+                manager,
+                {},
+                required_mcp_servers=("shared",),
+            ),
+        )
+        for _ in range(2)
+    ]
+    try:
+        await asyncio.sleep(0.2)
+        requests[0].cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await requests[0]
+        assert not manager._initializations["shared"].task.cancelled()
+        server.connect.set()
+        tools, _ = await asyncio.wait_for(requests[1], 1)
+        assert len(tools) == 1
+        assert server.connect_count == 1
+    finally:
+        for request in requests:
+            request.cancel()
+        await asyncio.gather(*requests, return_exceptions=True)
+
+
+@pytest.mark.parametrize(
+    "error, expected",
+    [
+        (RuntimeError("private error"), "catalog_failed"),
+        (TimeoutError(), "catalog_timeout"),
+    ],
+)
+async def test_explicit_listing_failure_and_recovery(
+    catalog_runtime,
+    monkeypatch,
+    error,
+    expected,
+):
+    manager, _, add = catalog_runtime
+    _, server = await add("selected")
+    server.listing_error = error
+    server.connect.set()
+    states = []
+
+    async def status(*args):
+        states.append(args)
+
+    tools, _ = await build_driver_agent_tools(
+        manager,
+        {},
+        required_mcp_servers=("selected",),
+        on_mcp_preparation=status,
+    )
+    assert tools == []
+    assert states[-1][-1] == expected
+    assert "private error" not in repr(states)
+    server.listing_error = None
+    monkeypatch.setattr(tool_catalog, "_REFRESH_INTERVAL_SECONDS", 0)
+    tools, _ = await build_driver_agent_tools(
+        manager,
+        {},
+        required_mcp_servers=("selected",),
+        on_mcp_preparation=status,
+    )
+    assert len(tools) == 1
+    assert states[-1][-1] == "ready"
+
+
+async def test_explicit_target_disabled_during_wait(catalog_runtime):
+    manager, _, add = catalog_runtime
+    card, _ = await add("selected")
+    states = []
+
+    async def status(*args):
+        states.append(args)
+
+    request = asyncio.create_task(
+        build_driver_agent_tools(
+            manager,
+            {},
+            required_mcp_servers=("selected",),
+            on_mcp_preparation=status,
+        ),
+    )
+    try:
+        await asyncio.sleep(0.2)
+        await manager.register_driver(replace(card, enabled=False), wait=False)
+        assert (await asyncio.wait_for(request, 1))[0] == []
+        assert states[-1][-1] == "disabled"
+    finally:
+        request.cancel()
+        await asyncio.gather(request, return_exceptions=True)
+
+
+async def test_explicit_target_scope_and_empty_whitelist(catalog_runtime):
+    manager, _, add = catalog_runtime
+    card, _ = await add("selected", ready=True)
+    await manager.register_driver(replace(card, config={"tools": []}))
+    states = []
+
+    async def status(*args):
+        states.append(args)
+
+    tools, _ = await build_driver_agent_tools(
+        manager,
+        {},
+        required_mcp_servers=("selected", "missing"),
+        on_mcp_preparation=status,
+    )
+    assert tools == []
+    assert ("selected", "selected", "empty") in states
+    assert ("missing", "missing", "unavailable") in states
+
+
+async def test_explicit_discovery_does_not_await_all_initializations(
+    catalog_runtime,
+):
+    manager, _, add = catalog_runtime
+    selected_card, selected = await add("selected")
+    other_card, _ = await add("other")
+    await manager.delete_driver("selected")
+    await manager.delete_driver("other")
+    await manager.card_store.save(selected_card)
+    await manager.card_store.save(other_card)
+    manager.start_background()
+    selected.connect.set()
+    tools, _ = await asyncio.wait_for(
+        build_driver_agent_tools(
+            manager,
+            {},
+            required_mcp_servers=("selected",),
+        ),
+        1,
+    )
+    assert [tool.name for tool in tools] == ["selected__echo"]
+    assert not manager._startup_task.done()
+
+
+async def test_mcp_summary_does_not_read_credentials_or_connect(
+    catalog_runtime,
+    monkeypatch,
+):
+    from qwenpaw.app.mcp.config_service import MCPConfigService
+    from qwenpaw.app.routers import mcp
+    from fastapi import FastAPI
+    from httpx import ASGITransport, AsyncClient
+    from unittest.mock import AsyncMock
+
+    manager, _, add = catalog_runtime
+    _, server = await add("selected")
+    service = MCPConfigService(
+        SimpleNamespace(
+            driver_manager=manager,
+            workspace_dir=manager.cards_dir.parent,
+        ),
+    )
+    service.load_card = AsyncMock(
+        side_effect=AssertionError("no detail reads"),
+    )
+    service.build_info_from_card = AsyncMock(
+        side_effect=AssertionError("no credentials"),
+    )
+    monkeypatch.setattr(
+        mcp,
+        "_agent_for_request",
+        AsyncMock(return_value=object()),
+    )
+    monkeypatch.setattr(mcp, "_mcp_service", lambda _: service)
+    app = FastAPI()
+    app.include_router(mcp.router)
+    async with AsyncClient(
+        transport=ASGITransport(app),
+        base_url="http://test",
+    ) as client:
+        response = await client.get("/mcp?view=summary")
+    assert response.status_code == 200
+    assert response.json() == [
+        {
+            "key": "selected",
+            "name": "selected",
+            "description": "",
+            "enabled": True,
+            "runtime_status": "connecting",
+        },
+    ]
+    assert server.listed == 0
+
+
+@pytest.mark.parametrize(
+    "error, expected",
+    [
+        (RuntimeError("private startup error"), "startup_failed"),
+        (TimeoutError(), "startup_timeout"),
+    ],
+)
+async def test_explicit_startup_failure_keeps_other_tools(
+    catalog_runtime,
+    error,
+    expected,
+):
+    manager, _, add = catalog_runtime
+    _, server = await add("selected")
+    await add("healthy", ready=True)
+    server.startup_error = error
+    server.connect.set()
+    states = []
+
+    async def status(*args):
+        states.append(args)
+
+    tools, _ = await build_driver_agent_tools(
+        manager,
+        {},
+        required_mcp_servers=("selected",),
+        on_mcp_preparation=status,
+    )
+    assert [tool.name for tool in tools] == ["healthy__echo"]
+    assert states[-1][-1] == expected
+    assert "private startup error" not in repr(states)
+
+
+async def test_explicit_catalog_wait_uses_the_shared_operation_timeout(
+    catalog_runtime,
+):
+    manager, _, add = catalog_runtime
+    _, server = await add("selected")
+    server.read_timeout = 0.03
+    server.listing.clear()
+    server.connect.set()
+    states = []
+
+    async def status(*args):
+        states.append(args)
+
+    requests = [
+        build_driver_agent_tools(
+            manager,
+            {},
+            required_mcp_servers=("selected",),
+            on_mcp_preparation=status,
+        )
+        for _ in range(2)
+    ]
+    results = await asyncio.wait_for(asyncio.gather(*requests), 1)
+    assert all(not tools for tools, _ in results)
+    assert server.listed == 1
+    assert states[-1][-1] == "catalog_timeout"
+
+
+async def test_explicit_wait_follows_replaced_connection(catalog_runtime):
+    manager, servers, add = catalog_runtime
+    card, old = await add("selected")
+    task = asyncio.create_task(
+        build_driver_agent_tools(
+            manager,
+            {},
+            required_mcp_servers=("selected",),
+        ),
+    )
+    try:
+        await asyncio.sleep(0.2)
+        replacement = servers["selected"] = _Server(schema_type="integer")
+        replacement.connect.set()
+        await manager.register_driver(
+            replace(card, endpoint={"command": "new-command"}),
+            wait=False,
+        )
+        tools, _ = await asyncio.wait_for(task, 1)
+        assert len(tools) == 1
+        assert tools[0].input_schema["properties"]["text"]["type"] == "integer"
+        assert not old.connect.is_set()
+    finally:
+        task.cancel()
+        await asyncio.gather(task, return_exceptions=True)
+
+
+async def test_selected_wait_rechecks_metadata_after_reporting(
+    catalog_runtime,
+):
+    manager, _, add = catalog_runtime
+    card, _ = await add("selected", ready=True)
+    states = []
+
+    async def status(_name, _display, state):
+        states.append(state)
+        if state == "ready":
+            await manager.register_driver(replace(card, config={"tools": []}))
+
+    tools, _ = await build_driver_agent_tools(
+        manager,
+        {},
+        required_mcp_servers=("selected",),
+        on_mcp_preparation=status,
+    )
+    assert tools == []
+    assert states[-1] == "empty"
+
+
+async def test_selected_model_hint_refreshes_without_entering_history(
+    catalog_runtime,
+    monkeypatch,
+):
+    from qwenpaw.agents.react_agent import QwenPawAgent
+
+    manager, _, add = catalog_runtime
+    card, _ = await add("selected", ready=True)
+    agent = object.__new__(QwenPawAgent)
+    agent._driver_manager = manager
+    agent._request_context = {}
+    agent._required_mcp_servers = ("selected",)
+    agent._mcp_preparation = {}
+    agent._on_mcp_preparation = None
+    agent.toolkit = Toolkit(tools=[])
+    agent.state = SimpleNamespace(
+        context=[],
+        summary="",
+        tool_context=SimpleNamespace(activated_groups=[]),
+    )
+
+    async def system_prompt():
+        return "Test agent"
+
+    monkeypatch.setattr(agent, "_get_system_prompt", system_prompt)
+    first = await agent._prepare_model_input()
+    assert len(first["tools"]) == 1
+    assert '"status": "ready"' in first["messages"][1].get_text_content()
+    await manager.register_driver(replace(card, enabled=False))
+    second = await agent._prepare_model_input()
+    assert not second["tools"]
+    assert '"status": "disabled"' in second["messages"][1].get_text_content()
+    assert (
+        '"status": "disabled"' not in first["messages"][1].get_text_content()
+    )
+    assert agent.state.context == []
+    agent._required_mcp_servers = ()
+    third = await agent._prepare_model_input()
+    assert len(third["messages"]) == 1
 
 
 async def test_servers_and_later_requests_share_one_budget(

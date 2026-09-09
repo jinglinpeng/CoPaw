@@ -102,6 +102,8 @@ class HookContext:
     session_state: dict | None = None
     agent: "Agent | None" = None
     error: BaseException | None = None
+    mcp_server_ids: tuple[str, ...] = ()
+    on_mcp_preparation: Any = None
 
     # ── Context injections (改动6B) ──
     context_injections: list = field(default_factory=list)

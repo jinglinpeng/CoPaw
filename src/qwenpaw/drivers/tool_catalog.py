@@ -28,6 +28,7 @@ class _CatalogEntry:
     published_at: float = 0.0
     attempted_at: float = 0.0
     task: asyncio.Task[None] | None = None
+    error: str = ""
 
 
 class DriverToolCatalog:
@@ -71,6 +72,7 @@ class DriverToolCatalog:
             )
         ):
             entry.attempted_at = now
+            entry.error = ""
             entry.task = asyncio.create_task(
                 self._refresh(entry, handler, context),
                 name=f"driver-tool-catalog:{handler.name}",
@@ -98,7 +100,12 @@ class DriverToolCatalog:
             if entry.card == handler.card:
                 entry.tools = deepcopy(tools)
                 entry.published_at = perf_counter()
-        except Exception:
+        except Exception as exc:
+            entry.error = (
+                "catalog_timeout"
+                if isinstance(exc, TimeoutError)
+                else "catalog_failed"
+            )
             logger.warning(
                 "Failed to refresh tool catalog for Driver '%s'",
                 handler.name,
@@ -118,6 +125,30 @@ class DriverToolCatalog:
 
     def has_snapshot(self, handler: DriverHandler, context: dict) -> bool:
         return self._available(self._entry(handler, context))
+
+    async def prepare(self, handler: DriverHandler, context: dict) -> str:
+        """Await the shared catalog task and report visible tool readiness."""
+        entry = self._entry(handler, context)
+        if not self._available(entry) and entry.task is not None:
+            await asyncio.shield(entry.task)
+        if entry.card != handler.card:
+            return "changed"
+        if not self._available(entry):
+            return entry.error or "catalog_failed"
+        allowed = context.get("subagent_allowed_tools")
+        return (
+            "ready"
+            if any(
+                tool.enabled
+                and tool.exposure.as_tool
+                and (
+                    not isinstance(allowed, list)
+                    or tool.exposure.tool_name in allowed
+                )
+                for tool in entry.tools or ()
+            )
+            else "empty"
+        )
 
     async def capture(
         self,

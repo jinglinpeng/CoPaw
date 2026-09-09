@@ -14,7 +14,7 @@
  * Vendor response primitives are deep-imported because the SDK does not expose
  * a message-renderer seam. If their paths change, update the imports below.
  */
-import React, { useDeferredValue, useMemo } from "react";
+import React, { useContext, useDeferredValue, useMemo } from "react";
 import VendorRequestCardOriginal from "@agentscope-ai/chat/lib/AgentScopeRuntimeWebUI/core/AgentScopeRuntime/Request/Card";
 import AgentScopeRuntimeResponseBuilder from "@agentscope-ai/chat/lib/AgentScopeRuntimeWebUI/core/AgentScopeRuntime/Response/Builder";
 import ResponseActions from "@agentscope-ai/chat/lib/AgentScopeRuntimeWebUI/core/AgentScopeRuntime/Response/Actions";
@@ -33,7 +33,7 @@ import Images from "@agentscope-ai/chat/lib/DefaultCards/Images";
 import Videos from "@agentscope-ai/chat/lib/DefaultCards/Videos";
 import Files from "@agentscope-ai/chat/lib/DefaultCards/Files";
 import { Bubble, Markdown } from "@agentscope-ai/chat";
-import { Avatar, Flex } from "antd";
+import { Avatar, Flex, Tag } from "antd";
 import { useTranslation } from "react-i18next";
 import { renderableCodeComponents } from "../../components/RenderableCodeBlock";
 // Vendor `.d.ts` doesn't yet describe the request content slots.
@@ -63,6 +63,8 @@ import {
 } from "./messageDisplay";
 import styles from "./HostBubbles.module.less";
 import LazyAccordion from "./LazyAccordion";
+import { getMessageMcpIds, normalizeMcpMessage } from "./mcpSlash";
+import { McpNamesContext } from "./mcpContext";
 
 function sortByOrder<T extends { item: { order?: number } }>(arr: T[]): T[] {
   return arr
@@ -293,6 +295,12 @@ function DefaultHostResponseCard({
 }
 
 function HostRequestCardContent(props: { data: ChatRequestData }) {
+  const names = useContext(McpNamesContext);
+  const input = Array.isArray(props.data.input) ? props.data.input : [];
+  const mcpIds = [...new Set(input.flatMap(getMessageMcpIds))];
+  const data = mcpIds.length
+    ? { ...props.data, input: input.map(normalizeMcpMessage) }
+    : props.data;
   const extScalar = useChatScalarSnapshot();
   const extLists = useChatListSnapshot();
 
@@ -334,8 +342,19 @@ function HostRequestCardContent(props: { data: ChatRequestData }) {
 
   const fallback = () => (
     <VendorRequestCard
-      data={props.data as AnyCardProps}
-      contentPrepend={contentPrepend as AnyCardProps}
+      data={data as AnyCardProps}
+      contentPrepend={
+        mcpIds.length ? (
+          <>
+            {mcpIds.map((id) => (
+              <Tag key={id}>{names[id] || id} · MCP</Tag>
+            ))}
+            {contentPrepend}
+          </>
+        ) : (
+          contentPrepend
+        )
+      }
       contentAppend={contentAppend as AnyCardProps}
     />
   );

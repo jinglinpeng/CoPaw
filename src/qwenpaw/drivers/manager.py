@@ -5,7 +5,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from collections.abc import Callable, Iterable
+from collections.abc import Awaitable, Callable, Iterable, Mapping
 from copy import deepcopy
 from dataclasses import dataclass
 from pathlib import Path
@@ -49,6 +49,7 @@ from .tool_catalog import DriverToolCatalog
 logger = logging.getLogger(__name__)
 _SHUTDOWN_TIMEOUT_SECONDS = 10.0
 EndpointValidator = Callable[[DriverCard], None]
+PreparationCallback = Callable[[str, str, str], Awaitable[None]]
 
 
 @dataclass
@@ -89,8 +90,10 @@ class DriverManager:  # pylint: disable=too-many-public-methods
         self._initializations: dict[str, _DriverInitialization] = {}
         self._initialization_tasks: set[asyncio.Task[None]] = set()
         self._initialization_errors: set[str] = set()
+        self._initialization_timeouts: set[str] = set()
         self._startup_task: asyncio.Task[None] | None = None
         self._discovery_complete = False
+        self._discovery_done = asyncio.Event()
         self._startup_failed = False
         self._closing = False
         self._shutdown_task: asyncio.Task[None] | None = None
@@ -121,6 +124,7 @@ class DriverManager:  # pylint: disable=too-many-public-methods
         """Start shared discovery and connection without waiting for MCPs."""
         self._ensure_open()
         if self._startup_task is None:
+            self._discovery_done.clear()
             self._startup_task = asyncio.create_task(
                 self._build_drivers(),
                 name="driver-startup",
@@ -128,6 +132,8 @@ class DriverManager:  # pylint: disable=too-many-public-methods
             self._startup_task.add_done_callback(self._finish_startup)
 
     def _finish_startup(self, task: asyncio.Task[None]) -> None:
+        if self._startup_task is task:
+            self._discovery_done.set()
         if not task.cancelled() and task.exception() is not None:
             self._startup_failed = True
             logger.error("Driver startup failed: %s", task.exception())
@@ -186,6 +192,7 @@ class DriverManager:  # pylint: disable=too-many-public-methods
             ]
             self._schedule_handler_cleanup(retired)
             self._discovery_complete = True
+            self._discovery_done.set()
         await self._wait_for_initializations()
         logger.info(
             "[startup] agent=%s phase=drivers_ready duration=%.3fs "
@@ -321,6 +328,7 @@ class DriverManager:  # pylint: disable=too-many-public-methods
             if pending is not None and pending.task is not None:
                 self._cancel_initialization(pending.task)
             self._initialization_errors.discard(name)
+            self._initialization_timeouts.discard(name)
             old = self._handlers.pop(name, None)
             cleanup = self._schedule_handler_cleanup([old] if old else [])
         tasks = [
@@ -436,6 +444,7 @@ class DriverManager:  # pylint: disable=too-many-public-methods
         """Unpublish all handlers and wait for every managed cleanup."""
         if self._shutdown_task is None:
             self._closing = True
+            self._discovery_done.set()
             self._shutdown_task = asyncio.create_task(
                 self._shutdown_all(),
                 name="driver-shutdown",
@@ -517,6 +526,9 @@ class DriverManager:  # pylint: disable=too-many-public-methods
     async def capture_tool_catalog(
         self,
         request_context: dict[str, str],
+        *,
+        required_drivers: Mapping[str, str] | None = None,
+        on_preparation: PreparationCallback | None = None,
     ) -> list[DriverCapability]:
         """Capture tools with one shared optional startup budget."""
         self._ensure_open()
@@ -552,6 +564,24 @@ class DriverManager:  # pylint: disable=too-many-public-methods
         if self._startup_task is not None and self._startup_task.done():
             # Storage/discovery errors must not masquerade as an empty catalog.
             self._startup_task.result()
+        unavailable = set()
+        if required_drivers:
+            results = await asyncio.gather(
+                *[
+                    self._prepare_driver_tools(
+                        name,
+                        protocol,
+                        request_context,
+                        on_preparation,
+                    )
+                    for name, protocol in required_drivers.items()
+                ],
+            )
+            unavailable = {
+                name
+                for name, status in zip(required_drivers, results)
+                if status not in {"ready", "empty"}
+            }
         scope = str(request_context.get(DRIVER_SCOPE_CONTEXT_KEY) or "")
         handlers = self._iter_handlers(scope_id=scope)
         capabilities = await self._tool_catalog.capture(
@@ -565,7 +595,86 @@ class DriverManager:  # pylint: disable=too-many-public-methods
             for handler in handlers
             if self._handlers.get(handler.name) is handler
         }
-        return [tool for tool in capabilities if tool.driver_name in current]
+        return [
+            tool
+            for tool in capabilities
+            if tool.driver_name in current - unavailable
+        ]
+
+    async def _prepare_driver_tools(
+        self,
+        name: str,
+        protocol: str,
+        context: dict,
+        on_preparation: PreparationCallback | None,
+    ) -> str:
+        # pylint: disable=too-many-return-statements,too-many-branches
+        display_name = name
+
+        async def report(status: str) -> str:
+            if on_preparation is not None:
+                await on_preparation(name, display_name, status)
+            return status
+
+        if self._startup_task is not None and not self._discovery_complete:
+            await report("preparing")
+            await self._discovery_done.wait()
+            self._ensure_open()
+            if self._startup_task.done():
+                self._startup_task.result()
+        while True:
+            self._ensure_open()
+            scope = self._handler_scopes.get(name)
+            if scope is not None and scope != context.get(
+                DRIVER_SCOPE_CONTEXT_KEY,
+            ):
+                return await report("unavailable")
+            path = await self._card_store.stored_path(name)
+            if path is None:
+                return await report("unavailable")
+            try:
+                card = await self._card_store.load_path(path)
+            except FileNotFoundError:
+                return await report("unavailable")
+            if card.protocol != protocol:
+                return await report("unavailable")
+            display_name = str(card.config.get("display_name") or name)
+            if not card.enabled:
+                return await report("disabled")
+            attempt = self._initializations.get(name)
+            if attempt is not None and attempt.task is not None:
+                await report("preparing")
+                await asyncio.shield(
+                    asyncio.gather(attempt.task, return_exceptions=True),
+                )
+                continue
+            handler = self._handlers.get(name)
+            if handler is None or handler.card != card:
+                status = (
+                    "startup_timeout"
+                    if name in self._initialization_timeouts
+                    else "startup_failed"
+                )
+                return await report(status)
+            if not self._tool_catalog.has_snapshot(handler, context):
+                await report("preparing")
+            try:
+                status = await self._tool_catalog.prepare(handler, context)
+            except asyncio.CancelledError:
+                if asyncio.current_task().cancelling():
+                    raise
+                continue
+            if status != "changed":
+                await report(status)
+            self._ensure_open()
+            if (
+                status == "changed"
+                or self._handlers.get(name) is not handler
+                or handler.card != card
+                or name in self._initializations
+            ):
+                continue
+            return status
 
     def bind_capability(self, capability: DriverCapability):
         """Bind a tool description to its connection identity."""
@@ -787,6 +896,7 @@ class DriverManager:  # pylint: disable=too-many-public-methods
         attempt = _DriverInitialization(card)
         self._initializations[card.name] = attempt
         self._initialization_errors.discard(card.name)
+        self._initialization_timeouts.discard(card.name)
         task = asyncio.create_task(
             self._initialize_driver(
                 attempt,
@@ -814,6 +924,8 @@ class DriverManager:  # pylint: disable=too-many-public-methods
         if error is not None:
             if current:
                 self._initialization_errors.add(attempt.card.name)
+                if isinstance(error, TimeoutError):
+                    self._initialization_timeouts.add(attempt.card.name)
             logger.warning(
                 "Failed to initialize Driver '%s': %s",
                 attempt.card.name,

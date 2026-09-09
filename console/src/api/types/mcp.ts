@@ -59,6 +59,11 @@ export interface MCPClientInfo {
   access_summary: MCPAccessSummary;
 }
 
+export type MCPClientSummary = Pick<
+  MCPClientInfo,
+  "key" | "name" | "description" | "enabled" | "runtime_status"
+>;
+
 export interface MCPOAuthStartRequest {
   /** MCP server URL */
   url: string;

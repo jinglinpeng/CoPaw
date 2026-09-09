@@ -3171,6 +3171,16 @@
     "system": "跟随系统"
   },
   "chat": {
+    "mcpPreparation": {
+      "preparing": "正在准备 {{name}}…",
+      "startup_failed": "{{name}} 启动失败。",
+      "startup_timeout": "{{name}} 启动超时。",
+      "catalog_failed": "无法获取 {{name}} 的工具列表。",
+      "catalog_timeout": "获取 {{name}} 的工具列表超时。",
+      "unavailable": "当前智能体无法使用 {{name}}。",
+      "disabled": "{{name}} 已禁用。",
+      "empty": "{{name}} 没有可用工具。"
+    },
     "fileReference": {
       "codeSnippet": "代码片段 · {{count}} 行"
     },

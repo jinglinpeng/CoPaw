@@ -785,6 +785,17 @@ class Envelope:
         heartbeat = Event(object="message", type="heartbeat")
         yield self._tag_seq(heartbeat)
 
+    def mcp_preparation(self, **data: str) -> Any:
+        from ..schemas import Event
+
+        return self._tag_seq(
+            Event(
+                object="message",
+                type="mcp_preparation",
+                data=data,
+            ),
+        )
+
     # ------------------------------------------------------------------
     # Command short-circuit
     # ------------------------------------------------------------------

@@ -1,6 +1,7 @@
 import { request } from "../request";
 import type {
   MCPClientInfo,
+  MCPClientSummary,
   MCPClientCreateRequest,
   MCPClientUpdateRequest,
   MCPToolInfo,
@@ -16,6 +17,12 @@ export const mcpApi = {
    * List all MCP clients
    */
   listMCPClients: () => request<MCPClientInfo[]>("/mcp"),
+
+  listMCPSummaries: (agentId: string, signal?: AbortSignal) =>
+    request<MCPClientSummary[]>("/mcp?view=summary", {
+      headers: { "X-Agent-Id": agentId },
+      signal,
+    }),
 
   /**
    * Get details of a specific MCP client

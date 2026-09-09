@@ -3313,6 +3313,16 @@
     "system": "System"
   },
   "chat": {
+    "mcpPreparation": {
+      "preparing": "Preparing {{name}}…",
+      "startup_failed": "{{name}} could not start.",
+      "startup_timeout": "{{name}} timed out while starting.",
+      "catalog_failed": "Could not load tools from {{name}}.",
+      "catalog_timeout": "Loading tools from {{name}} timed out.",
+      "unavailable": "{{name}} is unavailable for this agent.",
+      "disabled": "{{name}} is disabled.",
+      "empty": "{{name}} has no available tools."
+    },
     "fileReference": {
       "codeSnippet_one": "Code snippet · {{count}} line",
       "codeSnippet_other": "Code snippet · {{count}} lines"

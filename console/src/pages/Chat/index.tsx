@@ -5,7 +5,14 @@ import {
   type IAgentScopeRuntimeWebUISenderBeforeSubmitResult,
   type IAgentScopeRuntimeWebUIRef,
 } from "@agentscope-ai/chat";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type ReactNode,
+} from "react";
 import { Alert, Button, Modal, Result, Tooltip } from "antd";
 import { useAppMessage } from "../../hooks/useAppMessage";
 import { useIsMobile } from "../../hooks/useIsMobile";
@@ -38,6 +45,13 @@ import defaultConfig, { getDefaultConfig } from "./OptionsPanel/defaultConfig";
 import { chatApi } from "../../api/modules/chat";
 import { agentApi } from "../../api/modules/agent";
 import { skillApi } from "../../api/modules/skill";
+import { mcpApi } from "../../api/modules/mcp";
+import type { MCPClientSummary } from "../../api/types/mcp";
+import {
+  buildMcpSlashSuggestions,
+  normalizeMcpMessage,
+  parseMcpSelection,
+} from "./mcpSlash";
 import { getApiUrl } from "../../api/config";
 import { buildAuthHeaders } from "../../api/authHeaders";
 import { providerApi } from "../../api/modules/provider";
@@ -410,7 +424,7 @@ async function startBackgroundQueue(
         const pendingRequest = withPendingProjectDirectory(
           {
             input: [
-              {
+              normalizeMcpMessage({
                 role: "user",
                 metadata: {
                   [QWENPAW_CLIENT_MESSAGE_ID_KEY]: clientMessageId,
@@ -419,7 +433,7 @@ async function startBackgroundQueue(
                   { type: "text", text: item.text },
                   ...buildAttachmentContentItems(item.attachments),
                 ],
-              },
+              }),
             ],
             session_id: item.backendSessionId || backendSessionId,
             user_id: item.userId || DEFAULT_USER_ID,
@@ -1585,6 +1599,67 @@ export default function ChatPage() {
     });
   }, []);
   const [chatSkills, setChatSkills] = useState<SkillSpec[]>([]);
+  const [mcpCatalog, setMcpCatalog] = useState<{
+    agentId: string;
+    clients: MCPClientSummary[];
+  } | null>(null);
+  const mcpClients = useMemo(
+    () => (mcpCatalog?.agentId === selectedAgent ? mcpCatalog.clients : []),
+    [mcpCatalog, selectedAgent],
+  );
+  const mcpNames = useMemo(
+    () =>
+      Object.fromEntries(mcpClients.map((client) => [client.key, client.name])),
+    [mcpClients],
+  );
+  const [mcpPreparation, setMcpPreparation] = useState<{
+    agentId: string;
+    sessionId: string;
+    name: string;
+    status: string;
+  } | null>(null);
+  const mcpNotice =
+    mcpPreparation?.agentId === selectedAgent &&
+    [
+      queueSessionId,
+      sessionApi.getRealIdForSession(queueSessionId),
+      sessionApi.getSessionIdentity().sessionId,
+    ].includes(mcpPreparation.sessionId)
+      ? mcpPreparation
+      : null;
+
+  useEffect(() => {
+    if (!usesQwenPawBackend) return;
+    let controller: AbortController | undefined;
+    const refresh = () => {
+      controller?.abort();
+      const current = new AbortController();
+      controller = current;
+      mcpApi
+        .listMCPSummaries(selectedAgent, current.signal)
+        .then((clients) => {
+          if (!current.signal.aborted)
+            setMcpCatalog({ agentId: selectedAgent, clients });
+        })
+        .catch(() => {
+          if (!current.signal.aborted)
+            setMcpCatalog({ agentId: selectedAgent, clients: [] });
+        });
+    };
+    refresh();
+    window.addEventListener("focus", refresh);
+    return () => {
+      controller?.abort();
+      window.removeEventListener("focus", refresh);
+    };
+  }, [selectedAgent, usesQwenPawBackend]);
+
+  useEffect(() => {
+    if (!chatLoading)
+      setMcpPreparation((current) =>
+        current?.status === "preparing" ? null : current,
+      );
+  }, [chatLoading]);
   const consoleSkills = useMemo(
     () => chatSkills.filter(isSkillAvailableInConsole),
     [chatSkills],
@@ -2526,6 +2601,7 @@ export default function ChatPage() {
       biz_params?: Record<string, unknown>;
       signal?: AbortSignal;
     }): Promise<Response> => {
+      setMcpPreparation(null);
       pendingFallbackEventsRef.current = [];
       pendingFallbackEventKeysRef.current.clear();
       const headers: Record<string, string> = {
@@ -2592,7 +2668,9 @@ export default function ChatPage() {
           identity.sessionId || session?.session_id || "",
         );
       let requestBody: Record<string, unknown> = {
-        input: rewrittenInput,
+        input: usesQwenPawBackend
+          ? rewrittenInput.map(normalizeMcpMessage)
+          : rewrittenInput,
         session_id: identity.sessionId || session?.session_id || "",
         user_id: identity.userId || session?.user_id || DEFAULT_USER_ID,
         channel: identity.channel || session?.channel || DEFAULT_CHANNEL,
@@ -2866,6 +2944,10 @@ export default function ChatPage() {
       inputData: IAgentScopeRuntimeWebUIInputData,
     ): Promise<boolean | IAgentScopeRuntimeWebUISenderBeforeSubmitResult> => {
       if (isComposingRef.current) return false;
+      const mcpSelection = usesQwenPawBackend
+        ? parseMcpSelection(inputData.query)
+        : null;
+      if (mcpSelection && !mcpSelection.text.trim()) return false;
       // Single-tab ownership: non-owner tabs are queue-only. Re-route every
       // submit (Enter / send button / programmatic) to the shared queue and
       // abort the actual SDK send. The owner tab will pick the item up via
@@ -3086,7 +3168,7 @@ export default function ChatPage() {
       );
     }
 
-    const baseSuggestions = [
+    const baseSuggestions: { label: ReactNode; value: string }[] = [
       ...commandSuggestions,
       ...loopSuggestions,
       ...skillSuggestions,
@@ -3094,6 +3176,8 @@ export default function ChatPage() {
       label: renderSuggestionLabel(item.command, item.description),
       value: item.value,
     }));
+    if (usesQwenPawBackend)
+      baseSuggestions.push(...buildMcpSlashSuggestions(mcpClients));
     const userMessageAnchorsConfig = {
       ...defaultConfig.theme.bubbleList.userMessageAnchors,
       ...LONG_CHAT_USER_MESSAGE_ANCHORS,
@@ -3171,30 +3255,40 @@ export default function ChatPage() {
         ...(i18nConfig as any)?.sender,
         beforeSubmit: handleBeforeSubmit,
         allowSpeech: whisperChecked && !whisperEnabled,
-        beforeUI: showSenderBeforeUI ? (
-          <>
-            {isQueueOnlyTab && (
-              <Alert
-                type="info"
-                showIcon
-                banner
-                message={t("chat.queue.otherTabOwner")}
+        beforeUI:
+          showSenderBeforeUI || mcpNotice ? (
+            <>
+              {mcpNotice && (
+                <Alert
+                  type={mcpNotice.status === "preparing" ? "info" : "warning"}
+                  showIcon
+                  message={t(`chat.mcpPreparation.${mcpNotice.status}`, {
+                    name: mcpNotice.name,
+                  })}
+                />
+              )}
+              {isQueueOnlyTab && (
+                <Alert
+                  type="info"
+                  showIcon
+                  banner
+                  message={t("chat.queue.otherTabOwner")}
+                />
+              )}
+              <ChatSenderTabsPanel
+                bgSessionId={bgBackendSessionId}
+                queueSessionId={queueSessionId}
+                onRemove={handleQueueRemove}
+                onEdit={handleQueueEdit}
+                onReorder={handleQueueReorder}
+                onInterruptAndSend={handleQueueInterruptAndSend}
+                onClear={handleQueueClear}
+                onPauseResume={handleQueuePauseResume}
+                onRetry={handleQueueRetry}
+                onSkip={handleQueueSkip}
               />
-            )}
-            <ChatSenderTabsPanel
-              bgSessionId={bgBackendSessionId}
-              queueSessionId={queueSessionId}
-              onRemove={handleQueueRemove}
-              onEdit={handleQueueEdit}
-              onReorder={handleQueueReorder}
-              onInterruptAndSend={handleQueueInterruptAndSend}
-              onClear={handleQueueClear}
-              onPauseResume={handleQueuePauseResume}
-              onRetry={handleQueueRetry}
-              onSkip={handleQueueSkip}
-            />
-          </>
-        ) : undefined,
+            </>
+          ) : undefined,
         prefix: (
           <>
             {whisperEnabled ? (
@@ -3324,6 +3418,40 @@ export default function ChatPage() {
         fetch: customFetch,
         responseParser: (chunk: string) => {
           const payload = JSON.parse(chunk) as Record<string, unknown>;
+          if (payload.type === "mcp_preparation") {
+            const data = payload.data as Record<string, unknown> | undefined;
+            if (
+              data &&
+              typeof data.agent_id === "string" &&
+              typeof data.session_id === "string" &&
+              typeof data.name === "string" &&
+              typeof data.status === "string" &&
+              data.agent_id === selectedAgent &&
+              [
+                queueSessionId,
+                sessionApi.getRealIdForSession(queueSessionId),
+                sessionApi.getSessionIdentity().sessionId,
+              ].includes(data.session_id)
+            ) {
+              setMcpPreparation(
+                data.status === "ready"
+                  ? null
+                  : {
+                      agentId: data.agent_id,
+                      sessionId: data.session_id,
+                      name: data.name,
+                      status: data.status,
+                    },
+              );
+            }
+            // The SDK always passes parser results to its response builder.
+            // Heartbeats are its supported no-op, including during replay.
+            return {
+              object: "message",
+              type: "heartbeat",
+              sequence_number: payload.sequence_number,
+            };
+          }
           markLoopModeRunning();
           sanitizeHeadlinePayload(payload, headlineStreamFilterRef.current);
 
@@ -3540,6 +3668,8 @@ export default function ChatPage() {
     extLists,
     scheduleHistoryClear,
     consoleSkills,
+    mcpClients,
+    mcpNotice,
     loopAvailableModes,
     selectedAgent,
     selectedAgentBackend,
@@ -3631,6 +3761,7 @@ export default function ChatPage() {
           }
         >
           <RichFileReferenceInputProvider
+            mcpNames={mcpNames}
             onOpenReference={(reference, trigger) =>
               void openInlineFileReference(reference, trigger)
             }

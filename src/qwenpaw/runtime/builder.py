@@ -530,6 +530,8 @@ class AgentBuilder:
             effective_skills=effective_skills,
             governor=governor,
             driver_manager=getattr(workspace, "driver_manager", None),
+            required_mcp_servers=getattr(ctx, "mcp_server_ids", ()),
+            on_mcp_preparation=getattr(ctx, "on_mcp_preparation", None),
         )
 
         # Load session state if SessionLoadHook populated it.
@@ -978,6 +980,8 @@ class AgentBuilder:
         return await build_driver_agent_tools(
             driver_manager,
             request_context,
+            required_mcp_servers=getattr(ctx, "mcp_server_ids", ()),
+            on_mcp_preparation=getattr(ctx, "on_mcp_preparation", None),
         )
 
     @staticmethod

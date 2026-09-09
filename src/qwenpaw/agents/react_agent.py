@@ -175,6 +175,8 @@ class QwenPawAgent(CodingModeMixin, Agent):
         effective_skills: Optional[list[str]] = None,
         governor: Any = None,
         driver_manager: Any = None,
+        required_mcp_servers: tuple[str, ...] = (),
+        on_mcp_preparation: Any = None,
     ):
         """Initialize QwenPawAgent.
 
@@ -185,6 +187,9 @@ class QwenPawAgent(CodingModeMixin, Agent):
         self._agent_config = agent_config
         self._request_context = dict(request_context or {})
         self._driver_manager = driver_manager
+        self._required_mcp_servers = required_mcp_servers
+        self._on_mcp_preparation = on_mcp_preparation
+        self._mcp_preparation: dict[str, dict[str, str]] = {}
         self._workspace_dir = workspace_dir
         self._language = agent_config.language
         # Optional context-management strategy. When None, the agent keeps its
@@ -611,7 +616,15 @@ class QwenPawAgent(CodingModeMixin, Agent):
 
     async def _prepare_model_input(self) -> dict[str, Any]:
         """Capture tools and freeze local images before a provider request."""
-        if getattr(self, "_driver_manager", None) is not None:
+        required_mcp_servers = getattr(
+            self,
+            "_required_mcp_servers",
+            (),
+        )
+        if (
+            getattr(self, "_driver_manager", None) is not None
+            or required_mcp_servers
+        ):
             from ..drivers.adapters.agentscope_tool import (
                 refresh_driver_agent_tools,
             )
@@ -620,9 +633,49 @@ class QwenPawAgent(CodingModeMixin, Agent):
                 self.toolkit,
                 self._driver_manager,
                 self._request_context,
+                required_mcp_servers=required_mcp_servers,
+                on_mcp_preparation=self._record_mcp_preparation,
             )
         await freeze_local_images_async(self.state.context)
-        return await super()._prepare_model_input()
+        prepared = await super()._prepare_model_input()
+        if required_mcp_servers:
+            import json
+
+            prepared["messages"].insert(
+                1,
+                Msg(
+                    name="mcp_selection",
+                    role="user",
+                    content=[
+                        TextBlock(
+                            type="text",
+                            text=(
+                                "The user explicitly selected these MCP "
+                                "servers for this turn. "
+                                "Current preparation results: "
+                                + json.dumps(
+                                    self._mcp_preparation,
+                                    ensure_ascii=False,
+                                )
+                                + ". Use their available tools as needed "
+                                "for the request. If a selected server is "
+                                "unavailable, explain the limitation."
+                            ),
+                        ),
+                    ],
+                ),
+            )
+        return prepared
+
+    async def _record_mcp_preparation(
+        self,
+        server_id: str,
+        name: str,
+        status: str,
+    ) -> None:
+        self._mcp_preparation[server_id] = {"name": name, "status": status}
+        if self._on_mcp_preparation is not None:
+            await self._on_mcp_preparation(server_id, name, status)
 
     @staticmethod
     def _is_context_overflow_error(exc: Exception) -> bool:

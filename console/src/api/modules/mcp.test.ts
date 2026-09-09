@@ -7,6 +7,17 @@ vi.mock("../request", () => ({ request: vi.fn() }));
 describe("mcpApi policy endpoints", () => {
   afterEach(() => vi.clearAllMocks());
 
+  it("lists summaries with an explicit agent and abort signal while preserving the full view", async () => {
+    const controller = new AbortController();
+    await mcpApi.listMCPSummaries("agent-a", controller.signal);
+    expect(request).toHaveBeenLastCalledWith("/mcp?view=summary", {
+      headers: { "X-Agent-Id": "agent-a" },
+      signal: controller.signal,
+    });
+    await mcpApi.listMCPClients();
+    expect(request).toHaveBeenLastCalledWith("/mcp");
+  });
+
   it("gets MCP policy from the policy endpoint", async () => {
     vi.mocked(request).mockResolvedValue({
       default_effect: "ask",

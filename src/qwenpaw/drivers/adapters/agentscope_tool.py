@@ -182,6 +182,9 @@ class DriverCapabilityTool(ToolBase):
 async def build_driver_agent_tools(
     driver_manager: Any | None,
     request_context: dict[str, str],
+    *,
+    required_mcp_servers: tuple[str, ...] = (),
+    on_mcp_preparation: Any = None,
 ) -> tuple[list[ToolBase], list[str]]:
     """Build AgentScope tools and prompt hints from active Drivers.
 
@@ -190,10 +193,20 @@ async def build_driver_agent_tools(
     the AgentScope adapter boundary.
     """
     if driver_manager is None:
+        if on_mcp_preparation is not None:
+            for name in required_mcp_servers:
+                await on_mcp_preparation(name, name, "unavailable")
         return [], []
 
+    requirements = {}
+    if required_mcp_servers:
+        requirements = {
+            "required_drivers": {name: "mcp" for name in required_mcp_servers},
+            "on_preparation": on_mcp_preparation,
+        }
     driver_capabilities = await driver_manager.capture_tool_catalog(
         request_context,
+        **requirements,
     )
 
     try:
@@ -228,9 +241,17 @@ async def refresh_driver_agent_tools(
     toolkit: Any,
     driver_manager: Any,
     request_context: dict[str, str],
+    *,
+    required_mcp_servers: tuple[str, ...] = (),
+    on_mcp_preparation: Any = None,
 ) -> None:
     """Replace Driver bindings between model requests."""
-    tools, _ = await build_driver_agent_tools(driver_manager, request_context)
+    tools, _ = await build_driver_agent_tools(
+        driver_manager,
+        request_context,
+        required_mcp_servers=required_mcp_servers,
+        on_mcp_preparation=on_mcp_preparation,
+    )
     basic = toolkit.tool_groups[0]
     basic.tools = [
         tool

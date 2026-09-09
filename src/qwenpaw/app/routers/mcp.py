@@ -3,7 +3,7 @@
 
 from __future__ import annotations
 
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Literal, Optional
 
 from fastapi import APIRouter, Body, Path, Request
 from pydantic import BaseModel, Field
@@ -19,6 +19,7 @@ from ..mcp.schemas import (
     MCPAccessRule,
     MCPClientCreateRequest,
     MCPClientInfo,
+    MCPClientSummary,
     MCPClientUpdateRequest,
     MCPToolAccessOverride,
     MCPToolDefaultPolicy,
@@ -161,12 +162,17 @@ async def list_mcp_access_principals(
 
 @router.get(
     "",
-    response_model=List[MCPClientInfo],
+    response_model=List[MCPClientInfo] | List[MCPClientSummary],
     summary="List all MCP clients",
 )
-async def list_mcp_clients(request: Request) -> List[MCPClientInfo]:
+async def list_mcp_clients(
+    request: Request,
+    view: Literal["full", "summary"] = "full",
+) -> List[MCPClientInfo] | List[MCPClientSummary]:
     """Get list of all configured MCP clients."""
     agent = await _agent_for_request(request)
+    if view == "summary":
+        return await _mcp_service(agent).list_summaries()
     return await _mcp_service(agent).list_clients()
 
 

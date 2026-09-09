@@ -26,7 +26,7 @@ import { OnChangePlugin } from "@lexical/react/LexicalOnChangePlugin";
 import { PlainTextPlugin } from "@lexical/react/LexicalPlainTextPlugin";
 import { useLexicalComposerContext } from "@lexical/react/LexicalComposerContext";
 import { Input, Popover, theme } from "antd";
-import { Code2, FileText, type LucideIcon } from "lucide-react";
+import { Code2, FileText, Plug, type LucideIcon } from "lucide-react";
 import {
   createContext,
   forwardRef,
@@ -38,6 +38,7 @@ import {
   useRef,
   type CompositionEvent,
   type ComponentProps,
+  type ComponentRef,
   type FocusEvent,
   type KeyboardEvent,
   type ReactNode,
@@ -50,9 +51,11 @@ import {
   type ParsedFileReference,
 } from "./fileReferenceFormatting";
 import { setTextareaValue } from "./utils";
+import { McpNamesContext } from "./mcpContext";
 import styles from "./RichFileReferenceInput.module.less";
 
 type TextAreaProps = ComponentProps<typeof Input.TextArea>;
+type TextAreaRef = ComponentRef<typeof Input.TextArea>;
 
 type OpenReference = (
   reference: ParsedFileReference,
@@ -66,13 +69,17 @@ const OpenReferenceContext = createContext<OpenReference | undefined>(
 export function RichFileReferenceInputProvider({
   children,
   onOpenReference,
+  mcpNames = {},
 }: {
   children: ReactNode;
   onOpenReference: OpenReference;
+  mcpNames?: Record<string, string>;
 }) {
   return (
     <OpenReferenceContext.Provider value={onOpenReference}>
-      {children}
+      <McpNamesContext.Provider value={mcpNames}>
+        {children}
+      </McpNamesContext.Provider>
     </OpenReferenceContext.Provider>
   );
 }
@@ -142,6 +149,61 @@ class FileReferenceNode extends DecoratorNode<ReactNode> {
 
 function $createFileReferenceNode(raw: string, reference: ParsedFileReference) {
   return $applyNodeReplacement(new FileReferenceNode(raw, reference));
+}
+
+class McpReferenceNode extends DecoratorNode<ReactNode> {
+  __raw: string;
+  __serverId: string;
+
+  static getType() {
+    return "mcp-reference";
+  }
+
+  static clone(node: McpReferenceNode) {
+    return new McpReferenceNode(node.__raw, node.__serverId, node.__key);
+  }
+
+  static importJSON(value: SerializedLexicalNode & Record<string, unknown>) {
+    return new McpReferenceNode(String(value.raw), String(value.serverId));
+  }
+
+  constructor(raw: string, serverId: string, key?: NodeKey) {
+    super(key);
+    this.__raw = raw;
+    this.__serverId = serverId;
+  }
+
+  exportJSON() {
+    return {
+      ...super.exportJSON(),
+      type: "mcp-reference",
+      version: 1,
+      raw: this.__raw,
+      serverId: this.__serverId,
+    };
+  }
+
+  createDOM() {
+    const element = document.createElement("span");
+    element.className = styles.atomicNode;
+    return element;
+  }
+
+  updateDOM() {
+    return false;
+  }
+
+  isInline() {
+    return true;
+  }
+
+  getTextContent() {
+    return this.__raw;
+  }
+
+  decorate() {
+    return <McpReferenceChip serverId={this.__serverId} />;
+  }
 }
 
 interface SerializedCodeSnippetNode extends SerializedLexicalNode {
@@ -249,6 +311,17 @@ function AtomicChip({
   );
 }
 
+function McpReferenceChip({ serverId }: { serverId: string }) {
+  const names = useContext(McpNamesContext);
+  return (
+    <AtomicChip
+      icon={Plug}
+      label={`${names[serverId] || serverId} · MCP`}
+      title={serverId}
+    />
+  );
+}
+
 function FileReferenceChip({ reference }: { reference: ParsedFileReference }) {
   const openReference = useContext(OpenReferenceContext);
   return (
@@ -314,7 +387,13 @@ function replaceEditorValue(value: string) {
   const paragraph = $createParagraphNode();
   root.append(paragraph);
   for (const segment of splitRichComposerValue(value)) {
-    if (segment.kind === "file") {
+    if (segment.kind === "mcp") {
+      paragraph.append(
+        $applyNodeReplacement(
+          new McpReferenceNode(segment.raw, segment.serverId),
+        ),
+      );
+    } else if (segment.kind === "file") {
       paragraph.append(
         $createFileReferenceNode(segment.raw, segment.reference),
       );
@@ -502,7 +581,13 @@ function insertRichValueAtSelection(value: string) {
 
   const nodes: LexicalNode[] = [];
   for (const segment of splitRichComposerValue(value)) {
-    if (segment.kind === "file") {
+    if (segment.kind === "mcp") {
+      nodes.push(
+        $applyNodeReplacement(
+          new McpReferenceNode(segment.raw, segment.serverId),
+        ),
+      );
+    } else if (segment.kind === "file") {
       nodes.push($createFileReferenceNode(segment.raw, segment.reference));
     } else if (segment.kind === "code") {
       nodes.push(
@@ -607,7 +692,7 @@ function EditableSurface({
   );
 }
 
-const RichFileReferenceInput = forwardRef<unknown, TextAreaProps>(
+const RichFileReferenceInput = forwardRef<TextAreaRef, TextAreaProps>(
   function RichFileReferenceInput(
     {
       value,
@@ -640,7 +725,9 @@ const RichFileReferenceInput = forwardRef<unknown, TextAreaProps>(
       () => ({
         focus: () => editorRef.current?.focus(),
         blur: () => editorRef.current?.blur(),
-        resizableTextArea: { textArea: hiddenTextarea.current },
+        resizableTextArea: hiddenTextarea.current
+          ? { textArea: hiddenTextarea.current }
+          : undefined,
       }),
       [],
     );
@@ -666,7 +753,7 @@ const RichFileReferenceInput = forwardRef<unknown, TextAreaProps>(
           initialConfig={{
             namespace: "QwenPawRichFileReferenceInput",
             editable: !disabled && !readOnly,
-            nodes: [FileReferenceNode, CodeSnippetNode],
+            nodes: [FileReferenceNode, CodeSnippetNode, McpReferenceNode],
             onError(error) {
               throw error;
             },

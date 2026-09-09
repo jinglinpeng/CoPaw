@@ -17,6 +17,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import uuid
+from contextlib import aclosing
 from typing import Any, AsyncGenerator
 
 from ..exceptions import ConfigurationException
@@ -24,7 +25,12 @@ from .builder import AgentBuilder
 from .envelope import Envelope
 from .executor import AgentExecutor
 from .hooks import HookAction, HookContext
-from .message_convert import _get_last_user_text, _request_input_to_msgs
+from .message_convert import (
+    _get_last_user_text,
+    _request_input_to_msgs,
+    selected_mcp_servers,
+)
+from .heartbeat import HEARTBEAT_INTERVAL_SECONDS
 from .phases import Phase
 
 logger = logging.getLogger(__name__)
@@ -47,20 +53,124 @@ class Runtime:
         self.workspace = workspace
         self.app_services = app_services
 
-    async def run(  # pylint: disable=too-many-branches,too-many-statements
+    async def run(self, request: Any) -> AsyncGenerator[Any, None]:
+        # pylint: disable=too-many-statements
+        request = self._normalize(request)
+        has_selection = any(
+            "mcp_server_ids" in (getattr(message, "metadata", None) or {})
+            for message in request.input
+        )
+        if not has_selection:
+            async for event in self._run(request):
+                yield event
+            return
+
+        envelope = Envelope(session_id=request.session_id)
+        queue: asyncio.Queue = asyncio.Queue(maxsize=1)
+        stopped = False
+        cancel_requested = False
+        error = None
+
+        async def emit(event: Any) -> None:
+            if stopped:
+                return
+            delivered = asyncio.get_running_loop().create_future()
+            await queue.put((event, delivered))
+            # Envelope reuses mutable objects; advance only after consumption.
+            await delivered
+
+        async def produce() -> None:
+            nonlocal error
+            try:
+                async with aclosing(
+                    self._run(request, envelope, emit),
+                ) as stream:
+                    async for event in stream:
+                        await emit(event)
+            except asyncio.CancelledError as exc:
+                error = exc
+                # Cancellation can arrive in emit(), between lifecycle yields.
+                # Preserve the existing completion event on the /stop path.
+                if not stopped:
+                    async for event in envelope.cancel_envelope():
+                        await emit(event)
+            except BaseException as exc:
+                error = exc
+            finally:
+                if not stopped:
+                    await queue.put(None)
+
+        producer = asyncio.create_task(produce(), name="mcp-selected-turn")
+        try:
+            while True:
+                try:
+                    item = await asyncio.wait_for(
+                        queue.get(),
+                        HEARTBEAT_INTERVAL_SECONDS,
+                    )
+                except asyncio.CancelledError:
+                    if cancel_requested or producer.done():
+                        raise
+                    cancel_requested = True
+                    producer.cancel()
+                    continue
+                except TimeoutError:
+                    async for heartbeat in envelope.heartbeat():
+                        yield heartbeat
+                    continue
+                if item is None:
+                    break
+                event, delivered = item
+                try:
+                    yield event
+                finally:
+                    if not delivered.done():
+                        delivered.set_result(None)
+            if error is not None:
+                raise error
+        finally:
+            stopped = True
+            if not producer.done():
+                producer.cancel()
+            await asyncio.gather(producer, return_exceptions=True)
+
+    async def _run(  # pylint: disable=too-many-branches,too-many-statements
         self,
         request: Any,
+        envelope: Envelope | None = None,
+        emit_preparation: Any = None,
     ) -> AsyncGenerator[Any, None]:
         """8-phase lifecycle orchestration."""
         request = self._normalize(request)
         ctx = self._build_context(request)
         hooks = self.workspace.plugins.hook_registry
 
-        envelope = Envelope(session_id=ctx.session_id)
+        envelope = envelope or Envelope(session_id=ctx.session_id)
         ctx._envelope = envelope  # pylint: disable=protected-access
         skip_agent = False
 
         try:
+            ctx.mcp_server_ids = selected_mcp_servers(request.input)
+            if emit_preparation is not None:
+                states = {}
+
+                async def on_preparation(server_id, name, status):
+                    if states.get(server_id) == (name, status):
+                        return
+                    states[server_id] = (name, status)
+                    await emit_preparation(
+                        envelope.mcp_preparation(
+                            agent_id=ctx.agent_id,
+                            session_id=ctx.session_id,
+                            server_id=server_id,
+                            name=name,
+                            status=status,
+                        ),
+                    )
+
+                ctx.on_mcp_preparation = on_preparation
+                for server_id in ctx.mcp_server_ids:
+                    await on_preparation(server_id, server_id, "preparing")
             # --- [phase 1] PRE_DISPATCH ---
             r = await hooks.run(Phase.PRE_DISPATCH, ctx)
             if r.action == HookAction.SHORT_CIRCUIT:
@@ -141,6 +251,11 @@ class Runtime:
             async for ev in envelope.finalize():
                 yield ev
 
+        except GeneratorExit:
+            # A disconnected consumer closes this generator at a yield.
+            # Cleanup must stay in the producer task and cannot emit events.
+            await self._try_save_on_cancel(ctx)
+            raise
         except (asyncio.CancelledError, KeyboardInterrupt) as e:
             ctx.error = e
             # The Task's _must_cancel flag may still be True after
