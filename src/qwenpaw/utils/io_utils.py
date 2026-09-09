@@ -32,6 +32,7 @@ import os
 import secrets
 import stat
 import threading
+import time
 import weakref
 from collections.abc import Awaitable, Callable
 from pathlib import Path
@@ -317,7 +318,7 @@ def write_text_atomic(
             handle.flush()
             os.fsync(handle.fileno())
         temp_path.chmod(final_mode)
-        os.replace(temp_path, target)
+        _replace_with_retry(temp_path, target)
         temp_path = None
     finally:
         if temp_path is not None:
@@ -325,6 +326,23 @@ def write_text_atomic(
                 temp_path.unlink(missing_ok=True)
             except OSError:
                 pass
+
+
+def _replace_with_retry(temp_path: Path, target: Path) -> None:
+    """Retry brief Windows access/sharing failures during publication."""
+    attempts = 5
+    for attempt in range(attempts):
+        try:
+            os.replace(temp_path, target)
+            return
+        except PermissionError as exc:
+            if (
+                os.name != "nt"
+                or getattr(exc, "winerror", None) not in (5, 32)
+                or attempt == attempts - 1
+            ):
+                raise
+            time.sleep(0.05 * (2**attempt))
 
 
 def _open_atomic_temp(

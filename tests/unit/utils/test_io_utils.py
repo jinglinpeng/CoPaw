@@ -9,12 +9,15 @@ import os
 import stat
 import threading
 from pathlib import Path
-from unittest.mock import patch
+from types import SimpleNamespace
+from unittest.mock import Mock, call, patch
 
 import pytest
 import yaml
 
+from qwenpaw.utils import io_utils
 from qwenpaw.utils.io_utils import (
+    _replace_with_retry,
     append_text_async,
     read_bytes_async,
     read_json_async,
@@ -56,6 +59,125 @@ def test_write_text_atomic_preserves_destination_on_replace_error(
     ):
         write_text_atomic(path, "new")
 
+    assert path.read_text(encoding="utf-8") == "old"
+    assert not list(tmp_path.glob(".state.txt.*.tmp"))
+
+
+@pytest.mark.parametrize("winerror", [5, 32])
+def test_replace_retries_windows_access_errors(
+    tmp_path: Path,
+    winerror: int,
+) -> None:
+    """Transient Windows failures retry the same completed temporary file."""
+    source = tmp_path / "state.tmp"
+    target = tmp_path / "state.txt"
+    error = PermissionError("busy")
+    error.winerror = winerror
+    replace = Mock(side_effect=[error, error, None])
+
+    with (
+        patch.object(
+            io_utils,
+            "os",
+            SimpleNamespace(name="nt", replace=replace),
+        ),
+        patch("qwenpaw.utils.io_utils.time.sleep") as sleep,
+    ):
+        _replace_with_retry(source, target)
+
+    assert replace.call_args_list == [call(source, target)] * 3
+    assert sleep.call_args_list == [call(0.05), call(0.1)]
+
+
+@pytest.mark.parametrize(
+    ("platform", "winerror"),
+    [("posix", 5), ("nt", None), ("nt", 1314)],
+)
+def test_replace_does_not_retry_other_errors(
+    tmp_path: Path,
+    platform: str,
+    winerror: int | None,
+) -> None:
+    """Non-Windows and unrelated permission failures propagate immediately."""
+    error = PermissionError("denied")
+    error.winerror = winerror
+    replace = Mock(side_effect=error)
+
+    with (
+        patch.object(
+            io_utils,
+            "os",
+            SimpleNamespace(name=platform, replace=replace),
+        ),
+        patch("qwenpaw.utils.io_utils.time.sleep") as sleep,
+        pytest.raises(PermissionError) as raised,
+    ):
+        _replace_with_retry(tmp_path / "tmp", tmp_path / "target")
+
+    assert raised.value is error
+    replace.assert_called_once()
+    sleep.assert_not_called()
+
+
+@pytest.mark.skipif(os.name != "nt", reason="Windows file sharing semantics")
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("writer_name", "payload"),
+    [
+        ("write_text_atomic_async", "new"),
+        ("write_json_atomic_async", {"value": "new"}),
+        ("write_yaml_atomic_async", {"value": "new"}),
+    ],
+)
+async def test_atomic_write_recovers_after_windows_reader_closes(
+    tmp_path: Path,
+    writer_name: str,
+    payload: str | dict[str, str],
+) -> None:
+    """A real reader blocks publication until it closes after a failed try."""
+    path = tmp_path / "state.txt"
+    path.write_text("old", encoding="utf-8")
+    real_replace = os.replace
+
+    with path.open(encoding="utf-8") as reader:
+
+        def replace_and_release(source: Path, target: Path) -> None:
+            try:
+                real_replace(source, target)
+            except PermissionError:
+                reader.close()
+                raise
+
+        with patch(
+            "qwenpaw.utils.io_utils.os.replace",
+            side_effect=replace_and_release,
+        ) as replace:
+            await getattr(io_utils, writer_name)(path, payload)
+
+    assert replace.call_count >= 2
+    assert yaml.safe_load(path.read_text(encoding="utf-8")) == payload
+    assert not list(tmp_path.glob(".state.txt.*.tmp"))
+
+
+@pytest.mark.skipif(os.name != "nt", reason="Windows file sharing semantics")
+def test_atomic_write_fails_when_windows_reader_stays_open(
+    tmp_path: Path,
+) -> None:
+    """Persistent contention stays bounded and preserves the previous file."""
+    path = tmp_path / "state.txt"
+    path.write_text("old", encoding="utf-8")
+
+    with (
+        path.open(encoding="utf-8"),
+        patch(
+            "qwenpaw.utils.io_utils.os.replace",
+            wraps=os.replace,
+        ) as replace,
+        pytest.raises(PermissionError),
+    ):
+        write_text_atomic(path, "new")
+
+    assert replace.call_count == 5
     assert path.read_text(encoding="utf-8") == "old"
     assert not list(tmp_path.glob(".state.txt.*.tmp"))
 
