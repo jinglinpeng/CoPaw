@@ -144,7 +144,9 @@ import {
   useSessionFilesDrawer,
 } from "../../stores/filesSurfaceStore";
 import { useCodingTabsStore } from "../../stores/codingTabsStore";
-import { RichFileReferenceInputProvider } from "./RichFileReferenceInput";
+import RichFileReferenceInput, {
+  RichFileReferenceInputProvider,
+} from "./RichFileReferenceInput";
 import type { ParsedFileReference } from "./fileReferenceFormatting";
 import { scrollReverseMessageList } from "./messageScroll";
 import { LONG_CHAT_USER_MESSAGE_ANCHORS } from "./longChatPerformance";
@@ -3253,6 +3255,7 @@ export default function ChatPage() {
       },
       sender: {
         ...(i18nConfig as any)?.sender,
+        components: { input: RichFileReferenceInput },
         beforeSubmit: handleBeforeSubmit,
         allowSpeech: whisperChecked && !whisperEnabled,
         beforeUI:

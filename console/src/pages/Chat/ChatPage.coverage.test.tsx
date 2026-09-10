@@ -5,7 +5,9 @@
  * Strategy: render ChatPage with comprehensive mocks, exercise callbacks.
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { screen, waitFor, act } from "@testing-library/react";
+import { screen, waitFor, act, fireEvent } from "@testing-library/react";
+import { useState } from "react";
+import Sender, { type SenderProps } from "@agentscope-ai/chat/lib/Sender";
 import { renderWithProviders } from "@/test/common_setup";
 import ChatPage from "./index";
 import { mcpApi } from "../../api/modules/mcp";
@@ -43,6 +45,29 @@ const {
 }));
 
 let capturedOptions: any = null;
+let renderRealSender = false;
+const onSenderSubmit = vi.fn();
+
+function PageSender({ components, suggestions, placeholder }: SenderProps) {
+  const [value, setValue] = useState("");
+  return (
+    <Sender
+      components={components}
+      suggestions={suggestions}
+      placeholder={placeholder}
+      value={value}
+      onChange={setValue}
+      onSubmit={onSenderSubmit}
+    />
+  );
+}
+
+vi.mock("@agentscope-ai/chat/lib", () => ({
+  useProviderContext: () => ({
+    direction: "ltr",
+    getPrefixCls: (name: string) => `test-${name}`,
+  }),
+}));
 
 vi.mock("../../api/modules/mcp", () => ({
   mcpApi: { listMCPSummaries: vi.fn().mockResolvedValue([]) },
@@ -84,6 +109,7 @@ vi.mock("@agentscope-ai/chat", () => ({
       <div data-testid="chat-ui">
         {props.options?.theme?.rightHeader}
         {props.options?.sender?.prefix}
+        {renderRealSender && <PageSender {...props.options.sender} />}
       </div>
     );
   }),
@@ -504,7 +530,6 @@ vi.mock("./utils", async () => {
     copyText: mockCopyText,
     getActiveSenderTextarea: vi.fn(() => null),
     getSenderTextareaFromTarget: vi.fn(() => null),
-    setTextareaValue: vi.fn(),
     clearSubmittedSenderInput: vi.fn(),
   };
 });
@@ -513,6 +538,55 @@ vi.mock("./utils", async () => {
 // Tests
 // ---------------------------------------------------------------------------
 describe("ChatPage coverage", () => {
+  it.each(["mouse", "keyboard"])(
+    "uses the page's real Sender to select an MCP by %s, remove it and submit ordinary text",
+    async (method) => {
+      renderRealSender = true;
+      vi.stubGlobal("ClipboardEvent", Event);
+      Range.prototype.getBoundingClientRect = () => new DOMRect();
+      Range.prototype.getClientRects = () => [] as unknown as DOMRectList;
+      vi.mocked(mcpApi.listMCPSummaries).mockResolvedValue([
+        { key: "echo", name: "Echo Server", description: "", enabled: true },
+      ]);
+      const { container } = renderWithProviders(<ChatPage />, {
+        initialEntries: ["/chat"],
+      });
+      const editor = await screen.findByRole("textbox");
+      await act(async () => editor.focus());
+      const textarea = container.querySelector("textarea")!;
+      fireEvent.change(textarea, { target: { value: "/Echo" } });
+      const option = await screen.findByText("/Echo Server · MCP");
+      if (method === "mouse") fireEvent.click(option);
+      else {
+        fireEvent.keyDown(editor, { key: "ArrowDown", code: "ArrowDown" });
+        fireEvent.keyDown(editor, { key: "Enter", code: "Enter" });
+      }
+      expect(
+        await screen.findByRole("button", { name: "Echo Server · MCP" }),
+      ).toBeInTheDocument();
+      expect(editor).not.toHaveTextContent("/mcp:echo");
+      expect(onSenderSubmit).not.toHaveBeenCalled();
+      await waitFor(() => expect(textarea).toHaveValue("/mcp:echo "));
+      await act(async () => {
+        textarea.setSelectionRange(9, 9);
+        fireEvent.focus(textarea);
+      });
+      fireEvent.keyDown(editor, { key: "Backspace", code: "Backspace" });
+      await waitFor(() => expect(textarea).toHaveValue(" "));
+      expect(
+        screen.queryByRole("button", { name: "Echo Server · MCP" }),
+      ).not.toBeInTheDocument();
+      fireEvent.paste(editor, {
+        clipboardData: {
+          getData: (type: string) => (type === "text/plain" ? "hello" : ""),
+        },
+      });
+      await waitFor(() => expect(textarea).toHaveValue("hello "));
+      fireEvent.keyDown(editor, { key: "Enter", code: "Enter" });
+      expect(onSenderSubmit).toHaveBeenCalledWith("hello ");
+    },
+  );
+
   it("loads the selected agent's lightweight MCP choices without delaying chat", async () => {
     let complete!: (value: MCPClientSummary[]) => void;
     vi.mocked(mcpApi.listMCPSummaries).mockReturnValue(
@@ -572,6 +646,7 @@ describe("ChatPage coverage", () => {
   });
 
   beforeEach(() => {
+    renderRealSender = false;
     vi.mocked(mcpApi.listMCPSummaries).mockResolvedValue([]);
     mockSelectedAgent.mockReturnValue("default");
     chatExtensions.__resetForTests();
@@ -617,6 +692,7 @@ describe("ChatPage coverage", () => {
   afterEach(() => {
     chatExtensions.__resetForTests();
     vi.clearAllMocks();
+    vi.unstubAllGlobals();
   });
 
   it("keeps MCP progress out of the real SDK response builder on live and replayed streams", async () => {
