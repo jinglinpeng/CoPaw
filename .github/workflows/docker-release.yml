@@ -2,7 +2,8 @@
 # Pre-release: update <version> and pre only.
 # Formal release: update <version>, pre and latest.
 #
-# Pipeline: verify (build amd64 + health-check) → build-and-push (multi-arch).
+# Manual builds export the verified amd64 image unless pushing is enabled.
+# Release pipeline: verify (amd64 + health-check) → build-and-push (multi-arch).
 name: Docker Build and Push on Release
 
 on:
@@ -15,9 +16,14 @@ on:
   workflow_dispatch:
     inputs:
       version:
-        description: "Image tag (e.g. v1.2.3 or v1.2.3-beta.1)"
+        description: "Image tag when pushing (e.g. v1.2.3 or v1.2.3-beta.1)"
         required: true
         type: string
+      push_image:
+        description: "Push to DockerHub + ACR (false = download verified amd64 image only)"
+        required: false
+        type: boolean
+        default: false
       is_prerelease:
         description: "Pre-release (do not update latest tag)"
         required: false
@@ -34,10 +40,14 @@ jobs:
     uses: ./.github/workflows/release-verify.yml
     with:
       verify_docker: true
+      export_docker_image: ${{ github.event_name == 'workflow_dispatch' && !inputs.push_image }}
+      docker_node_image: ${{ github.event_name == 'workflow_dispatch' && !inputs.push_image && 'node:20-bookworm-slim' || '' }}
+      docker_uv_image: ${{ github.event_name == 'workflow_dispatch' && !inputs.push_image && 'ghcr.io/astral-sh/uv:latest' || '' }}
     secrets: inherit
 
   # ── Stage 2: Build multi-arch and push ─────────────────────────────────────
   build-and-push:
+    if: ${{ github.event_name == 'release' || inputs.push_image }}
     needs: [verify-docker]
     runs-on: ubuntu-latest
     steps:

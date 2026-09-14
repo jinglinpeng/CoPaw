@@ -15,6 +15,10 @@ on:
         description: "Run Docker build + health-check verification"
         type: boolean
         default: false
+      export_docker_image:
+        description: "Export the verified amd64 image as an artifact without registry login"
+        type: boolean
+        default: false
       verify_script_install:
         description: "Run install-script (install.sh / install.ps1) verification"
         type: boolean
@@ -178,7 +182,7 @@ jobs:
         uses: ./.github/actions/get-version
 
       - name: Log in to Aliyun ACR (when credentials available)
-        if: env.ACR_USERNAME != ''
+        if: env.ACR_USERNAME != '' && !inputs.export_docker_image
         uses: docker/login-action@v3
         with:
           registry: ${{ env.ACR_REGISTRY }}
@@ -256,6 +260,20 @@ jobs:
             echo "::error::Docker version mismatch: expected=$expected actual=$actual"
             exit 1
           fi
+
+      - name: Export verified Docker image
+        if: inputs.export_docker_image
+        run: |
+          docker save qwenpaw-verify:test | gzip > "$RUNNER_TEMP/qwenpaw-image.tar.gz"
+
+      - name: Upload verified Docker image
+        if: inputs.export_docker_image
+        uses: actions/upload-artifact@v4
+        with:
+          name: qwenpaw-image-amd64
+          path: ${{ runner.temp }}/qwenpaw-image.tar.gz
+          compression-level: 0
+          retention-days: 7
 
       - name: Show container logs
         if: always()
