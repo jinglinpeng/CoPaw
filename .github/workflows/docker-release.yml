@@ -39,6 +39,16 @@ on:
         required: false
         type: string
         default: ""
+      oci_run_id:
+        description: "Optional run containing the compatible multi-arch OCI artifact"
+        required: false
+        type: string
+        default: ""
+      repack_oci:
+        description: "Repack an existing OCI artifact without rebuilding images"
+        required: false
+        type: boolean
+        default: false
 
 env:
   ACR_REGISTRY: agentscope-registry.ap-southeast-1.cr.aliyuncs.com
@@ -243,6 +253,7 @@ jobs:
           done
           cp "$RUNNER_TEMP/amd64/oci-layout" "$RUNNER_TEMP/merged/oci-layout"
           python3 .github/scripts/merge-docker-oci.py "$RUNNER_TEMP"
+          python3 .github/scripts/wrap-docker-oci.py "$RUNNER_TEMP/merged"
           cp "$RUNNER_TEMP/merged/index.json" "$RUNNER_TEMP/multiarch-artifact/index.json"
           tar -C "$RUNNER_TEMP/merged" -cf "$RUNNER_TEMP/multiarch-artifact/qwenpaw-image.oci.tar" \
             oci-layout index.json blobs
@@ -256,7 +267,7 @@ jobs:
           retention-days: 7
 
   artifact-regression:
-    if: ${{ github.event_name == 'workflow_dispatch' && inputs.artifact_run_id != '' }}
+    if: ${{ github.event_name == 'workflow_dispatch' && inputs.artifact_run_id != '' && !inputs.repack_oci }}
     name: Downloaded artifact regression (${{ matrix.arch }})
     permissions:
       contents: read
@@ -284,7 +295,7 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           name: qwenpaw-image-multiarch-acr
-          run-id: ${{ inputs.artifact_run_id }}
+          run-id: ${{ inputs.oci_run_id || inputs.artifact_run_id }}
           github-token: ${{ github.token }}
           path: ${{ runner.temp }}/downloaded-oci
       - name: Verify distribution and complete isolated regression
@@ -310,3 +321,49 @@ jobs:
             ${{ runner.temp }}/artifact-regression/*.log
             ${{ runner.temp }}/artifact-regression/*.png
             ${{ runner.temp }}/artifact-regression/backup-export.zip
+
+  repack-oci:
+    if: ${{ github.event_name == 'workflow_dispatch' && inputs.artifact_run_id != '' && inputs.repack_oci }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      actions: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: qwenpaw-image-multiarch-acr
+          run-id: ${{ inputs.artifact_run_id }}
+          github-token: ${{ github.token }}
+          path: ${{ runner.temp }}/original-oci
+      - name: Repack and verify the multi-platform image layout
+        run: |
+          cd "$RUNNER_TEMP/original-oci"
+          sha256sum -c SHA256SUMS
+          mkdir -p "$RUNNER_TEMP/compatible-layout" "$RUNNER_TEMP/compatible-artifact"
+          tar -xf qwenpaw-image.oci.tar -C "$RUNNER_TEMP/compatible-layout"
+          cd "$GITHUB_WORKSPACE"
+          python3 .github/scripts/wrap-docker-oci.py "$RUNNER_TEMP/compatible-layout"
+          cp "$RUNNER_TEMP/compatible-layout/index.json" "$RUNNER_TEMP/compatible-artifact/"
+          tar -C "$RUNNER_TEMP/compatible-layout" \
+            -cf "$RUNNER_TEMP/compatible-artifact/qwenpaw-image.oci.tar" \
+            oci-layout index.json blobs
+          python3 .github/scripts/verify-distributed-oci.py \
+            "$RUNNER_TEMP/compatible-artifact/qwenpaw-image.oci.tar" \
+            "$RUNNER_TEMP/compatible-artifact/index.json"
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq skopeo
+          for arch in amd64 arm64; do
+            skopeo inspect --override-os linux --override-arch "$arch" \
+              "oci-archive:$RUNNER_TEMP/compatible-artifact/qwenpaw-image.oci.tar" \
+              > "$RUNNER_TEMP/compatible-artifact/inspect-$arch.json"
+          done
+          cd "$RUNNER_TEMP/compatible-artifact"
+          sha256sum qwenpaw-image.oci.tar > SHA256SUMS
+      - uses: actions/upload-artifact@v4
+        with:
+          name: qwenpaw-image-multiarch-acr
+          path: ${{ runner.temp }}/compatible-artifact/
+          retention-days: 7
+          compression-level: 0

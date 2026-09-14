@@ -112,11 +112,14 @@ def test_downloaded_artifact_regression_uses_native_architectures() -> None:
         "arm64": "ubuntu-24.04-arm",
     }
     steps = {step.get("name"): step for step in job["steps"]}
-    for name in (
-        "Download final single-architecture artifact",
-        "Download final multi-architecture artifact",
-    ):
-        assert steps[name]["with"]["run-id"] == "${{ inputs.artifact_run_id }}"
+    assert (
+        steps["Download final single-architecture artifact"]["with"]["run-id"]
+        == "${{ inputs.artifact_run_id }}"
+    )
+    assert (
+        steps["Download final multi-architecture artifact"]["with"]["run-id"]
+        == "${{ inputs.oci_run_id || inputs.artifact_run_id }}"
+    )
     regression = steps["Verify distribution and complete isolated regression"]
     assert "--oci" in regression["run"]
     assert "--legacy" in regression["run"]

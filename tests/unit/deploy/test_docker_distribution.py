@@ -71,6 +71,35 @@ def test_oci_rejects_corrupt_blob(tmp_path):
         module.verify(archive, index)
 
 
+def test_named_nested_oci_preserves_both_image_configs(tmp_path):
+    archive, _, configs = archive_fixture(tmp_path)
+    source = tmp_path / "layout"
+    source.mkdir()
+    with tarfile.open(archive) as tar:
+        for member in tar:
+            target = source / member.name
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.write_bytes(tar.extractfile(member).read())
+    wrapper = load_script("wrap-docker-oci.py")
+    index = wrapper.wrap(source)
+    assert len(index["manifests"]) == 1
+    descriptor = index["manifests"][0]
+    assert (
+        descriptor["annotations"]["org.opencontainers.image.ref.name"]
+        == "qwenpaw-image"
+    )
+    nested_archive = tmp_path / "nested.tar"
+    with tarfile.open(nested_archive, "w") as tar:
+        for path in source.rglob("*"):
+            if path.is_file():
+                tar.add(path, arcname=path.relative_to(source))
+    verifier = load_script("verify-distributed-oci.py")
+    assert verifier.verify(nested_archive, source / "index.json") == {
+        "configs": configs,
+        "verified_blobs": 7,
+    }
+
+
 def test_archive_checksum_rejects_changed_payload(tmp_path):
     module = load_script("docker-artifact-regression.py")
     data = b"test archive bytes"

@@ -4,6 +4,7 @@ import asyncio
 import json
 from pathlib import Path
 import subprocess
+import sys
 
 import numpy as np
 import onnxruntime
@@ -91,12 +92,21 @@ async def main():
             try:
                 page = await browser.new_page()
                 errors = []
+                console_errors = []
                 page.on("pageerror", lambda error: errors.append(str(error)))
+                page.on(
+                    "console",
+                    lambda message: console_errors.append(message.text)
+                    if message.type == "error"
+                    else None,
+                )
                 response = await page.goto(
                     "http://127.0.0.1:8088/chat", wait_until="networkidle"
                 )
                 assert response.status == 200
-                assert (await page.locator("body").inner_text()).strip()
+                await page.wait_for_function(
+                    "document.body.innerText.trim().length > 0", timeout=30000
+                )
                 assert not errors, errors
                 mode = "headless" if headless else "headed"
                 shot = "/app/working/artifact-console-" + mode + ".png"
@@ -111,6 +121,22 @@ async def main():
                 await page.get_by_role("textbox", name="Value").fill("中文 OK")
                 await page.get_by_role("button", name="Apply").click()
                 assert await page.locator("p").inner_text() == "中文 OK"
+            except Exception:
+                failure = "/app/working/artifact-console-failure.png"
+                await page.screenshot(path=failure, full_page=True)
+                print(
+                    json.dumps(
+                        {
+                            "url": page.url,
+                            "page_errors": errors,
+                            "console_errors": console_errors,
+                            "body": await page.locator("body").inner_text(),
+                        }
+                    ),
+                    file=sys.stderr,
+                    flush=True,
+                )
+                raise
             finally:
                 await browser.close()
     set_current_workspace_dir(Path("/app/working/workspaces/default"))

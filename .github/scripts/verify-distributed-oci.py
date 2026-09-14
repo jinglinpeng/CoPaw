@@ -41,9 +41,14 @@ def verify(archive, external_index):
                     pass
     assert index == json.loads(Path(external_index).read_text())
     configs = {}
-    for descriptor in index["manifests"]:
+
+    def visit(descriptor):
         assert blobs[descriptor["digest"]] == descriptor["size"]
         manifest = documents[descriptor["digest"]]
+        if "manifests" in manifest:
+            for child in manifest["manifests"]:
+                visit(child)
+            return
         for reference in [manifest["config"], *manifest["layers"]]:
             assert blobs[reference["digest"]] == reference["size"]
         config = documents[manifest["config"]["digest"]]
@@ -52,6 +57,9 @@ def verify(archive, external_index):
             assert descriptor["platform"]["architecture"] == arch
             assert arch not in configs
             configs[arch] = manifest["config"]["digest"]
+
+    for descriptor in index["manifests"]:
+        visit(descriptor)
     assert set(configs) == {"amd64", "arm64"}
     return {"configs": configs, "verified_blobs": len(blobs)}
 

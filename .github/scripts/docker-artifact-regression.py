@@ -7,6 +7,7 @@ import io
 import json
 from pathlib import Path
 import secrets
+import shutil
 import sqlite3
 import subprocess
 import time
@@ -53,7 +54,7 @@ def fingerprint(data):
 
 
 def request(port, path, body=None, method=None, token=None, expected=200):
-    headers = {}
+    headers = {"X-Agent-Id": "default"}
     if body is not None:
         headers["Content-Type"] = "application/json"
         body = json.dumps(body).encode()
@@ -105,6 +106,9 @@ class Regression:
             timeout=1200,
         )
         if result.returncode:
+            (self.root / "last-command-error.log").write_text(
+                result.stdout + "\n" + result.stderr, encoding="utf-8"
+            )
             raise RuntimeError(result.stderr[-3000:] or result.stdout[-3000:])
         return result.stdout.strip()
 
@@ -241,9 +245,10 @@ class Regression:
         args = self.args
         artifact = args.artifact.resolve()
         digest = checksum(artifact, f"qwenpaw-{args.arch}.tar.gz")
-        self.docker(
-            "load", "--input", artifact / f"qwenpaw-{args.arch}.tar.gz"
-        )
+        if not args.loaded:
+            self.docker(
+                "load", "--input", artifact / f"qwenpaw-{args.arch}.tar.gz"
+            )
         image = "qwenpaw-verify:" + args.arch
         expected = json.loads((artifact / "build-metadata.json").read_text())[
             "containerimage.config.digest"
@@ -312,7 +317,6 @@ class Regression:
             "plugin_reinstall",
             self.plugin(args.port, install=True, force=True),
         )
-        self.mcp(args.port, create=True)
         for script in (
             "docker-native-probe.py",
             "docker-regression-desktop.py",
@@ -335,6 +339,7 @@ class Regression:
                     name + ":" + screenshot,
                     self.root / Path(screenshot).name,
                 )
+        self.mcp(args.port, create=True)
         chat = request(
             args.port,
             "/api/chats",
@@ -576,6 +581,10 @@ class Regression:
                 print("Cleanup needs attention: " + str(error), flush=True)
                 if name in self.containers:
                     self.remove(name)
+        for kind in ("fresh", "restore", "legacy", "auth"):
+            directory = self.root / kind / "working"
+            for screenshot in directory.glob("artifact-*.png"):
+                shutil.copyfile(screenshot, self.root / screenshot.name)
 
 
 def main():
@@ -588,6 +597,7 @@ def main():
     parser.add_argument("--port", type=int, default=18188)
     parser.add_argument("--legacy", action="store_true")
     parser.add_argument("--keep", action="store_true")
+    parser.add_argument("--loaded", action="store_true")
     regression = Regression(parser.parse_args())
     try:
         regression.run()
