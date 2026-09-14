@@ -82,54 +82,60 @@ return shot["path"]
     }
 
 
-payload = "中文原生扩展兼容性测试".encode("utf-8")
-for codec in (bz2, lzma, zlib):
-    assert codec.decompress(codec.compress(payload)) == payload
-ctypes.CDLL(None)
-db = sqlite3.connect(":memory:")
-db.execute("create table smoke (value text)")
-db.execute("insert into smoke values (?)", (payload.decode("utf-8"),))
-stored = db.execute("select value from smoke").fetchone()[0]
-assert stored.encode("utf-8") == payload
-db.close()
-image = Image.new("RGB", (12, 12), (12, 34, 56))
-buffer = io.BytesIO()
-image.save(buffer, format="PNG")
-buffer.seek(0)
-assert Image.open(buffer).getpixel((0, 0)) == (12, 34, 56)
-aes = AESGCM(AESGCM.generate_key(bit_length=128))
-nonce = os.urandom(12)
-assert aes.decrypt(nonce, aes.encrypt(nonce, payload, None), None) == payload
-assert (np.array([1, 2, 3]) @ np.array([2, 3, 4])) == 20
-assert orjson.loads(orjson.dumps({"中文": [1, 2]})) == {"中文": [1, 2]}
-assert psutil.Process(os.getpid()).is_running()
-assert onnxruntime.get_available_providers()
-onnxruntime.SessionOptions()
+def main():
+    payload = "中文原生扩展兼容性测试".encode("utf-8")
+    for codec in (bz2, lzma, zlib):
+        assert codec.decompress(codec.compress(payload)) == payload
+    ctypes.CDLL(None)
+    db = sqlite3.connect(":memory:")
+    db.execute("create table smoke (value text)")
+    db.execute("insert into smoke values (?)", (payload.decode("utf-8"),))
+    stored = db.execute("select value from smoke").fetchone()[0]
+    assert stored.encode("utf-8") == payload
+    db.close()
+    image = Image.new("RGB", (12, 12), (12, 34, 56))
+    buffer = io.BytesIO()
+    image.save(buffer, format="PNG")
+    buffer.seek(0)
+    assert Image.open(buffer).getpixel((0, 0)) == (12, 34, 56)
+    aes = AESGCM(AESGCM.generate_key(bit_length=128))
+    nonce = os.urandom(12)
+    encrypted = aes.encrypt(nonce, payload, None)
+    assert aes.decrypt(nonce, encrypted, None) == payload
+    assert (np.array([1, 2, 3]) @ np.array([2, 3, 4])) == 20
+    assert orjson.loads(orjson.dumps({"中文": [1, 2]})) == {"中文": [1, 2]}
+    assert psutil.Process(os.getpid()).is_running()
+    assert onnxruntime.get_available_providers()
+    onnxruntime.SessionOptions()
 
-native_packages = (
-    "numpy",
-    "onnxruntime",
-    "orjson",
-    "psutil",
-    "Pillow",
-    "cryptography",
-)
-versions = {name: importlib.metadata.version(name) for name in native_packages}
-node = subprocess.check_output(["node", "--version"], text=True).strip()
-print(
-    json.dumps(
-        {
-            "machine": platform.machine(),
-            "python": sys.version.split()[0],
-            "executable": sys.executable,
-            "openssl": ssl.OPENSSL_VERSION,
-            "node": node,
-            "sqlite": sqlite3.sqlite_version,
-            "dependencies": versions,
-            "native_probes": "passed",
-            "functional_probes": asyncio.run(probe_tools()),
-        },
-        indent=2,
-    ),
-    flush=True,
-)
+    packages = (
+        "numpy",
+        "onnxruntime",
+        "orjson",
+        "psutil",
+        "Pillow",
+        "cryptography",
+    )
+    versions = {name: importlib.metadata.version(name) for name in packages}
+    node = subprocess.check_output(["node", "--version"], text=True).strip()
+    print(
+        json.dumps(
+            {
+                "machine": platform.machine(),
+                "python": sys.version.split()[0],
+                "executable": sys.executable,
+                "openssl": ssl.OPENSSL_VERSION,
+                "node": node,
+                "sqlite": sqlite3.sqlite_version,
+                "dependencies": versions,
+                "native_probes": "passed",
+                "functional_probes": asyncio.run(probe_tools()),
+            },
+            indent=2,
+        ),
+        flush=True,
+    )
+
+
+if __name__ == "__main__":
+    main()

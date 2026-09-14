@@ -94,3 +94,8 @@ def test_full_artifacts_cover_both_production_architectures() -> None:
     assert workflow["jobs"]["assemble-artifact"]["needs"] == [
         "build-artifacts",
     ]
+    probe = (REPO_ROOT / ".github/scripts/docker-native-probe.py").read_text(
+        encoding="utf-8"
+    )
+    assert 'if __name__ == "__main__":' in probe
+    assert "def main():" in probe
