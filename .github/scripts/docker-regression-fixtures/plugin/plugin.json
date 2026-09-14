@@ -1,0 +1,12 @@
+{
+  "id": "docker-artifact-regression-7298",
+  "name": "Docker Artifact Regression",
+  "version": "1.0.0",
+  "description": "Isolated artifact tests without model credentials",
+  "author": "Artifact verification",
+  "type": "general",
+  "entry": {"backend": "plugin.py"},
+  "dependencies": ["pyfiglet==1.0.4", "xxhash==3.6.0"],
+  "qwenpaw_version": {"min": "2.2.0", "max": "2.3.0"},
+  "meta": {}
+}

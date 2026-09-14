@@ -41,7 +41,7 @@ def test_release_publication_remains_enabled() -> None:
     assert workflow["on"]["release"]["types"] == ["published"]
     publication = workflow["jobs"]["build-and-push"]
     assert publication["if"] == (
-        "${{ !inputs.full_artifacts && "
+        "${{ !inputs.full_artifacts && inputs.artifact_run_id == '' && "
         "(github.event_name == 'release' || inputs.push_image) }}"
     )
     assert "--push" in publication["steps"][-1]["run"]
@@ -99,3 +99,32 @@ def test_full_artifacts_cover_both_production_architectures() -> None:
     )
     assert 'if __name__ == "__main__":' in probe
     assert "def main():" in probe
+
+
+def test_downloaded_artifact_regression_uses_native_architectures() -> None:
+    workflow = _load_workflow("docker-release.yml")
+    inputs = workflow["on"]["workflow_dispatch"]["inputs"]
+    assert inputs["artifact_run_id"]["default"] == ""
+    job = workflow["jobs"]["artifact-regression"]
+    matrix = job["strategy"]["matrix"]["include"]
+    assert {item["arch"]: item["runner"] for item in matrix} == {
+        "amd64": "ubuntu-latest",
+        "arm64": "ubuntu-24.04-arm",
+    }
+    steps = {step.get("name"): step for step in job["steps"]}
+    for name in (
+        "Download final single-architecture artifact",
+        "Download final multi-architecture artifact",
+    ):
+        assert steps[name]["with"]["run-id"] == "${{ inputs.artifact_run_id }}"
+    regression = steps["Verify distribution and complete isolated regression"]
+    assert "--oci" in regression["run"]
+    assert "--legacy" in regression["run"]
+    assert "--push" not in regression["run"]
+    for name in (
+        "verify-docker",
+        "build-and-push",
+        "build-artifacts",
+        "assemble-artifact",
+    ):
+        assert "inputs.artifact_run_id == ''" in workflow["jobs"][name]["if"]

@@ -34,6 +34,11 @@ on:
         required: false
         type: boolean
         default: false
+      artifact_run_id:
+        description: "Verify all downloaded artifacts from an existing run (no rebuild or push)"
+        required: false
+        type: string
+        default: ""
 
 env:
   ACR_REGISTRY: agentscope-registry.ap-southeast-1.cr.aliyuncs.com
@@ -42,7 +47,7 @@ env:
 jobs:
   # ── Stage 1: Verify Docker image boots correctly ───────────────────────────
   verify-docker:
-    if: ${{ !inputs.full_artifacts }}
+    if: ${{ !inputs.full_artifacts && inputs.artifact_run_id == '' }}
     uses: ./.github/workflows/release-verify.yml
     with:
       verify_docker: true
@@ -53,7 +58,7 @@ jobs:
 
   # ── Stage 2: Build multi-arch and push ─────────────────────────────────────
   build-and-push:
-    if: ${{ !inputs.full_artifacts && (github.event_name == 'release' || inputs.push_image) }}
+    if: ${{ !inputs.full_artifacts && inputs.artifact_run_id == '' && (github.event_name == 'release' || inputs.push_image) }}
     needs: [verify-docker]
     runs-on: ubuntu-latest
     steps:
@@ -126,7 +131,7 @@ jobs:
             ${TAGS} --push .
 
   build-artifacts:
-    if: ${{ github.event_name == 'workflow_dispatch' && inputs.full_artifacts }}
+    if: ${{ github.event_name == 'workflow_dispatch' && inputs.full_artifacts && inputs.artifact_run_id == '' }}
     name: Build and verify ACR (${{ matrix.arch }})
     strategy:
       fail-fast: false
@@ -217,7 +222,7 @@ jobs:
           retention-days: 7
 
   assemble-artifact:
-    if: ${{ github.event_name == 'workflow_dispatch' && inputs.full_artifacts }}
+    if: ${{ github.event_name == 'workflow_dispatch' && inputs.full_artifacts && inputs.artifact_run_id == '' }}
     needs: [build-artifacts]
     runs-on: ubuntu-latest
     timeout-minutes: 15
@@ -249,3 +254,59 @@ jobs:
           path: ${{ runner.temp }}/multiarch-artifact/
           compression-level: 0
           retention-days: 7
+
+  artifact-regression:
+    if: ${{ github.event_name == 'workflow_dispatch' && inputs.artifact_run_id != '' }}
+    name: Downloaded artifact regression (${{ matrix.arch }})
+    permissions:
+      contents: read
+      actions: read
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: amd64
+            runner: ubuntu-latest
+          - arch: arm64
+            runner: ubuntu-24.04-arm
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+      - name: Download final single-architecture artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: qwenpaw-image-${{ matrix.arch }}-acr
+          run-id: ${{ inputs.artifact_run_id }}
+          github-token: ${{ github.token }}
+          path: ${{ runner.temp }}/downloaded-image
+      - name: Download final multi-architecture artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: qwenpaw-image-multiarch-acr
+          run-id: ${{ inputs.artifact_run_id }}
+          github-token: ${{ github.token }}
+          path: ${{ runner.temp }}/downloaded-oci
+      - name: Verify distribution and complete isolated regression
+        env:
+          ARCH: ${{ matrix.arch }}
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq skopeo
+          python3 -m venv "$RUNNER_TEMP/regression-venv"
+          "$RUNNER_TEMP/regression-venv/bin/python" \
+            .github/scripts/docker-artifact-regression.py \
+            --artifact "$RUNNER_TEMP/downloaded-image" \
+            --oci "$RUNNER_TEMP/downloaded-oci" \
+            --root "$RUNNER_TEMP/artifact-regression" --arch "$ARCH" --legacy
+      - name: Upload regression evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: qwenpaw-artifact-regression-${{ matrix.arch }}
+          retention-days: 7
+          path: |
+            ${{ runner.temp }}/artifact-regression/results.json
+            ${{ runner.temp }}/artifact-regression/*.log
+            ${{ runner.temp }}/artifact-regression/*.png
+            ${{ runner.temp }}/artifact-regression/backup-export.zip
