@@ -180,16 +180,34 @@ class Regression:
 
     def plugin(self, port, install=False, force=False, modern=True):
         if install:
-            result = request(
-                port,
-                "/api/plugins/install",
-                {
-                    "source": "/app/working/regression-fixtures/plugin",
-                    "force": force,
-                },
-            )
+            for _ in range(120):
+                try:
+                    result = request(
+                        port,
+                        "/api/plugins/install",
+                        {
+                            "source": "/app/working/regression-fixtures/plugin",
+                            "force": force,
+                        },
+                    )
+                    break
+                except AssertionError as error:
+                    if error.args[0][1] != 503:
+                        raise
+                    time.sleep(1)
+            else:
+                raise RuntimeError("Plugin installer never became ready")
             assert result["loaded"]
-        result = request(port, PREFIX + "/probe")
+        for _ in range(120):
+            try:
+                result = request(port, PREFIX + "/probe")
+                break
+            except AssertionError as error:
+                if error.args[0][1] not in (404, 503):
+                    raise
+                time.sleep(1)
+        else:
+            raise RuntimeError("Plugin never finished loading")
         assert result["executable"] == "/app/venv/bin/python"
         if modern:
             assert result["python"].startswith("3.11.")
@@ -486,6 +504,54 @@ class Regression:
         )
         self.remove(restored)
 
+    def continue_run(self, data):
+        data = data.resolve()
+        saved = fingerprint(data)
+        metadata = json.loads(
+            (self.args.artifact / "build-metadata.json").read_text()
+        )
+        image = "qwenpaw-verify:" + self.args.arch
+        actual = json.loads(self.docker("image", "inspect", image))[0]
+        assert actual["Id"] == metadata["containerimage.config.digest"]
+        name, _ = self.start("continued", image, self.args.port, data=data)
+        restored_plugin = self.plugin(self.args.port)
+        assert fingerprint(data) == saved
+        chats = request(self.args.port, "/api/chats")
+        chat = next(
+            item for item in chats if item["session_id"] == "artifact-test"
+        )
+        assert chat["name"] == "中文产物持久化测试"
+        self.mcp(self.args.port, create=False)
+        for language in ("python", "node"):
+            request(
+                self.args.port,
+                "/api/mcp/artifact_" + language,
+                method="DELETE",
+            )
+        self.record(
+            "container_recreation",
+            {
+                "plugin": restored_plugin,
+                "fingerprint": saved,
+                "chat_id": chat["id"],
+                "continued_test_data": str(data),
+            },
+        )
+        self.backup(name, image, chat)
+        self.authentication(image)
+        if self.args.legacy:
+            self.upgrade(image)
+        if self.args.keep:
+            self.kept = name
+        self.record(
+            "complete",
+            {
+                "url": f"http://127.0.0.1:{self.args.port}",
+                "container": name,
+                "kept": bool(self.args.keep),
+            },
+        )
+
     def authentication(self, image):
         port = self.args.port + 2
         name, _ = self.start("auth", image, port, auth=True)
@@ -598,9 +664,13 @@ def main():
     parser.add_argument("--legacy", action="store_true")
     parser.add_argument("--keep", action="store_true")
     parser.add_argument("--loaded", action="store_true")
+    parser.add_argument("--resume-data", type=Path)
     regression = Regression(parser.parse_args())
     try:
-        regression.run()
+        if regression.args.resume_data:
+            regression.continue_run(regression.args.resume_data)
+        else:
+            regression.run()
     finally:
         regression.cleanup()
 
