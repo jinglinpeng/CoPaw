@@ -29,6 +29,11 @@ on:
         required: false
         type: boolean
         default: false
+      full_artifacts:
+        description: "Build and verify both ACR architectures, download artifacts only"
+        required: false
+        type: boolean
+        default: false
 
 env:
   ACR_REGISTRY: agentscope-registry.ap-southeast-1.cr.aliyuncs.com
@@ -37,6 +42,7 @@ env:
 jobs:
   # ── Stage 1: Verify Docker image boots correctly ───────────────────────────
   verify-docker:
+    if: ${{ !inputs.full_artifacts }}
     uses: ./.github/workflows/release-verify.yml
     with:
       verify_docker: true
@@ -47,7 +53,7 @@ jobs:
 
   # ── Stage 2: Build multi-arch and push ─────────────────────────────────────
   build-and-push:
-    if: ${{ github.event_name == 'release' || inputs.push_image }}
+    if: ${{ !inputs.full_artifacts && (github.event_name == 'release' || inputs.push_image) }}
     needs: [verify-docker]
     runs-on: ubuntu-latest
     steps:
@@ -118,3 +124,128 @@ jobs:
             --build-arg \
             QWENPAW_MANAGED_RUNTIME_BOUNDARY_VERSION="${QWENPAW_VERSION}" \
             ${TAGS} --push .
+
+  build-artifacts:
+    if: ${{ github.event_name == 'workflow_dispatch' && inputs.full_artifacts }}
+    name: Build and verify ACR (${{ matrix.arch }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: amd64
+            runner: ubuntu-latest
+          - arch: arm64
+            runner: ubuntu-24.04-arm
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 35
+    env:
+      ARCH: ${{ matrix.arch }}
+      ACR_USERNAME: ${{ secrets.ALIYUN_ACR_USERNAME }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      - name: Get QwenPaw version
+        id: version
+        uses: ./.github/actions/get-version
+      - uses: docker/setup-buildx-action@v3
+      - name: Log in to ACR when credentials are available
+        if: env.ACR_USERNAME != ''
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.ACR_REGISTRY }}
+          username: ${{ secrets.ALIYUN_ACR_USERNAME }}
+          password: ${{ secrets.ALIYUN_ACR_PASSWORD }}
+      - name: Build with production ACR defaults
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          mkdir -p "$RUNNER_TEMP/docker-artifacts"
+          docker buildx build --platform "linux/$ARCH" \
+            -f deploy/Dockerfile \
+            --build-arg QWENPAW_DISABLED_CHANNELS=imessage \
+            --build-arg QWENPAW_MANAGED_RUNTIME_BOUNDARY_VERSION="$VERSION" \
+            --output "type=oci,dest=$RUNNER_TEMP/qwenpaw-$ARCH.oci.tar" \
+            --metadata-file "$RUNNER_TEMP/docker-artifacts/build-metadata.json" .
+      - name: Load and verify the exported image
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq skopeo
+          skopeo copy --override-os linux --override-arch "$ARCH" \
+            "oci-archive:$RUNNER_TEMP/qwenpaw-$ARCH.oci.tar" \
+            "docker-daemon:qwenpaw-verify:$ARCH"
+          bash .github/scripts/verify-docker-artifacts.sh
+      - name: Export verified Docker image
+        run: |
+          docker save "qwenpaw-verify:$ARCH" | gzip > \
+            "$RUNNER_TEMP/docker-artifacts/qwenpaw-$ARCH.tar.gz"
+          cd "$RUNNER_TEMP/docker-artifacts"
+          sha256sum "qwenpaw-$ARCH.tar.gz" > SHA256SUMS
+      - name: Upload verified Docker image
+        uses: actions/upload-artifact@v4
+        with:
+          name: qwenpaw-image-${{ matrix.arch }}-acr
+          path: ${{ runner.temp }}/docker-artifacts/
+          compression-level: 0
+          retention-days: 7
+      - name: Upload OCI input for multi-arch assembly
+        uses: actions/upload-artifact@v4
+        with:
+          name: qwenpaw-oci-${{ matrix.arch }}
+          path: ${{ runner.temp }}/qwenpaw-${{ matrix.arch }}.oci.tar
+          compression-level: 0
+          retention-days: 1
+      - name: Collect logs
+        if: always()
+        run: |
+          docker logs qwenpaw-artifact-test > "$RUNNER_TEMP/container.log" 2>&1 || true
+          docker exec qwenpaw-artifact-test tail -n 100 /var/log/app.err.log \
+            > "$RUNNER_TEMP/app-error.log" 2>&1 || true
+      - name: Upload diagnostic logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: qwenpaw-verification-${{ matrix.arch }}
+          path: |
+            ${{ runner.temp }}/container.log
+            ${{ runner.temp }}/app-error.log
+            ${{ runner.temp }}/docker-artifacts/*.json
+            ${{ runner.temp }}/docker-artifacts/*.log
+            ${{ runner.temp }}/docker-artifacts/*.png
+          retention-days: 7
+
+  assemble-artifact:
+    if: ${{ github.event_name == 'workflow_dispatch' && inputs.full_artifacts }}
+    needs: [build-artifacts]
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: qwenpaw-oci-*
+          path: ${{ runner.temp }}/oci-inputs
+      - name: Assemble verified multi-arch OCI archive
+        run: |
+          mkdir -p "$RUNNER_TEMP/amd64" "$RUNNER_TEMP/arm64" \
+            "$RUNNER_TEMP/merged/blobs" "$RUNNER_TEMP/multiarch-artifact"
+          for arch in amd64 arm64; do
+            tar -xf "$RUNNER_TEMP/oci-inputs/qwenpaw-oci-$arch/qwenpaw-$arch.oci.tar" \
+              -C "$RUNNER_TEMP/$arch"
+            cp -an "$RUNNER_TEMP/$arch/blobs/." "$RUNNER_TEMP/merged/blobs/"
+          done
+          cp "$RUNNER_TEMP/amd64/oci-layout" "$RUNNER_TEMP/merged/oci-layout"
+          python3 .github/scripts/merge-docker-oci.py "$RUNNER_TEMP"
+          cp "$RUNNER_TEMP/merged/index.json" "$RUNNER_TEMP/multiarch-artifact/index.json"
+          tar -C "$RUNNER_TEMP/merged" -cf "$RUNNER_TEMP/multiarch-artifact/qwenpaw-image.oci.tar" \
+            oci-layout index.json blobs
+          cd "$RUNNER_TEMP/multiarch-artifact"
+          sha256sum qwenpaw-image.oci.tar > SHA256SUMS
+      - uses: actions/upload-artifact@v4
+        with:
+          name: qwenpaw-image-multiarch-acr
+          path: ${{ runner.temp }}/multiarch-artifact/
+          compression-level: 0
+          retention-days: 7

@@ -25,9 +25,7 @@ def test_manual_docker_build_defaults_to_download_without_pushing() -> None:
     assert push["default"] == "false"
 
     verification = workflow["jobs"]["verify-docker"]["with"]
-    build_only = (
-        "github.event_name == 'workflow_dispatch' && !inputs.push_image"
-    )
+    build_only = "github.event_name == 'workflow_dispatch' && !inputs.push_image"
     assert verification["export_docker_image"] == f"${{{{ {build_only} }}}}"
     assert verification["docker_node_image"] == (
         f"${{{{ {build_only} && 'node:20-bookworm-slim' || '' }}}}"
@@ -42,7 +40,8 @@ def test_release_publication_remains_enabled() -> None:
     assert workflow["on"]["release"]["types"] == ["published"]
     publication = workflow["jobs"]["build-and-push"]
     assert publication["if"] == (
-        "${{ github.event_name == 'release' || inputs.push_image }}"
+        "${{ !inputs.full_artifacts && "
+        "(github.event_name == 'release' || inputs.push_image) }}"
     )
     assert "--push" in publication["steps"][-1]["run"]
     assert publication["needs"] == ["verify-docker"]
@@ -55,21 +54,40 @@ def test_download_exports_verified_image_in_the_same_job() -> None:
     steps = workflow["jobs"]["verify-docker"]["steps"]
     by_name = {step.get("name"): step for step in steps}
     login = by_name["Log in to Aliyun ACR (when credentials available)"]
-    assert login["if"] == (
-        "env.ACR_USERNAME != '' && !inputs.export_docker_image"
-    )
+    assert login["if"] == ("env.ACR_USERNAME != '' && !inputs.export_docker_image")
     export = by_name["Export verified Docker image"]
     upload = by_name["Upload verified Docker image"]
     assert export["if"] == upload["if"] == "inputs.export_docker_image"
     assert "docker save qwenpaw-verify:test | gzip" in export["run"]
     assert "--push" not in export["run"]
     assert upload["uses"] == "actions/upload-artifact@v4"
-    assert upload["with"]["path"] == (
-        "${{ runner.temp }}/qwenpaw-image.tar.gz"
-    )
+    assert upload["with"]["path"] == ("${{ runner.temp }}/qwenpaw-image.tar.gz")
     assert upload["with"]["name"] == "qwenpaw-image-amd64"
     assert steps.index(by_name["Verify container version"]) < steps.index(
         export,
     )
     assert steps.index(export) < steps.index(upload)
     assert steps.index(upload) < steps.index(by_name["Stop container"])
+
+
+def test_full_artifacts_cover_both_production_architectures() -> None:
+    workflow = _load_workflow("docker-release.yml")
+    inputs = workflow["on"]["workflow_dispatch"]["inputs"]
+    assert inputs["full_artifacts"]["default"] == "false"
+    job = workflow["jobs"]["build-artifacts"]
+    matrix = job["strategy"]["matrix"]["include"]
+    assert {item["arch"] for item in matrix} == {"amd64", "arm64"}
+    steps = {step.get("name"): step for step in job["steps"]}
+    build = steps["Build with production ACR defaults"]["run"]
+    assert '--platform "linux/$ARCH"' in build
+    assert "QWENPAW_DISABLED_CHANNELS=imessage" in build
+    assert "NODE_IMAGE=" not in build
+    assert "UV_IMAGE=" not in build
+    assert "--push" not in build
+    assert "type=oci" in build
+    verify = steps["Load and verify the exported image"]["run"]
+    assert "oci-archive:" in verify
+    assert "verify-docker-artifacts.sh" in verify
+    assert workflow["jobs"]["assemble-artifact"]["needs"] == [
+        "build-artifacts",
+    ]
