@@ -25,7 +25,8 @@ def test_manual_docker_build_defaults_to_download_without_pushing() -> None:
     assert push["default"] == "false"
 
     verification = workflow["jobs"]["verify-docker"]["with"]
-    build_only = "github.event_name == 'workflow_dispatch' && !inputs.push_image"
+    build_only = "github.event_name == 'workflow_dispatch'"
+    build_only += " && !inputs.push_image"
     assert verification["export_docker_image"] == f"${{{{ {build_only} }}}}"
     assert verification["docker_node_image"] == (
         f"${{{{ {build_only} && 'node:20-bookworm-slim' || '' }}}}"
@@ -54,14 +55,16 @@ def test_download_exports_verified_image_in_the_same_job() -> None:
     steps = workflow["jobs"]["verify-docker"]["steps"]
     by_name = {step.get("name"): step for step in steps}
     login = by_name["Log in to Aliyun ACR (when credentials available)"]
-    assert login["if"] == ("env.ACR_USERNAME != '' && !inputs.export_docker_image")
+    condition = "env.ACR_USERNAME != ''" " && !inputs.export_docker_image"
+    assert login["if"] == condition
     export = by_name["Export verified Docker image"]
     upload = by_name["Upload verified Docker image"]
     assert export["if"] == upload["if"] == "inputs.export_docker_image"
     assert "docker save qwenpaw-verify:test | gzip" in export["run"]
     assert "--push" not in export["run"]
     assert upload["uses"] == "actions/upload-artifact@v4"
-    assert upload["with"]["path"] == ("${{ runner.temp }}/qwenpaw-image.tar.gz")
+    archive_path = "${{ runner.temp }}/qwenpaw-image.tar.gz"
+    assert upload["with"]["path"] == archive_path
     assert upload["with"]["name"] == "qwenpaw-image-amd64"
     assert steps.index(by_name["Verify container version"]) < steps.index(
         export,

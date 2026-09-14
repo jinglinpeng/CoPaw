@@ -1,4 +1,4 @@
-"""Architecture-sensitive runtime probes; no network, credentials or models."""
+"""Architecture-sensitive probes; no credentials or model calls."""
 
 import asyncio
 import bz2
@@ -46,9 +46,9 @@ async def probe_tools():
     marker = workspace / "docker-artifacts-smoke.md"
     await write_file(str(marker), "中文文件工具测试")
     assert "中文文件工具测试" in text_of(await read_file(str(marker)))
+    python_probe = "import sys,ssl; print(sys.executable, ssl.OPENSSL_VERSION)"
     shell = await execute_shell_command(
-        "python -c "
-        + shlex.quote("import sys,ssl; print(sys.executable, ssl.OPENSSL_VERSION)"),
+        "python -c " + shlex.quote(python_probe),
         timeout=20,
     )
     assert "/app/venv/bin/python" in text_of(shell), text_of(shell)
@@ -89,7 +89,8 @@ ctypes.CDLL(None)
 db = sqlite3.connect(":memory:")
 db.execute("create table smoke (value text)")
 db.execute("insert into smoke values (?)", (payload.decode("utf-8"),))
-assert db.execute("select value from smoke").fetchone()[0].encode("utf-8") == payload
+stored = db.execute("select value from smoke").fetchone()[0]
+assert stored.encode("utf-8") == payload
 db.close()
 image = Image.new("RGB", (12, 12), (12, 34, 56))
 buffer = io.BytesIO()
@@ -105,10 +106,16 @@ assert psutil.Process(os.getpid()).is_running()
 assert onnxruntime.get_available_providers()
 onnxruntime.SessionOptions()
 
-versions = {
-    name: importlib.metadata.version(name)
-    for name in ("numpy", "onnxruntime", "orjson", "psutil", "Pillow", "cryptography")
-}
+native_packages = (
+    "numpy",
+    "onnxruntime",
+    "orjson",
+    "psutil",
+    "Pillow",
+    "cryptography",
+)
+versions = {name: importlib.metadata.version(name) for name in native_packages}
+node = subprocess.check_output(["node", "--version"], text=True).strip()
 print(
     json.dumps(
         {
@@ -116,7 +123,7 @@ print(
             "python": sys.version.split()[0],
             "executable": sys.executable,
             "openssl": ssl.OPENSSL_VERSION,
-            "node": subprocess.check_output(["node", "--version"], text=True).strip(),
+            "node": node,
             "sqlite": sqlite3.sqlite_version,
             "dependencies": versions,
             "native_probes": "passed",
