@@ -6,6 +6,7 @@ import {
   restartBackend,
   shouldUseTauriStartupGate,
 } from "./backendRuntime";
+import { markStartup } from "./startupTrace";
 
 export type BackendReadyStatus = "checking" | "ready" | "timeout" | "error";
 
@@ -91,6 +92,7 @@ export default function useBackendReadyPolling(): BackendReadyPollingState {
       if (runRef.current !== runId) return;
 
       if (apiBaseUrl) {
+        markStartup("gate_first_poll", apiBaseUrl);
         try {
           controller = new AbortController();
           const timeoutId = setTimeout(
@@ -103,6 +105,7 @@ export default function useBackendReadyPolling(): BackendReadyPollingState {
               cache: "no-store",
             });
             if (runRef.current === runId && res.ok) {
+              markStartup("gate_backend_ready", apiBaseUrl);
               setReadyUrl(backendConsoleUrl(apiBaseUrl));
               setStatus("ready");
               return;

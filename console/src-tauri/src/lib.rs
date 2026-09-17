@@ -13,7 +13,24 @@ mod updates;
 #[cfg(windows)]
 mod webview_recovery;
 
+use std::sync::OnceLock;
+use std::time::Instant;
 use tauri::{Manager, RunEvent, WebviewWindow, WindowEvent};
+
+/// Set on the first line of [`run`], before any plugin exists.
+///
+/// The log plugin is only installed inside `backend::setup`, so nothing can be
+/// logged earlier than that; this is the only way to report how much of startup
+/// the shell spent before it could say anything.
+pub(crate) static SHELL_STARTED: OnceLock<Instant> = OnceLock::new();
+
+/// Seconds since [`run`] began, or `-1.0` before it was reached.
+pub(crate) fn since_shell_start() -> f64 {
+    SHELL_STARTED
+        .get()
+        .map(|start| start.elapsed().as_secs_f64())
+        .unwrap_or(-1.0)
+}
 
 /// Opens the WebView DevTools. Gated by the hidden 8-click logo gesture in the
 /// frontend so end users cannot open DevTools via the default context menu or
@@ -26,6 +43,7 @@ fn open_devtools(window: WebviewWindow) {
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 /// Build the desktop app, wire native plugins/commands, and stop the backend on exit.
 pub fn run() {
+    let _ = SHELL_STARTED.set(Instant::now());
     let build_result = tauri::Builder::default()
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_dialog::init())
@@ -106,6 +124,12 @@ pub fn run() {
                         log::warn!("[backend] graceful shutdown did not complete: {err}");
                     }
                     computer_use_runtime::stop(app_handle);
+                }
+                RunEvent::Ready => {
+                    log::info!(
+                        "[startup] phase=shell_ready since_run={:.3}s",
+                        since_shell_start()
+                    );
                 }
                 // macOS emits this when the user clicks the Dock icon. Without
                 // it, a window hidden via "minimize to tray" can only be

@@ -47,6 +47,7 @@ import { languageApi } from "./api/modules/language";
 import { useUploadLimitStore } from "./stores/uploadLimitStore";
 import CloseWindowPrompt from "./tauri/CloseWindowPrompt";
 import BackendLoadingPage from "./tauri/BackendLoadingPage";
+import { markStartup } from "./tauri/startupTrace";
 import {
   resolveAuthGate,
   resolveBackendInfo,
@@ -105,6 +106,7 @@ function AuthGuard({
     setErrorMessage("");
     resolveAuthGate(authStatus)
       .then((nextStatus) => {
+        markStartup("spa_auth_resolved");
         if (!cancelled) setStatus(nextStatus);
       })
       .catch((error: unknown) => {
@@ -415,6 +417,7 @@ function BackendModeRouter() {
     setErrorMessage("");
     resolveBackendInfo()
       .then((nextInfo) => {
+        markStartup("spa_backend_resolved");
         if (!cancelled) setBackendInfo(nextInfo);
       })
       .catch((error: unknown) => {

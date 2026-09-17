@@ -325,6 +325,13 @@ pub(crate) fn setup(app: &mut tauri::App) -> Result<(), Box<dyn std::error::Erro
             .build(),
     )?;
 
+    // First line the shell is able to log: everything before this point is
+    // invisible to the log file because the plugin did not exist yet.
+    log::info!(
+        "[startup] phase=shell_setup since_run={:.3}s",
+        crate::since_shell_start()
+    );
+
     if let Err(err) = crate::computer_use_runtime::prepare(app.handle()) {
         log::warn!("[computer-use] control endpoint unavailable: {err}");
     }

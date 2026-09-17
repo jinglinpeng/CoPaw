@@ -11,7 +11,7 @@ from contextlib import asynccontextmanager, suppress
 from pathlib import Path
 from typing import Any
 
-from fastapi import FastAPI, Header, HTTPException
+from fastapi import FastAPI, Header, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
@@ -891,6 +891,59 @@ async def post_desktop_shutdown(
         )
 
     server.should_exit = True
+    return {"ok": True}
+
+
+# The desktop UI boots across two page loads (the Tauri gate page, then a full
+# navigation to the backend-hosted console), so the browser has no clock shared
+# with either the shell or the sidecar. These marks are timestamped server-side
+# to put every startup phase on one timeline in one log file.
+_STARTUP_MARK_NAMES: frozenset[str] = frozenset(
+    {
+        "gate_first_poll",
+        "gate_backend_ready",
+        "spa_script_start",
+        "spa_root_render",
+        "spa_backend_resolved",
+        "spa_auth_resolved",
+        "chat_mounted",
+        "composer_editable",
+    },
+)
+_STARTUP_TRACE_ENV = "QWENPAW_STARTUP_TRACE"
+_LOOPBACK_HOSTS = frozenset({"127.0.0.1", "::1"})
+
+
+@app.post("/api/desktop/startup-mark")
+async def post_desktop_startup_mark(
+    request: Request,
+    name: str,
+    since_page_load_ms: float = -1.0,
+):
+    """Log a frontend startup timing mark during a measurement run.
+
+    Off unless ``QWENPAW_STARTUP_TRACE=1``, restricted to loopback callers, and
+    limited to a fixed set of mark names. It only writes a log line, so it
+    exposes no state and changes none.
+
+    The arguments are query parameters, not a JSON body: the Tauri gate page
+    posts its marks cross-origin, and a bodiless POST with no custom headers
+    stays a CORS-simple request and so needs no preflight.
+    """
+    client = request.client
+    if (
+        os.environ.get(_STARTUP_TRACE_ENV) != "1"
+        or client is None
+        or client.host not in _LOOPBACK_HOSTS
+        or name not in _STARTUP_MARK_NAMES
+    ):
+        raise HTTPException(status_code=404, detail="Not Found")
+
+    logger.info(
+        "[startup] phase=ui_%s since_page_load=%.3fs",
+        name,
+        since_page_load_ms / 1000.0,
+    )
     return {"ok": True}
 
 

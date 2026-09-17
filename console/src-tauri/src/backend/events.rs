@@ -40,7 +40,7 @@ pub(super) fn watch(
             match event {
                 CommandEvent::Stdout(line) => {
                     let text = String::from_utf8_lossy(&line);
-                    log::info!("[backend:{generation}] stdout: {}", text.trim_end());
+                    log::debug!("[backend:{generation}] stdout: {}", text.trim_end());
                     if let Some(port) = ready_port_from_stdout(&text) {
                         log::info!(
                             "[startup] generation={generation} phase=port_announced port={port} since_spawn={:.3}s",
@@ -95,7 +95,11 @@ fn ready_port_from_stdout(text: &str) -> Option<u16> {
 
 fn record_stderr(generation: u64, buffer: &mut String, line: &[u8]) {
     let text = String::from_utf8_lossy(line).to_string();
-    log::error!("[backend:{generation}] stderr: {text}");
+    // The sidecar sends its whole INFO stream here, which at info level buries
+    // the shell's own startup marks within minutes. The text is still kept in
+    // `buffer` for the termination diagnostic, and the sidecar writes the same
+    // lines to its own desktop.log; QWENPAW_DESKTOP_DEBUG=1 restores it here.
+    log::debug!("[backend:{generation}] stderr: {text}");
     buffer.push_str(&text);
     trim_captured_stderr(buffer);
 }

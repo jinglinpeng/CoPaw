@@ -7,6 +7,7 @@ import os
 import platform
 import re
 import sys
+import time
 from pathlib import Path
 
 from ..constant import PROJECT_NAME, WORKING_DIR
@@ -110,6 +111,31 @@ def sanitize_log_value(value: object) -> str:
     return str(value).replace("\r", "\\r").replace("\n", "\\n")
 
 
+class StageTimer:
+    """Collects per-stage durations so one log line explains a whole phase.
+
+    Emitting one summary line instead of a mark per stage keeps hot paths
+    (which run per request) from flooding the log they are measured from.
+    """
+
+    def __init__(self) -> None:
+        self._start = time.perf_counter()
+        self._last = self._start
+        self._stages: list[tuple[str, float]] = []
+
+    def mark(self, name: str) -> None:
+        now = time.perf_counter()
+        self._stages.append((name, now - self._last))
+        self._last = now
+
+    @property
+    def total(self) -> float:
+        return time.perf_counter() - self._start
+
+    def render(self) -> str:
+        return " ".join(f"{name}={sec:.3f}" for name, sec in self._stages)
+
+
 def _enable_windows_ansi() -> None:
     """Enable ANSI escape code support on Windows 10+."""
     if platform.system() != "Windows":
@@ -131,7 +157,26 @@ def _enable_windows_ansi() -> None:
 _enable_windows_ansi()
 
 
-class ColorFormatter(logging.Formatter):
+class MillisecondFormatter(logging.Formatter):
+    """Formatter base whose timestamps carry millisecond resolution.
+
+    Startup phase attribution is derived from these timestamps, and second
+    resolution puts a +/-1s error on every interval read out of them.
+    """
+
+    def formatTime(  # noqa: N802 - stdlib override
+        self,
+        record: logging.LogRecord,
+        datefmt: str | None = None,
+    ) -> str:
+        formatted = super().formatTime(record, datefmt)
+        if not datefmt:
+            # The default format already carries ",mmm".
+            return formatted
+        return f"{formatted}.{int(record.msecs):03d}"
+
+
+class ColorFormatter(MillisecondFormatter):
     COLORS = {
         logging.DEBUG: "\033[34m",
         logging.INFO: "\033[32m",
@@ -184,7 +229,7 @@ class _SafeRotatingFileHandler(logging.handlers.RotatingFileHandler):
             self.stream = self._open()
 
 
-class PlainFormatter(logging.Formatter):
+class PlainFormatter(MillisecondFormatter):
     def format(self, record: logging.LogRecord) -> str:
         full_path = record.pathname
         cwd = os.getcwd()

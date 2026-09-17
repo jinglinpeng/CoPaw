@@ -16,7 +16,7 @@ from typing import TYPE_CHECKING, Any, Iterable
 
 from ..agents.acp.meta import ACP_PROJECT_DIR_META_KEY
 from ..utils.io_utils import run_sync_io
-from ..utils.logging import sanitize_log_value
+from ..utils.logging import StageTimer, sanitize_log_value
 
 if TYPE_CHECKING:
     from ..agents.context.visual_compression.runtime.recovery import (
@@ -311,6 +311,7 @@ class AgentBuilder:
         from ..constant import WORKING_DIR
         from ..providers.provider_manager import ProviderManager
 
+        stages = StageTimer()
         agent_id = getattr(ctx, "agent_id", None) or "default"
         agent_config = await run_sync_io(load_agent_config, agent_id)
         request_context = self._build_request_context(ctx)
@@ -334,6 +335,7 @@ class AgentBuilder:
             )
 
         workspace_dir = getattr(ctx, "workspace_dir", None)
+        stages.mark("config")
 
         # Resolve skills.
         skills_workspace = workspace_dir or WORKING_DIR
@@ -352,6 +354,7 @@ class AgentBuilder:
         if isinstance(subagent_skills, list):
             parent_set = set(effective_skills)
             effective_skills = [s for s in subagent_skills if s in parent_set]
+        stages.mark("skills")
 
         # Compute active modes.
         active_modes: set[str] = set()
@@ -390,6 +393,7 @@ class AgentBuilder:
         local_ws = self._get_local_workspace(ctx) if ctx else None
         if local_ws is not None:
             local_ws.set_governor(governor)
+        stages.mark("governor")
 
         # Toolkit.
         from ..agents.context.visual_compression.runtime.recovery import (
@@ -424,6 +428,7 @@ class AgentBuilder:
         if not hasattr(ctx, "extras") or ctx.extras is None:
             ctx.extras = {}
         ctx.extras["driver_prompt_hints"] = driver_prompt_hints
+        stages.mark("tools")
 
         # Model + formatter (built before the toolkit so the scroll context
         # strategy, which needs the model for token counting, can wire in).
@@ -435,6 +440,7 @@ class AgentBuilder:
             agent_config,
             model_slot_override=model_slot_override,
         )
+        stages.mark("model")
 
         # Built once and shared: the agent's native offloader, and (when
         # ``offload_dialog`` is on) scroll's optional dialog archive.
@@ -474,6 +480,7 @@ class AgentBuilder:
             )
 
         memory_manager = self._get_memory_manager(ctx)
+        stages.mark("scroll")
         toolkit = await self.build_toolkit(
             agent_config,
             agent_id=agent_id,
@@ -490,6 +497,7 @@ class AgentBuilder:
             ctx=ctx,
             workspace_dir=workspace_dir,
         )
+        stages.mark("toolkit")
 
         # System prompt.
         sys_prompt = await run_sync_io(
@@ -497,6 +505,7 @@ class AgentBuilder:
             ctx,
             agent_config,
         )
+        stages.mark("prompt")
 
         middlewares = self._build_middlewares(
             ctx,
@@ -537,15 +546,18 @@ class AgentBuilder:
         # Load session state if SessionLoadHook populated it.
         if ctx.session_state:
             agent.load_state_dict(ctx.session_state)
+        stages.mark("agent")
 
         _logger.info(
             "builder: built agent for session=%s agent=%s"
-            " model=%s/%s tools=%d",
+            " model=%s/%s tools=%d build=%.3fs stages[%s]",
             sanitize_log_value(getattr(ctx, "session_id", "")),
             agent_id,
             active.provider_id,
             active.model,
             len(agent.toolkit.tool_groups[0].tools),
+            stages.total,
+            stages.render(),
         )
         return agent
 

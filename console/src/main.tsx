@@ -2,10 +2,15 @@ import { createRoot } from "react-dom/client";
 import App from "./App.tsx";
 import "./i18n";
 import { installHostExternals } from "./plugins/hostExternals";
+import { markStartup } from "./tauri/startupTrace";
 // Bare side-effect imports: each file self-registers its data into
 // menuRegistry / routeRegistry so consumers' first render sees them.
 import "./layouts/registry/builtinMenu";
 import "./layouts/registry/builtinRoutes.tsx";
+
+// The bundle has finished downloading, parsing and evaluating its imports by
+// the time this runs, so it separates transfer cost from render cost.
+markStartup("spa_script_start");
 
 // Expose host dependencies (React, antd, etc.) on window
 // so that plugin UI modules can use them without bundling their own copies.
@@ -53,3 +58,4 @@ if (typeof window !== "undefined") {
 }
 
 createRoot(document.getElementById("root")!).render(<App />);
+markStartup("spa_root_render");

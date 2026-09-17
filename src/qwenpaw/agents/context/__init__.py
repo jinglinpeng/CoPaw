@@ -19,6 +19,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+from ...utils.logging import StageTimer
 from .base import ContextManager
 
 logger = logging.getLogger(__name__)
@@ -148,6 +149,7 @@ def build_scroll_components(
         )
         return None
     _ = model  # Kept for builder API compatibility.
+    stages = StageTimer()
     logger.info(
         "scroll: wiring components (workspace_dir=%s, session_id=%s)",
         workspace_dir,
@@ -169,6 +171,8 @@ def build_scroll_components(
         from .scroll.recall_tool import RecallLoopGuard, make_recall_history
         from .scroll.repl import make_recall_history_python
 
+        stages.mark("imports")
+
         sc = lcc.scroll_config
         trc = lcc.tool_result_pruning_config
         db_path = Path(workspace_dir) / sc.db_filename
@@ -186,6 +190,7 @@ def build_scroll_components(
         history = HistoryStore(db_path)
         recall_loop_guard = RecallLoopGuard()
         scratch_root = str(Path(workspace_dir) / ".scroll")
+        stages.mark("history_store")
 
         manager = ScrollContextManager(
             history=history,
@@ -199,6 +204,7 @@ def build_scroll_components(
             ),
             recall_loop_guard=recall_loop_guard,
         )
+        stages.mark("manager")
         tool = make_recall_history_python(
             history_db_path=str(history.path),
             session_id=session_id,
@@ -207,6 +213,7 @@ def build_scroll_components(
             timeout_s=sc.repl_timeout_s,
             allow_unsandboxed=scroll_unsandboxed_allowed(sc),
         )
+        stages.mark("repl_tool")
         # Structured front door for the common recall ops (expand / search /
         # recall_tool): in-process bound queries, no sandbox, no approval —
         # so fold stubs and the eviction index stay readable even when the
@@ -217,6 +224,12 @@ def build_scroll_components(
             agent_id=agent_id,
             loop_guard=recall_loop_guard,
             page_max_bytes=trc.pruning_recent_msg_max_bytes,
+        )
+        stages.mark("recall_tool")
+        logger.info(
+            "[startup] phase=scroll_wiring duration=%.3fs stages[%s]",
+            stages.total,
+            stages.render(),
         )
         return ScrollComponents(
             context_manager=manager,

@@ -52,6 +52,7 @@ import {
 } from "./fileReferenceFormatting";
 import { setTextareaValue } from "./utils";
 import { McpNamesContext } from "./mcpContext";
+import { markStartup } from "../../tauri/startupTrace";
 import styles from "./RichFileReferenceInput.module.less";
 
 type TextAreaProps = ComponentProps<typeof Input.TextArea>;
@@ -743,6 +744,11 @@ const RichFileReferenceInput = forwardRef<TextAreaRef, TextAreaProps>(
       [],
     );
 
+    const editable = !disabled && !readOnly;
+    useEffect(() => {
+      if (editable) markStartup("composer_editable");
+    }, [editable]);
+
     return (
       <div
         className={`${styles.richInputRoot} ${className ?? ""}`}
@@ -752,7 +758,7 @@ const RichFileReferenceInput = forwardRef<TextAreaRef, TextAreaProps>(
         <LexicalComposer
           initialConfig={{
             namespace: "QwenPawRichFileReferenceInput",
-            editable: !disabled && !readOnly,
+            editable,
             nodes: [FileReferenceNode, CodeSnippetNode, McpReferenceNode],
             onError(error) {
               throw error;
@@ -788,7 +794,7 @@ const RichFileReferenceInput = forwardRef<TextAreaRef, TextAreaProps>(
           <HistoryPlugin />
           <RichEditorBridge
             value={rawValue}
-            editable={!disabled && !readOnly}
+            editable={editable}
             hiddenTextarea={hiddenTextarea}
             editorRef={editorRef}
             onRawChange={handleRawChange}

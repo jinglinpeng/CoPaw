@@ -13,6 +13,7 @@ import time
 from collections.abc import Sequence
 
 _ENTRY_STARTED = time.perf_counter()
+_ENTRY_WALL = time.time()
 
 # Timed imports include the package bootstrap in the frozen entry script.
 # pylint: disable=wrong-import-position
@@ -33,6 +34,50 @@ def _is_frozen_desktop() -> bool:
     return bool(getattr(sys, "frozen", False)) or (
         os.environ.get(DESKTOP_APP_ENV) == "1"
     )
+
+
+def _pre_python_seconds() -> float:
+    """Seconds the OS and the PyInstaller bootloader burned before Python ran.
+
+    ``_ENTRY_WALL`` is the first instant our own code executes, so the gap back
+    to process creation covers exe load, archive setup and interpreter init --
+    the part of desktop startup no in-process timer can otherwise see.
+    Returns ``-1.0`` where the process creation time is unavailable.
+    """
+    if sys.platform != "win32":
+        return -1.0
+    import ctypes
+    from ctypes import wintypes
+
+    kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+    # Without explicit types the 64-bit pseudo-handle is truncated and the
+    # call fails, so the timings would silently read as unavailable.
+    kernel32.GetCurrentProcess.restype = wintypes.HANDLE
+    kernel32.GetCurrentProcess.argtypes = ()
+    kernel32.GetProcessTimes.restype = wintypes.BOOL
+    kernel32.GetProcessTimes.argtypes = (
+        wintypes.HANDLE,
+        ctypes.POINTER(wintypes.FILETIME),
+        ctypes.POINTER(wintypes.FILETIME),
+        ctypes.POINTER(wintypes.FILETIME),
+        ctypes.POINTER(wintypes.FILETIME),
+    )
+    creation = wintypes.FILETIME()
+    exited = wintypes.FILETIME()
+    kernel_time = wintypes.FILETIME()
+    user_time = wintypes.FILETIME()
+    ok = kernel32.GetProcessTimes(
+        kernel32.GetCurrentProcess(),
+        ctypes.byref(creation),
+        ctypes.byref(exited),
+        ctypes.byref(kernel_time),
+        ctypes.byref(user_time),
+    )
+    if not ok:
+        return -1.0
+    # FILETIME counts 100ns ticks from 1601-01-01 UTC; shift to the Unix epoch.
+    ticks = (creation.dwHighDateTime << 32) | creation.dwLowDateTime
+    return _ENTRY_WALL - (ticks / 10_000_000.0 - 11_644_473_600.0)
 
 
 def _looks_like_python_invocation(args: Sequence[str]) -> bool:
@@ -428,8 +473,9 @@ def main() -> None:
     install_sidecar_logging(WORKING_DIR / "desktop.log")
     logger.info(
         "[startup] phase=desktop_runtime duration=%.3fs "
-        "entry_bootstrap=%.3fs since_entry=%.3fs pid=%s",
+        "pre_python=%.3fs entry_bootstrap=%.3fs since_entry=%.3fs pid=%s",
         time.perf_counter() - runtime_started,
+        _pre_python_seconds(),
         runtime_started - _ENTRY_STARTED,
         time.perf_counter() - _ENTRY_STARTED,
         os.getpid(),

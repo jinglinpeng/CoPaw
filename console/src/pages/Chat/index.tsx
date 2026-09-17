@@ -23,6 +23,7 @@ import { useTranslation } from "react-i18next";
 import { AnimatePresence, motion, useReducedMotion } from "motion/react";
 import i18n from "../../i18n";
 import { useLocation, useNavigate } from "react-router-dom";
+import { markStartup } from "../../tauri/startupTrace";
 import sessionApi from "./sessionApi";
 import {
   getDraftStorageKey,
@@ -1171,6 +1172,9 @@ export default function ChatPage() {
   const { t, i18n } = useTranslation();
   const navigate = useNavigate();
   const location = useLocation();
+  useEffect(() => {
+    markStartup("chat_mounted");
+  }, []);
   const { isDark } = useTheme();
   const { selectedAgent, agents } = useAgentStore();
   const chatId = useMemo(
