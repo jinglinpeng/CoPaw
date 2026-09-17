@@ -39,6 +39,27 @@ def test_append_assigns_increasing_seq_and_counts(store: HistoryStore):
     assert store.count("other") == 0
 
 
+def test_open_logs_startup_stage_breakdown(tmp_path: Path, caplog):
+    with caplog.at_level(logging.INFO):
+        opened = HistoryStore(tmp_path / "profiled.db")
+    opened.close()
+
+    messages = [record.getMessage() for record in caplog.records]
+    assert any(
+        "phase=history_store_open" in message
+        and "connect=" in message
+        and "quick_check=" in message
+        and "schema=" in message
+        for message in messages
+    )
+    assert any(
+        "phase=history_store_schema" in message
+        and "ddl=" in message
+        and "fts=" in message
+        for message in messages
+    )
+
+
 def test_created_at_index_exists_for_date_filtered_recall(
     store: HistoryStore,
 ):

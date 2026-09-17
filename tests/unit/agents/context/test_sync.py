@@ -473,6 +473,30 @@ def test_sync_is_idempotent_via_manifest(store, tmp_path: Path):
     assert store.count("sid") == total
 
 
+def test_sync_logs_manifest_hit_and_stage_breakdown(
+    store,
+    tmp_path: Path,
+    caplog,
+):
+    sessions = tmp_path / "sessions"
+    _write_session_2x(sessions, "sid.json", "sid", _sample_msgs())
+    _sync_registered(store, sessions, [_chat("sid")])
+
+    caplog.clear()
+    with caplog.at_level(logging.INFO, logger=sync_mod.logger.name):
+        _sync_registered(store, sessions, [_chat("sid")])
+
+    messages = [record.getMessage() for record in caplog.records]
+    assert any(
+        "phase=history_backfill_agent" in message
+        and "manifest_match=1" in message
+        and "skipped=1" in message
+        and "sha256=" in message
+        and "skip_check=" in message
+        for message in messages
+    )
+
+
 def test_manifest_skip_self_heals_when_db_was_reset(tmp_path: Path):
     """A surviving manifest must NOT skip a session missing from a fresh DB.
 

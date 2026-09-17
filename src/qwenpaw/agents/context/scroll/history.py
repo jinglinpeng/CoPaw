@@ -11,6 +11,7 @@ import threading
 from collections.abc import Sequence
 from datetime import datetime, timezone
 from pathlib import Path
+from time import perf_counter
 from typing import Any
 
 from ..types import LogEntry
@@ -94,6 +95,7 @@ class HistoryStore:
             self._open_and_init()
 
     def _open_and_init(self) -> None:
+        started = perf_counter()
         # check_same_thread=False: used from both loop and worker threads;
         # ``self._lock`` provides the serialization SQLite would get from
         # same-thread affinity.
@@ -102,15 +104,28 @@ class HistoryStore:
             check_same_thread=False,
         )
         self._conn.row_factory = sqlite3.Row
+        connected = perf_counter()
         self._conn.execute("PRAGMA journal_mode=WAL")
         self._conn.execute(f"PRAGMA busy_timeout={_BUSY_TIMEOUT_MS}")
+        pragmas_applied = perf_counter()
         # Probe for corruption that only surfaces on read.
         row = self._conn.execute("PRAGMA quick_check").fetchone()
+        checked = perf_counter()
         if not row or row[0] != "ok":
             raise sqlite3.DatabaseError(
                 f"quick_check failed: {row[0] if row else None}",
             )
         self._init_schema()
+        finished = perf_counter()
+        logger.info(
+            "[startup] phase=history_store_open duration=%.3fs "
+            "stages[connect=%.3f pragmas=%.3f quick_check=%.3f schema=%.3f]",
+            finished - started,
+            connected - started,
+            pragmas_applied - connected,
+            checked - pragmas_applied,
+            finished - checked,
+        )
 
     def _quarantine(self, exc: Exception) -> None:
         """Move the unreadable DB + its -wal/-shm aside with a timestamp."""
@@ -144,6 +159,7 @@ class HistoryStore:
         return self._path
 
     def _init_schema(self) -> None:
+        started = perf_counter()
         with self._conn:
             self._conn.execute(
                 """
@@ -191,7 +207,16 @@ class HistoryStore:
                 "CREATE UNIQUE INDEX IF NOT EXISTS ux_dedup "
                 "ON conversation_history(session_id, dedup_key)",
             )
+            ddl_finished = perf_counter()
             self._init_fts()
+        finished = perf_counter()
+        logger.info(
+            "[startup] phase=history_store_schema duration=%.3fs "
+            "stages[ddl=%.3f fts=%.3f]",
+            finished - started,
+            ddl_finished - started,
+            finished - ddl_finished,
+        )
 
     def _init_fts(self) -> None:
         """Create the FTS5 full-text index over ``content``, if available.

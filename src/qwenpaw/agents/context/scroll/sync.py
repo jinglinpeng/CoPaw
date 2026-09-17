@@ -35,6 +35,7 @@ from collections import Counter
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
+from time import perf_counter
 from typing import TYPE_CHECKING
 
 from agentscope.message import Msg
@@ -603,6 +604,7 @@ def sync_sessions_to_history(
     import with an explicit report; silently falling back to filenames could
     resurrect session files left behind by a user-visible chat deletion.
     """
+    started = perf_counter()
     sessions_path = Path(sessions_dir).expanduser()
     report = SyncReport()
     if not sessions_path.is_dir():
@@ -618,8 +620,10 @@ def sync_sessions_to_history(
 
     manifest_path = sessions_path / MANIFEST_NAME
     manifest = _load_manifest(manifest_path) if use_manifest else {"files": {}}
+    manifest_loaded = perf_counter()
     files_meta: dict = manifest["files"]
     resolved = preflight or preflight_sessions(sessions_path, chats_path)
+    preflight_finished = perf_counter()
     session_files = list(resolved.session_files)
     if resolved.registry_error:
         report.registry_error = resolved.registry_error
@@ -632,6 +636,12 @@ def sync_sessions_to_history(
     canonical_ids = resolved.registry.mapping
     stem_counts = Counter(path.stem for path, _rel_name in session_files)
     dirty = False
+    sha256_seconds = 0.0
+    claim_seconds = 0.0
+    skip_check_seconds = 0.0
+    sync_seconds = 0.0
+    manifest_matches_count = 0
+    sync_file_seconds: list[float] = []
 
     for path, rel_name in session_files:
         canonical_id = canonical_ids.get(rel_name)
@@ -639,6 +649,7 @@ def sync_sessions_to_history(
             _report_orphan(report, rel_name)
             continue
 
+        sha256_started = perf_counter()
         try:
             digest = _sha256(path)
         except OSError as exc:
@@ -647,6 +658,8 @@ def sync_sessions_to_history(
             )
             logger.warning("session-sync: cannot read %s: %s", path, exc)
             continue
+        finally:
+            sha256_seconds += perf_counter() - sha256_started
 
         prior = files_meta.get(rel_name)
         manifest_matches = bool(
@@ -655,12 +668,18 @@ def sync_sessions_to_history(
         canonical_matches = bool(
             prior and prior.get("session_id") == canonical_id,
         )
+        if manifest_matches and canonical_matches:
+            manifest_matches_count += 1
+        claim_started = perf_counter()
         if not dry_run:
             history.claim_session(canonical_id, agent_id)
+        claim_seconds += perf_counter() - claim_started
         should_skip = False
+        skip_check_started = perf_counter()
         if manifest_matches and canonical_matches:
             assert prior is not None
             should_skip = _skip_is_safe(history, prior)
+        skip_check_seconds += perf_counter() - skip_check_started
         if should_skip:
             assert prior is not None
             report.files.append(
@@ -686,6 +705,7 @@ def sync_sessions_to_history(
         if stem_counts[path.stem] == 1:
             legacy_session_ids.add(f"{_SESSION_PREFIX}{path.stem}")
 
+        sync_started = perf_counter()
         res = _sync_file(
             history,
             path,
@@ -696,6 +716,9 @@ def sync_sessions_to_history(
             cutoff=cutoff,
             legacy_session_ids=legacy_session_ids,
         )
+        sync_elapsed = perf_counter() - sync_started
+        sync_seconds += sync_elapsed
+        sync_file_seconds.append(sync_elapsed)
         report.files.append(res)
         if res.errored:
             continue
@@ -728,8 +751,40 @@ def sync_sessions_to_history(
             chats_path,
         )
 
+    manifest_save_started = perf_counter()
     if use_manifest and not dry_run and dirty:
         _save_manifest(manifest_path, manifest)
+    finished = perf_counter()
+    slowest_sync = (
+        ",".join(
+            f"{elapsed:.3f}"
+            for elapsed in sorted(sync_file_seconds, reverse=True)[:3]
+        )
+        or "none"
+    )
+    logger.info(
+        "[startup] phase=history_backfill_agent duration=%.3fs agent=%s "
+        "files[total=%d manifest_match=%d skipped=%d synced=%d orphaned=%d "
+        "errored=%d] stages[manifest_load=%.3f preflight=%.3f sha256=%.3f "
+        "claim=%.3f skip_check=%.3f sync=%.3f manifest_save=%.3f] "
+        "slowest_sync=%s",
+        finished - started,
+        agent_id,
+        len(session_files),
+        manifest_matches_count,
+        report.skipped_files,
+        report.synced_files,
+        report.orphaned_files,
+        report.errored_files,
+        manifest_loaded - started,
+        preflight_finished - manifest_loaded,
+        sha256_seconds,
+        claim_seconds,
+        skip_check_seconds,
+        sync_seconds,
+        finished - manifest_save_started,
+        slowest_sync,
+    )
 
     return report
 
@@ -829,7 +884,9 @@ def _sync_all_scroll_agents() -> None:
         if not sessions_dir.is_dir():
             logger.info("session-sync[%s]: no sessions to sync", agent_id)
             continue
+        agent_started = perf_counter()
         resolved = preflight_sessions(sessions_dir, chats_path)
+        preflight_finished = perf_counter()
         if resolved.registry_error:
             blocked = SyncReport(registry_error=resolved.registry_error)
             blocked.files.extend(
@@ -865,6 +922,7 @@ def _sync_all_scroll_agents() -> None:
         db_path = workspace_dir / lcc.scroll_config.db_filename
         retention_days = lcc.scroll_config.history_retention_days
         history = HistoryStore(db_path)
+        store_opened = perf_counter()
         try:
             report = sync_sessions_to_history(
                 history=history,
@@ -874,7 +932,9 @@ def _sync_all_scroll_agents() -> None:
                 chats_path=chats_path,
                 preflight=resolved,
             )
+            sync_finished = perf_counter()
             _purge_old_history(history, retention_days, agent_id)
+            purge_finished = perf_counter()
         except Exception as exc:  # noqa: BLE001 - isolate one agent's failure
             logger.warning(
                 "session-sync[%s]: failed: %s",
@@ -886,6 +946,19 @@ def _sync_all_scroll_agents() -> None:
         finally:
             history.close()
 
+        finished = perf_counter()
+        logger.info(
+            "[startup] phase=history_backfill_agent_total duration=%.3fs "
+            "agent=%s stages[preflight=%.3f history_store=%.3f sync=%.3f "
+            "purge=%.3f close=%.3f]",
+            finished - agent_started,
+            agent_id,
+            preflight_finished - agent_started,
+            store_opened - preflight_finished,
+            sync_finished - store_opened,
+            purge_finished - sync_finished,
+            finished - purge_finished,
+        )
         logger.info("session-sync[%s]: %s", agent_id, report.summary())
         if history.degraded:
             logger.warning(
