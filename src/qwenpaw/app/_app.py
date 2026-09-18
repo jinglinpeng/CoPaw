@@ -81,12 +81,22 @@ load_envs_into_environ()
 
 async def _sync_scroll_history_on_startup() -> None:
     """Run the composed legacy-history migration outside the event loop."""
-    try:
-        from ..agents.context.scroll.sync import sync_all_scroll_agents
+    from ..agents.context.scroll.sync import (
+        finish_startup_history_sync,
+        sync_all_scroll_agents,
+    )
 
+    started = time.perf_counter()
+    try:
         await run_sync_io(sync_all_scroll_agents)
     except Exception:  # noqa: BLE001 - session sync must never block startup
         logger.warning("session-sync: import/launch failed", exc_info=True)
+    finally:
+        finish_startup_history_sync()
+        logger.info(
+            "[startup] phase=history_backfill duration=%.3fs mode=background",
+            time.perf_counter() - started,
+        )
 
 
 async def _browser_idle_watchdog(kernel: Any, interval: float) -> None:
@@ -196,18 +206,6 @@ async def lifespan(  # pylint: disable=too-many-statements,too-many-branches
     migrate_legacy_skills_to_skill_pool()
     ensure_qa_agent_exists()
     record_phase("config_migration")
-
-    # Migrate old conversations from sessions/*.json into each scroll agent's
-    # history.db, so chats from before scroll existed stay recallable. This is
-    # a one-off backfill, not core startup work: if it fails, we log and keep
-    # booting — that agent just won't have its old chats imported (scroll still
-    # records new turns normally). The import sits inside the try for the same
-    # reason — even a failed import must not block init.
-    #
-    # Note: being pure backfill, this could later run asynchronously (off the
-    # boot path) to speed up startup.
-    await _sync_scroll_history_on_startup()
-    record_phase("history_backfill")
 
     # Provider initialization scans and may migrate persisted configuration.
     provider_manager = await asyncio.to_thread(ProviderManager.get_instance)
@@ -623,16 +621,28 @@ async def lifespan(  # pylint: disable=too-many-statements,too-many-branches
                 exc_info=True,
             )
 
-    _bg_task = asyncio.create_task(_background_startup())
+    from ..agents.context.scroll.sync import begin_startup_history_sync
+
+    begin_startup_history_sync()
+    _history_backfill_task = asyncio.create_task(
+        _sync_scroll_history_on_startup(),
+        name="qwenpaw-history-backfill",
+    )
+    _bg_task = asyncio.create_task(
+        _background_startup(),
+        name="qwenpaw-background-startup",
+    )
 
     try:
         yield
     finally:
-        # Cancel background startup if still in progress
-        if not _bg_task.done():
-            _bg_task.cancel()
+        startup_tasks = (_bg_task, _history_backfill_task)
+        for task in startup_tasks:
+            if not task.done():
+                task.cancel()
+        for task in startup_tasks:
             with suppress(asyncio.CancelledError):
-                await _bg_task
+                await task
 
         logger.info("Stopping BackupManager...")
         await backup_manager.shutdown()

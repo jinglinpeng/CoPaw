@@ -11,6 +11,7 @@ and robust (empty dir / corrupt file never raise).
 import json
 import logging
 import sqlite3
+import threading
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from types import SimpleNamespace
@@ -958,6 +959,57 @@ def _stub_config_loaders(
         lambda _id: agent_config,
         raising=False,
     )
+
+
+def test_startup_history_waits_until_background_sync_finishes(tmp_path: Path):
+    db_path = tmp_path / "history.db"
+    waiting = threading.Event()
+    released = threading.Event()
+
+    def wait_for_history():
+        waiting.set()
+        sync_mod.wait_for_startup_history(db_path)
+        released.set()
+
+    sync_mod.begin_startup_history_sync()
+    waiter = threading.Thread(target=wait_for_history)
+    waiter.start()
+    try:
+        assert waiting.wait(timeout=2)
+        assert not released.wait(timeout=0.05)
+        sync_mod._publish_startup_history_paths([db_path])
+        assert not released.wait(timeout=0.05)
+    finally:
+        sync_mod.finish_startup_history_sync()
+        waiter.join(timeout=2)
+
+    assert released.is_set()
+
+
+def test_startup_history_failure_releases_waiters(
+    tmp_path: Path,
+    monkeypatch,
+):
+    waiting = threading.Event()
+    released = threading.Event()
+
+    def fail_sync():
+        raise RuntimeError("sync failed")
+
+    def wait_for_history():
+        waiting.set()
+        sync_mod.wait_for_startup_history(tmp_path / "history.db")
+        released.set()
+
+    sync_mod.begin_startup_history_sync()
+    monkeypatch.setattr(sync_mod, "_sync_all_scroll_agents", fail_sync)
+    waiter = threading.Thread(target=wait_for_history)
+    waiter.start()
+    assert waiting.wait(timeout=2)
+    sync_all_scroll_agents()
+    waiter.join(timeout=2)
+
+    assert released.is_set()
 
 
 @pytest.mark.usefixtures("capture_qwenpaw_logs")

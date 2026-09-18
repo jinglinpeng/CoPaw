@@ -31,12 +31,14 @@ from __future__ import annotations
 import hashlib
 import json
 import logging
+import os
+import threading
 from collections import Counter
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from time import perf_counter
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from agentscope.message import Msg
 
@@ -50,6 +52,53 @@ logger = logging.getLogger(__name__)
 MANIFEST_NAME = ".synced.json"
 _MANIFEST_VERSION = 2
 _SESSION_PREFIX = "sync:"
+_STARTUP_READINESS_LOCK = threading.Lock()
+_STARTUP_DISCOVERY_DONE = threading.Event()
+_STARTUP_DISCOVERY_DONE.set()
+_STARTUP_SYNC_ACTIVE = False
+_STARTUP_DB_READY: dict[str, threading.Event] = {}
+
+
+def _db_key(db_path: str | Path) -> str:
+    return os.path.normcase(str(Path(db_path).expanduser().resolve()))
+
+
+def begin_startup_history_sync() -> None:
+    global _STARTUP_SYNC_ACTIVE
+    with _STARTUP_READINESS_LOCK:
+        _STARTUP_SYNC_ACTIVE = True
+        _STARTUP_DB_READY.clear()
+        _STARTUP_DISCOVERY_DONE.clear()
+
+
+def _publish_startup_history_paths(db_paths: list[Path]) -> None:
+    with _STARTUP_READINESS_LOCK:
+        if not _STARTUP_SYNC_ACTIVE:
+            return
+        _STARTUP_DB_READY.update(
+            (_db_key(db_path), threading.Event()) for db_path in db_paths
+        )
+        _STARTUP_DISCOVERY_DONE.set()
+
+
+def finish_startup_history_sync() -> None:
+    global _STARTUP_SYNC_ACTIVE
+    with _STARTUP_READINESS_LOCK:
+        _STARTUP_SYNC_ACTIVE = False
+        ready_events = list(_STARTUP_DB_READY.values())
+        _STARTUP_DISCOVERY_DONE.set()
+    for ready in ready_events:
+        ready.set()
+
+
+def wait_for_startup_history(db_path: str | Path) -> None:
+    _STARTUP_DISCOVERY_DONE.wait()
+    with _STARTUP_READINESS_LOCK:
+        if not _STARTUP_SYNC_ACTIVE:
+            return
+        ready = _STARTUP_DB_READY.get(_db_key(db_path))
+    if ready is not None:
+        ready.wait()
 
 
 @dataclass
@@ -826,6 +875,45 @@ def _purge_old_history(
         )
 
 
+@dataclass(frozen=True)
+class _ScrollSyncTarget:
+    agent_id: str
+    workspace_dir: Path
+    light_context_config: Any
+
+
+def _load_scroll_sync_targets() -> list[_ScrollSyncTarget]:
+    from ....config import load_config
+    from ....config.config import load_agent_config
+
+    config = load_config()
+    targets = []
+    for agent_id, agent_ref in config.agents.profiles.items():
+        try:
+            agent_config = load_agent_config(agent_id)
+        except Exception as exc:  # noqa: BLE001
+            logger.debug(
+                "session-sync[%s]: config load failed: %s",
+                agent_id,
+                exc,
+            )
+            continue
+        try:
+            lcc = agent_config.running.light_context_config
+        except Exception:  # noqa: BLE001
+            continue
+        if getattr(lcc, "strategy", "native") != "scroll":
+            continue
+        targets.append(
+            _ScrollSyncTarget(
+                agent_id=agent_id,
+                workspace_dir=Path(agent_ref.workspace_dir).expanduser(),
+                light_context_config=lcc,
+            ),
+        )
+    return targets
+
+
 def sync_all_scroll_agents() -> None:
     """Sync every scroll-enabled agent's ``sessions/*.json`` into its history.
 
@@ -838,6 +926,8 @@ def sync_all_scroll_agents() -> None:
         _sync_all_scroll_agents()
     except Exception:  # noqa: BLE001 - sync must never break startup
         logger.warning("session-sync: aborted unexpectedly", exc_info=True)
+    finally:
+        finish_startup_history_sync()
 
 
 # Keep the preflight-before-DB-open ordering visible in one startup flow.  In
@@ -845,40 +935,24 @@ def sync_all_scroll_agents() -> None:
 # easier to accidentally mutate/quarantine history before registry validation.
 # pylint: disable=too-many-statements
 def _sync_all_scroll_agents() -> None:
-    # Imported lazily to keep this module importable without the app config.
-    from ....config import load_config
-    from ....config.config import load_agent_config
     from .history import HistoryStore
 
-    config = load_config()
+    targets = _load_scroll_sync_targets()
+    _publish_startup_history_paths(
+        [
+            target.workspace_dir
+            / target.light_context_config.scroll_config.db_filename
+            for target in targets
+        ],
+    )
     total_rows = 0
     total_sessions = 0
     synced_agents = 0
 
-    for agent_id, agent_ref in config.agents.profiles.items():
-        try:
-            agent_config = load_agent_config(agent_id)
-        except Exception as exc:  # noqa: BLE001
-            logger.debug(
-                "session-sync[%s]: config load failed: %s",
-                agent_id,
-                exc,
-            )
-            continue
-
-        try:
-            lcc = agent_config.running.light_context_config
-            strategy = getattr(lcc, "strategy", "native")
-        except Exception:  # noqa: BLE001
-            continue
-        if strategy != "scroll":
-            continue
-
-        # Use the profile ref's path (each id -> its own dir), NOT
-        # ``agent_config.workspace_dir``: that field is baked into agent.json
-        # at clone time, so every clone points back at the original and they'd
-        # all collapse onto one workspace.
-        workspace_dir = Path(agent_ref.workspace_dir).expanduser()
+    for target in targets:
+        agent_id = target.agent_id
+        workspace_dir = target.workspace_dir
+        lcc = target.light_context_config
         sessions_dir = workspace_dir / "sessions"
         chats_path = workspace_dir / "chats.json"
         if not sessions_dir.is_dir():

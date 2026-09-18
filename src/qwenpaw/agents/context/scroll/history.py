@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 import sqlite3
 import sys
 import threading
@@ -67,10 +68,17 @@ class HistoryStore:
     # FTS5 is a property of the SQLite build, not of one DB — warn at most once
     # per process when it's missing, so a long-lived server doesn't log-spam.
     _fts_unavailable_warned = False
+    _integrity_state_lock = threading.Lock()
+    _integrity_locks: dict[tuple[int, str], threading.Lock] = {}
+    _integrity_checked: set[tuple[int, str]] = set()
 
     def __init__(self, db_path: str | Path) -> None:
         self._path = Path(db_path).expanduser()
         self._path.parent.mkdir(parents=True, exist_ok=True)
+        self._integrity_key = (
+            os.getpid(),
+            os.path.normcase(str(self._path.resolve())),
+        )
         # Serializes the single connection across threads: ``compress`` writes
         # from a worker thread (``asyncio.to_thread``, to spare the event loop)
         # while ``on_save`` writes on the loop thread. Both share this
@@ -85,16 +93,47 @@ class HistoryStore:
         # Flipped True by ``close()`` so callers can tell an intentional
         # teardown race from a real disk outage (see ``closed``).
         self._closed = False
-        try:
-            self._open_and_init()
-        except sqlite3.DatabaseError as exc:
-            # A corrupt / unreadable DB (truncated file, stale WAL trio, bad
-            # page) would crash every task at startup. Quarantine the bad file
-            # and recreate fresh, degrading "broken memory" to "lost history".
-            self._quarantine(exc)
-            self._open_and_init()
+        integrity_lock = self._integrity_lock_for(self._integrity_key)
+        with integrity_lock:
+            check_integrity = not self._integrity_was_checked()
+            try:
+                self._open_and_init(check_integrity=check_integrity)
+            except sqlite3.DatabaseError as exc:
+                # A corrupt DB would crash every task. Quarantine it and create
+                # a fresh store, degrading broken memory to lost history.
+                self._invalidate_integrity_check()
+                self._quarantine(exc)
+                self._open_and_init(check_integrity=True)
+            self._mark_integrity_checked()
 
-    def _open_and_init(self) -> None:
+    @classmethod
+    def _integrity_lock_for(
+        cls,
+        key: tuple[int, str],
+    ) -> threading.Lock:
+        with cls._integrity_state_lock:
+            return cls._integrity_locks.setdefault(key, threading.Lock())
+
+    def _integrity_was_checked(self) -> bool:
+        with self._integrity_state_lock:
+            return self._integrity_key in self._integrity_checked
+
+    def _mark_integrity_checked(self) -> None:
+        with self._integrity_state_lock:
+            self._integrity_checked.add(self._integrity_key)
+
+    def _invalidate_integrity_check(self) -> None:
+        with self._integrity_state_lock:
+            self._integrity_checked.discard(self._integrity_key)
+
+    def _run_quick_check(self) -> None:
+        row = self._conn.execute("PRAGMA quick_check").fetchone()
+        if not row or row[0] != "ok":
+            raise sqlite3.DatabaseError(
+                f"quick_check failed: {row[0] if row else None}",
+            )
+
+    def _open_and_init(self, *, check_integrity: bool) -> None:
         started = perf_counter()
         # check_same_thread=False: used from both loop and worker threads;
         # ``self._lock`` provides the serialization SQLite would get from
@@ -108,23 +147,21 @@ class HistoryStore:
         self._conn.execute("PRAGMA journal_mode=WAL")
         self._conn.execute(f"PRAGMA busy_timeout={_BUSY_TIMEOUT_MS}")
         pragmas_applied = perf_counter()
-        # Probe for corruption that only surfaces on read.
-        row = self._conn.execute("PRAGMA quick_check").fetchone()
+        if check_integrity:
+            self._run_quick_check()
         checked = perf_counter()
-        if not row or row[0] != "ok":
-            raise sqlite3.DatabaseError(
-                f"quick_check failed: {row[0] if row else None}",
-            )
         self._init_schema()
         finished = perf_counter()
         logger.info(
             "[startup] phase=history_store_open duration=%.3fs "
-            "stages[connect=%.3f pragmas=%.3f quick_check=%.3f schema=%.3f]",
+            "stages[connect=%.3f pragmas=%.3f quick_check=%.3f schema=%.3f] "
+            "quick_check_status=%s",
             finished - started,
             connected - started,
             pragmas_applied - connected,
             checked - pragmas_applied,
             finished - checked,
+            "performed" if check_integrity else "cached",
         )
 
     def _quarantine(self, exc: Exception) -> None:
@@ -752,6 +789,7 @@ class HistoryStore:
         log spam). Read ``degraded`` to gate any "fully durable" guarantees.
         """
         self.write_failures += 1
+        self._invalidate_integrity_check()
         if not self.degraded:
             self.degraded = True
             logger.error(

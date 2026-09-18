@@ -10,6 +10,7 @@ signal), and must stay silent on every later run.
 """
 
 import logging
+import threading
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -17,6 +18,7 @@ import pytest
 
 import qwenpaw.agents.context as context_mod
 import qwenpaw.agents.context.scroll.manager as scroll_manager_mod
+import qwenpaw.agents.context.scroll.sync as scroll_sync_mod
 from qwenpaw.agents.context import build_scroll_components
 from qwenpaw.config.config import LightContextConfig
 
@@ -145,6 +147,42 @@ def test_no_notice_when_strategy_is_native(tmp_path: Path, caplog):
     assert components is None
     assert not (tmp_path / "history.db").exists()
     assert _notice_records(caplog) == []
+
+
+def test_wiring_waits_for_startup_history(tmp_path: Path, monkeypatch):
+    db_path = tmp_path / "history.db"
+    waiting = threading.Event()
+    built = threading.Event()
+    components = []
+    original_wait = scroll_sync_mod.wait_for_startup_history
+
+    def observed_wait(path):
+        waiting.set()
+        original_wait(path)
+
+    def build():
+        components.append(_build(tmp_path))
+        built.set()
+
+    scroll_sync_mod.begin_startup_history_sync()
+    scroll_sync_mod._publish_startup_history_paths([db_path])
+    monkeypatch.setattr(
+        scroll_sync_mod,
+        "wait_for_startup_history",
+        observed_wait,
+    )
+    worker = threading.Thread(target=build)
+    worker.start()
+    try:
+        assert waiting.wait(timeout=2)
+        assert not built.wait(timeout=0.05)
+    finally:
+        scroll_sync_mod.finish_startup_history_sync()
+        worker.join(timeout=2)
+
+    assert built.is_set()
+    assert components[0] is not None
+    components[0].context_manager.close()
 
 
 def test_wiring_failure_closes_history_store(tmp_path: Path, monkeypatch):

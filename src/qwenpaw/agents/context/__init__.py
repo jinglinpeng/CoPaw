@@ -170,12 +170,15 @@ def build_scroll_components(
         from .scroll.manager import ScrollContextManager
         from .scroll.recall_tool import RecallLoopGuard, make_recall_history
         from .scroll.repl import make_recall_history_python
+        from .scroll.sync import wait_for_startup_history
 
         stages.mark("imports")
 
         sc = lcc.scroll_config
         trc = lcc.tool_result_pruning_config
         db_path = Path(workspace_dir) / sc.db_filename
+        wait_for_startup_history(db_path)
+        stages.mark("history_startup")
         # First-run notice: scroll is the default as of this release, so agents
         # that never set ``strategy`` are switched to it silently. The first
         # time we wire scroll in a workspace we create ``history.db`` there;

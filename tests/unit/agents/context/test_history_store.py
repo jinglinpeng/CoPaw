@@ -10,6 +10,8 @@ durability flag, and corruption quarantine.
 import asyncio
 import logging
 import sqlite3
+import threading
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 import pytest
@@ -50,6 +52,7 @@ def test_open_logs_startup_stage_breakdown(tmp_path: Path, caplog):
         and "connect=" in message
         and "quick_check=" in message
         and "schema=" in message
+        and "quick_check_status=performed" in message
         for message in messages
     )
     assert any(
@@ -57,6 +60,79 @@ def test_open_logs_startup_stage_breakdown(tmp_path: Path, caplog):
         and "ddl=" in message
         and "fts=" in message
         for message in messages
+    )
+
+
+def test_quick_check_runs_once_per_process_and_path(tmp_path: Path, caplog):
+    db_path = tmp_path / "shared.db"
+    with caplog.at_level(logging.INFO):
+        first = HistoryStore(db_path)
+        first.close()
+        second = HistoryStore(db_path)
+        second.close()
+
+    messages = [
+        record.getMessage()
+        for record in caplog.records
+        if "phase=history_store_open" in record.getMessage()
+    ]
+    assert (
+        sum("quick_check_status=performed" in message for message in messages)
+        == 1
+    )
+    assert (
+        sum("quick_check_status=cached" in message for message in messages)
+        == 1
+    )
+
+
+def test_concurrent_openers_share_one_quick_check(tmp_path: Path, monkeypatch):
+    db_path = tmp_path / "concurrent.db"
+    original = HistoryStore._run_quick_check
+    entered = threading.Event()
+    release = threading.Event()
+    calls = 0
+    calls_lock = threading.Lock()
+
+    def blocking_check(store):
+        nonlocal calls
+        with calls_lock:
+            calls += 1
+        entered.set()
+        assert release.wait(timeout=5)
+        original(store)
+
+    monkeypatch.setattr(HistoryStore, "_run_quick_check", blocking_check)
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        first_future = executor.submit(HistoryStore, db_path)
+        assert entered.wait(timeout=5)
+        second_future = executor.submit(HistoryStore, db_path)
+        release.set()
+        first = first_future.result(timeout=5)
+        second = second_future.result(timeout=5)
+
+    first.close()
+    second.close()
+    assert calls == 1
+
+
+def test_write_failure_invalidates_cached_quick_check(
+    tmp_path: Path,
+    caplog,
+):
+    db_path = tmp_path / "invalidated.db"
+    first = HistoryStore(db_path)
+    first.note_write_failure(sqlite3.DatabaseError("write failed"))
+    first.close()
+
+    caplog.clear()
+    with caplog.at_level(logging.INFO):
+        second = HistoryStore(db_path)
+    second.close()
+
+    assert any(
+        "quick_check_status=performed" in record.getMessage()
+        for record in caplog.records
     )
 
 
