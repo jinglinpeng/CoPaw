@@ -5,7 +5,7 @@
 
 web_search delegates to a pluggable search provider (Tavily by
 default, AnySearch when the per-agent Console config selects it).
-web_fetch uses direct HTTP GET + markdownify.
+web_fetch uses direct HTTP GET + html-to-markdown.
 """
 
 import logging
@@ -15,7 +15,7 @@ import ssl
 from urllib.parse import urlparse
 
 import httpx
-from markdownify import MarkdownConverter
+from html_to_markdown import ConversionOptions, convert
 
 from agentscope.message import TextBlock
 from agentscope.tool import ToolChunk
@@ -43,22 +43,6 @@ _FETCH_HEADERS = {
         "Chrome/120.0.0.0 Safari/537.36"
     ),
 }
-
-
-class _WebFetchMarkdownConverter(MarkdownConverter):
-    """Keep fetched page metadata and images out of the text."""
-
-    def convert_head(self, el, text, parent_tags):
-        del el, text, parent_tags
-        return ""
-
-    def convert_title(self, el, text, parent_tags):
-        del el, text, parent_tags
-        return ""
-
-    def convert_img(self, el, text, parent_tags):
-        del el, text, parent_tags
-        return ""
 
 
 def _is_ssl_error(exc: BaseException) -> bool:
@@ -126,16 +110,22 @@ def _extract_title(html_content: str) -> str:
 
 
 def _html_to_text(html_content: str) -> str:
-    """Convert HTML to readable markdown via markdownify.
+    """Convert HTML to readable markdown via html-to-markdown.
 
     Always prepends the <title> as a heading when present.
     """
     title = _extract_title(html_content)
-    body = _WebFetchMarkdownConverter(
-        heading_style="ATX",
-        bullets="-",
-        wrap=False,
-    ).convert(html_content).strip()
+    body = convert(
+        html_content,
+        ConversionOptions(
+            heading_style="atx",
+            bullets="-",
+            wrap=False,
+            skip_images=True,
+            extract_metadata=False,
+            exclude_selectors=["head", "title"],
+        ),
+    ).content.strip()
     if title and body:
         return f"# {title}\n\n{body}"
     if title:

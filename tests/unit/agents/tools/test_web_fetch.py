@@ -40,3 +40,38 @@ def test_html_to_text_preserves_unwrapped_paragraph_and_title_only() -> None:
 
     assert _html_to_text(f"<p>{paragraph}</p>") == paragraph
     assert _html_to_text("<title>Example page</title>") == "# Example page"
+
+
+def test_html_to_text_preserves_tables_and_nested_lists() -> None:
+    html = """
+    <table><tr><th>Name</th><th>Value</th></tr>
+    <tr><td>Alpha</td><td>42</td></tr></table>
+    <ol start="3"><li>parent<ul><li>child</li></ul></li>
+    <li>next</li></ol>
+    """
+
+    text = _html_to_text(html)
+
+    assert "| Name" in text and "| Value" in text
+    assert "| Alpha" in text and "| 42" in text
+    assert "3. parent" in text
+    assert "- child" in text
+    assert "4. next" in text
+
+
+def test_html_to_text_keeps_literal_fences_inside_code() -> None:
+    html = "<pre><code>before\n```\nafter</code></pre>"
+
+    assert _html_to_text(html) == "````\nbefore\n```\nafter\n````"
+
+
+def test_html_to_text_preserves_link_destinations() -> None:
+    assert _html_to_text('<a href="/a)b">click</a>') == r"[click](/a\)b)"
+    text = _html_to_text('<a href="/safe">](https://evil.example)</a>')
+    assert text == r"[\](https://evil.example)](/safe)"
+
+
+def test_html_to_text_keeps_content_from_malformed_html() -> None:
+    text = _html_to_text("<h2>Broken<p>first<li>second</ul><p>tail")
+
+    assert all(part in text for part in ("Broken", "first", "second", "tail"))
