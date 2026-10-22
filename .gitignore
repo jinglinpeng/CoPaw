@@ -9,6 +9,9 @@
 # AI agent / copilot local config
 .aone_copilot/
 .agents/
+.qwen/
+qwen-artifacts/
+gha-creds-*.json
 
 # dependencies
 /.pnp
