@@ -160,6 +160,8 @@ irm https://qwenpaw.agentscope.io/install.ps1 | iex
 安装完成后，请打开新终端并运行：
 
 ```bash
+qwenpaw --version        # 确认安装版本
+qwenpaw --help           # 查看命令帮助
 qwenpaw init --defaults   # 或：qwenpaw init（交互式）
 qwenpaw app
 ```
