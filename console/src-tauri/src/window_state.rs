@@ -190,19 +190,25 @@ impl WindowState {
 
         // Normalize while hidden so the normal (non-maximized) bounds can be read.
         let _ = window.hide();
-        let mut normalized = true;
-        if fullscreen {
+        // AppKit fullscreen transitions are asynchronous. There is no public
+        // Tauri normal-bounds getter for that transition; preserve the previous
+        // ordinary snapshot rather than saving the fullscreen/animation frame.
+        let mut normalized = !(cfg!(target_os = "macos") && fullscreen);
+        if normalized && fullscreen {
             normalized &= window.set_fullscreen(false).is_ok();
         }
-        if minimized {
+        if normalized && minimized {
             normalized &= window.unminimize().is_ok();
         }
-        if maximized {
+        if normalized && maximized {
             normalized &= window.unmaximize().is_ok();
         }
+        normalized &= matches!(window.is_fullscreen(), Ok(false))
+            && matches!(window.is_minimized(), Ok(false))
+            && matches!(window.is_maximized(), Ok(false));
 
         // Do not overwrite a previous normal snapshot with fullscreen/maximized
-        // bounds if the native transition failed.
+        // bounds if the native transition failed or has not completed.
         let position = normalized.then(|| window.outer_position().ok()).flatten();
         let size = normalized.then(|| window.inner_size().ok()).flatten();
 
