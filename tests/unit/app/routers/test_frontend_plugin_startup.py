@@ -25,6 +25,7 @@ async def test_starting_loader_does_not_report_empty_success():
     with pytest.raises(HTTPException) as exc:
         await list_frontend_plugins(request)
     assert exc.value.status_code == 503
+    assert exc.value.detail["code"] == "FRONTEND_PLUGINS_STARTING"
     loader.get_all_loaded_plugins.assert_not_called()
 
 
@@ -74,3 +75,21 @@ async def test_completed_empty_installation_is_valid():
         ),
     )
     assert await list_frontend_plugins(request) == []
+
+
+@pytest.mark.asyncio
+async def test_failed_startup_is_distinct_from_waiting():
+    ready = asyncio.Event()
+    ready.set()
+    request = SimpleNamespace(
+        app=SimpleNamespace(
+            state=SimpleNamespace(
+                frontend_plugins_ready=ready,
+                frontend_plugins_startup_failed=True,
+            ),
+        ),
+    )
+    with pytest.raises(HTTPException) as exc:
+        await list_frontend_plugins(request)
+    assert exc.value.status_code == 503
+    assert exc.value.detail["code"] == "FRONTEND_PLUGINS_FAILED"

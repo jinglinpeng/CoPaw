@@ -458,6 +458,7 @@ async def lifespan(  # pylint: disable=too-many-statements,too-many-branches
 
     app.state.startup_ready = asyncio.Event()
     app.state.frontend_plugins_ready = asyncio.Event()
+    app.state.frontend_plugins_startup_failed = False
     app.state.market_ready = asyncio.Event()
     app.state.market_startup_failed = False
     app.state.startup_time = startup_start_time
@@ -732,6 +733,9 @@ async def lifespan(  # pylint: disable=too-many-statements,too-many-branches
                 exc_info=True,
             )
         finally:
+            if not app.state.frontend_plugins_ready.is_set():
+                app.state.frontend_plugins_startup_failed = True
+                app.state.frontend_plugins_ready.set()
             if not app.state.market_ready.is_set():
                 app.state.market_startup_failed = True
                 app.state.market_ready.set()
