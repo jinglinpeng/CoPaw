@@ -264,8 +264,18 @@ async def create_channel_service(
         return None
 
     from ...config import Config, load_config, update_last_dispatch
-    from ..channels.manager import ChannelManager
     from ..channels.access_control import init_access_control_store
+
+    def load_channel_manager():
+        from ..channels.manager import ChannelManager
+        from ..channels.registry import get_channel_registry
+
+        # A cold/frozen import can block on filesystem or antivirus I/O.
+        # Warm the registry off-loop before from_config reads its cache.
+        get_channel_registry()
+        return ChannelManager
+
+    ChannelManager = await run_sync_io(load_channel_manager)
 
     init_access_control_store(ws.workspace_dir)
 
