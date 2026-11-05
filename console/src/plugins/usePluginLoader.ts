@@ -27,14 +27,33 @@ function resolveUrl(pluginId: string, apiPath: string): string {
   return getApiUrl(`frontend_plugin/${pluginId}/files/${apiPath}`);
 }
 
-async function fetchFrontendPlugins(): Promise<FrontendPluginInfo[]> {
-  const response = await fetch(getApiUrl("/frontend_plugin"), {
-    headers: authHeaders(),
-  });
-  if (!response.ok) {
-    throw new Error(`Failed to list frontend plugins (${response.status})`);
+// Retry only the initial list request, before any plugin code can register.
+const STARTUP_RETRY_DELAYS_MS = [1000, 2000, 4000, 8000];
+
+async function fetchFrontendPlugins(
+  retryDelays: number[] = [],
+): Promise<FrontendPluginInfo[]> {
+  for (let attempt = 0; ; attempt++) {
+    let retryable = false;
+    try {
+      const response = await fetch(getApiUrl("/frontend_plugin"), {
+        headers: authHeaders(),
+      });
+      retryable = response.status === 404 || response.status >= 500;
+      if (!response.ok) {
+        throw new Error(`Failed to list frontend plugins (${response.status})`);
+      }
+      return await response.json();
+    } catch (error) {
+      if (
+        attempt >= retryDelays.length ||
+        (!retryable && !(error instanceof TypeError))
+      ) {
+        throw error;
+      }
+      await new Promise((resolve) => setTimeout(resolve, retryDelays[attempt]));
+    }
   }
-  return response.json();
 }
 
 async function executePluginScript(entryUrl: string): Promise<void> {
@@ -55,13 +74,7 @@ async function executePluginScript(entryUrl: string): Promise<void> {
 
 /** Load every installed frontend plugin during Console startup. */
 export async function loadAllPlugins(): Promise<PluginLoadSummary> {
-  let plugins: FrontendPluginInfo[];
-  try {
-    plugins = await fetchFrontendPlugins();
-  } catch (error) {
-    console.warn("[PluginLoader] failed to fetch plugin list:", error);
-    return { loaded: 0, failed: [] };
-  }
+  const plugins = await fetchFrontendPlugins(STARTUP_RETRY_DELAYS_MS);
 
   const loadable = plugins.filter((plugin) => plugin.frontend_entry);
   const results = await Promise.allSettled(

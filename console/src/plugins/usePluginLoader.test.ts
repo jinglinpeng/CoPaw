@@ -40,6 +40,7 @@ describe("frontend plugin loader", () => {
   });
 
   afterEach(() => {
+    vi.useRealTimers();
     URL.createObjectURL = originalCreateObjectUrl;
     URL.revokeObjectURL = originalRevokeObjectUrl;
     delete (globalThis as typeof globalThis & { __registerNotes?: () => void })
@@ -62,6 +63,78 @@ describe("frontend plugin loader", () => {
       failed: [],
     });
     expect(fetchMock).toHaveBeenCalledTimes(3);
+  });
+
+  it.each([404, 503])(
+    "recovers from initial HTTP %s before executing plugin code once",
+    async (status) => {
+      vi.useFakeTimers();
+      const fetchMock = vi.spyOn(globalThis, "fetch");
+      fetchMock
+        .mockResolvedValueOnce(new Response("not ready", { status }))
+        .mockResolvedValueOnce(jsonResponse([plugin("notes", "app")]))
+        .mockResolvedValueOnce(new Response("export default true"));
+      const result = loadAllPlugins();
+      await vi.advanceTimersByTimeAsync(1000);
+      await expect(result).resolves.toEqual({ loaded: 1, failed: [] });
+      expect(fetchMock).toHaveBeenCalledTimes(3);
+      expect(URL.createObjectURL).toHaveBeenCalledTimes(1);
+    },
+  );
+
+  it("recovers after a connection failure", async () => {
+    vi.useFakeTimers();
+    const fetchMock = vi.spyOn(globalThis, "fetch");
+    fetchMock
+      .mockRejectedValueOnce(new TypeError("Failed to fetch"))
+      .mockResolvedValueOnce(jsonResponse([]));
+    const result = loadAllPlugins();
+    await vi.advanceTimersByTimeAsync(1000);
+    await expect(result).resolves.toEqual({ loaded: 0, failed: [] });
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
+  it("reports a persistent list failure after bounded retries", async () => {
+    vi.useFakeTimers();
+    const fetchMock = vi
+      .spyOn(globalThis, "fetch")
+      .mockImplementation(
+        async () => new Response("not ready", { status: 503 }),
+      );
+    const result = loadAllPlugins().catch((error: unknown) => error);
+    await vi.advanceTimersByTimeAsync(15000);
+    expect(await result).toEqual(
+      new Error("Failed to list frontend plugins (503)"),
+    );
+    expect(fetchMock).toHaveBeenCalledTimes(5);
+    expect(URL.createObjectURL).not.toHaveBeenCalled();
+  });
+
+  it.each([401, 403])(
+    "does not retry authentication failure %s",
+    async (status) => {
+      const fetchMock = vi
+        .spyOn(globalThis, "fetch")
+        .mockResolvedValue(new Response("denied", { status }));
+      await expect(loadAllPlugins()).rejects.toThrow(`(${status})`);
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+    },
+  );
+
+  it("does not rerun successful plugins when another entry fails", async () => {
+    const fetchMock = vi.spyOn(globalThis, "fetch");
+    fetchMock
+      .mockResolvedValueOnce(
+        jsonResponse([plugin("notes", "app"), plugin("broken", "frontend")]),
+      )
+      .mockResolvedValueOnce(new Response("export default true"))
+      .mockResolvedValueOnce(new Response("not ready", { status: 503 }));
+    const result = await loadAllPlugins();
+    expect(result.loaded).toBe(1);
+    expect(result.failed).toHaveLength(1);
+    expect(result.failed[0]).toContain("broken: Error: HTTP 503");
+    expect(fetchMock).toHaveBeenCalledTimes(3);
+    expect(URL.createObjectURL).toHaveBeenCalledTimes(1);
   });
 
   it("loads a newly installed PawApp and exposes its route immediately", async () => {
