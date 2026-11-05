@@ -3,10 +3,12 @@ import React from "react";
 import { IconButton } from "@agentscope-ai/design";
 import { useTranslation } from "react-i18next";
 import { Flex, Tooltip, message } from "antd";
-import { Files, Terminal } from "lucide-react";
+import { Files, Terminal, LockKeyhole, ArrowDownToLine } from "lucide-react";
 import styles from "./ChatActionGroup.module.less";
 
 interface ChatActionGroupProps {
+  scrollLocked?: boolean;
+  onToggleScrollLock?: () => void;
   onToggleTerminal?: () => void;
   terminalOpen?: boolean;
   terminalEnabled?: boolean;
@@ -16,6 +18,8 @@ interface ChatActionGroupProps {
 }
 
 const ChatActionGroup: React.FC<ChatActionGroupProps> = ({
+  scrollLocked = false,
+  onToggleScrollLock,
   onToggleTerminal,
   terminalOpen = false,
   terminalEnabled = false,
@@ -27,6 +31,40 @@ const ChatActionGroup: React.FC<ChatActionGroupProps> = ({
 
   return (
     <Flex className={styles.actionGroup} gap={8} align="center">
+      {onToggleScrollLock && (
+        <Tooltip
+          title={t(
+            scrollLocked
+              ? "chat.followScrollTooltip"
+              : "chat.lockScrollTooltip",
+          )}
+        >
+          <IconButton
+            className={styles.workspaceButton}
+            bordered={false}
+            aria-label={t(
+              scrollLocked
+                ? "chat.followScrollTooltip"
+                : "chat.lockScrollTooltip",
+            )}
+            aria-pressed={scrollLocked}
+            icon={
+              scrollLocked ? (
+                <LockKeyhole size={17} />
+              ) : (
+                <ArrowDownToLine size={17} />
+              )
+            }
+            style={{
+              width: 32,
+              height: 32,
+              padding: 0,
+              ...(scrollLocked ? { color: "var(--app-accent)" } : {}),
+            }}
+            onClick={onToggleScrollLock}
+          />
+        </Tooltip>
+      )}
       {onToggleTerminal && (
         <Tooltip title={t("terminal.title")} mouseEnterDelay={0.5}>
           <IconButton

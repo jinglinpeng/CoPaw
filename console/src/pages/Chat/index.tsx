@@ -192,7 +192,10 @@ import { useCodingTabsStore } from "../../stores/codingTabsStore";
 import { RichFileReferenceInputProvider } from "./RichFileReferenceInput";
 import { LongTextPasteInput, LongTextPasteProvider } from "./LongTextPaste";
 import type { ParsedFileReference } from "./fileReferenceFormatting";
-import { scrollReverseMessageList } from "./messageScroll";
+import {
+  installMessageScrollLock,
+  scrollReverseMessageList,
+} from "./messageScroll";
 import { LONG_CHAT_USER_MESSAGE_ANCHORS } from "./longChatPerformance";
 import { isApprovalInCurrentScope } from "./approvalScope";
 import { buildSubmissionBizParams } from "./submissionBizParams";
@@ -3533,6 +3536,25 @@ export default function ChatPage() {
 
   const compactSender = filesDrawerState.kind === "workspace";
   const chatMessagesAreaRef = useRef<HTMLDivElement>(null);
+  const [scrollLocked, setScrollLocked] = useState(false);
+  const toggleScrollLock = useCallback(() => {
+    setScrollLocked(!scrollLocked);
+    if (scrollLocked) {
+      // Wait for the lock effect cleanup before explicitly following again.
+      requestAnimationFrame(() => {
+        const scroller =
+          chatMessagesAreaRef.current?.querySelector<HTMLElement>(
+            '[class*="chat-anywhere-message-list-bubble-scroll"]',
+          );
+        if (scroller) scroller.scrollTop = 0;
+      });
+    }
+  }, [scrollLocked]);
+
+  useEffect(() => {
+    const root = chatMessagesAreaRef.current;
+    if (root && scrollLocked) return installMessageScrollLock(root);
+  }, [scrollLocked, chatId]);
 
   useEffect(() => {
     const root = chatMessagesAreaRef.current;
@@ -4031,6 +4053,8 @@ export default function ChatPage() {
             <ChatHeaderTitle />
             <span className={styles.headerSpacer} />
             <ChatActionGroup
+              scrollLocked={scrollLocked}
+              onToggleScrollLock={toggleScrollLock}
               onToggleTerminal={toggleTerminal}
               terminalEnabled={terminalEnabled}
               terminalDisabledReason={terminalDisabledReason}
@@ -4579,6 +4603,8 @@ export default function ChatPage() {
     terminalEnabled,
     terminalDisabledReason,
     toggleTerminal,
+    scrollLocked,
+    toggleScrollLock,
     isOwner,
     bgTaskCount,
     bgBackendSessionId,

@@ -4289,6 +4289,8 @@
     "modelSelectTooltip": "Select model",
     "newTask": "New task",
     "newChat": "New chat",
+    "lockScrollTooltip": "Lock auto-scroll",
+    "followScrollTooltip": "Resume following latest messages",
     "chatHistoryTooltip": "Chat history",
     "messageDisplay": {
       "stepsRunning": "Running… · {{count}} steps",

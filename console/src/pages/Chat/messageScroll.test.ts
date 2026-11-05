@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   getNextReverseScrollTop,
+  installMessageScrollLock,
   scrollReverseMessageList,
 } from "./messageScroll";
 
@@ -110,5 +111,42 @@ describe("scrollReverseMessageList", () => {
 
     expect(scrollReverseMessageList(root, outside, 100, 0)).toBe(false);
     expect(scroller.scrollTop).toBe(-420);
+  });
+});
+
+describe("explicit message scroll lock", () => {
+  it("restores the same visible message after SDK scrolling and releases on cleanup", async () => {
+    const root = document.createElement("div");
+    const scroller = document.createElement("div");
+    scroller.className =
+      "chat-anywhere-message-list-bubble-scroll bubble-list-order-desc";
+    const message = document.createElement("div");
+    message.className = "qwenpaw-bubble-content-wrapper";
+    root.append(scroller);
+    scroller.append(message);
+    document.body.append(root);
+    scroller.scrollTop = -700;
+    vi.spyOn(scroller, "getBoundingClientRect").mockReturnValue({
+      top: 0,
+      bottom: 500,
+    } as DOMRect);
+    vi.spyOn(message, "getBoundingClientRect").mockImplementation(
+      () =>
+        ({
+          top: -700 - scroller.scrollTop,
+          bottom: 300 - scroller.scrollTop,
+        }) as DOMRect,
+    );
+    const cleanup = installMessageScrollLock(root);
+    scroller.scrollTop = 0;
+    scroller.dispatchEvent(new Event("scroll"));
+    await new Promise((resolve) => setTimeout(resolve, 40));
+    expect(scroller.scrollTop).toBe(-700);
+    cleanup();
+    scroller.scrollTop = 0;
+    scroller.dispatchEvent(new Event("scroll"));
+    await new Promise((resolve) => setTimeout(resolve, 40));
+    expect(scroller.scrollTop).toBe(0);
+    root.remove();
   });
 });

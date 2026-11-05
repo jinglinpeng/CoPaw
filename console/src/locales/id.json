@@ -1179,6 +1179,8 @@
       "codeSnippet": "Cuplikan kode · {{count}} baris"
     },
     "modelSelectTooltip": "Pilih model",
+    "lockScrollTooltip": "Kunci gulir otomatis",
+    "followScrollTooltip": "Lanjutkan mengikuti pesan terbaru",
     "chatHistoryTooltip": "Riwayat chat",
     "messageDisplay": {
       "stepsRunning": "Berjalan… · {{count}} langkah",

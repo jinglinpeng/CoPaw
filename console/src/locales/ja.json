@@ -3384,6 +3384,8 @@
       "codeSnippet": "コードスニペット · {{count}} 行"
     },
     "modelSelectTooltip": "モデルを選択",
+    "lockScrollTooltip": "自動スクロールをロック",
+    "followScrollTooltip": "最新メッセージへの追従を再開",
     "chatHistoryTooltip": "チャット履歴",
     "messageDisplay": {
       "stepsRunning": "実行中… · {{count}} ステップ",

@@ -5,6 +5,19 @@ import { renderWithProviders } from "@/test/common_setup";
 import ChatActionGroup from "./index";
 
 describe("ChatActionGroup", () => {
+  it("offers an explicit accessible follow toggle", () => {
+    const toggle = vi.fn();
+    renderWithProviders(
+      <ChatActionGroup scrollLocked onToggleScrollLock={toggle} />,
+    );
+    const button = screen.getByRole("button", {
+      name: "chat.followScrollTooltip",
+    });
+    expect(button).toHaveAttribute("aria-pressed", "true");
+    fireEvent.click(button);
+    expect(toggle).toHaveBeenCalledOnce();
+  });
+
   it("renders without crash", () => {
     expect(() => renderWithProviders(<ChatActionGroup />)).not.toThrow();
   });

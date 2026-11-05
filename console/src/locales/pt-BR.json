@@ -3638,6 +3638,8 @@
       "codeSnippet": "Trecho de código · {{count}} linhas"
     },
     "modelSelectTooltip": "Selecionar Modelo",
+    "lockScrollTooltip": "Bloquear rolagem automática",
+    "followScrollTooltip": "Voltar a acompanhar as mensagens mais recentes",
     "chatHistoryTooltip": "Chat history",
     "messageDisplay": {
       "stepsRunning": "Em execução… · {{count}} etapas",

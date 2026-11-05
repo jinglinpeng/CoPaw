@@ -1195,6 +1195,8 @@
       "codeSnippet": "Đoạn mã · {{count}} dòng"
     },
     "modelSelectTooltip": "Chọn mô hình",
+    "lockScrollTooltip": "Khóa tự động cuộn",
+    "followScrollTooltip": "Tiếp tục theo dõi tin nhắn mới nhất",
     "chatHistoryTooltip": "Lịch sử trò chuyện",
     "messageDisplay": {
       "stepsRunning": "Đang chạy… · {{count}} bước",

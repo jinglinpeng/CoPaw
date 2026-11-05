@@ -3401,6 +3401,8 @@
       "codeSnippet": "Фрагмент кода · {{count}} строк"
     },
     "modelSelectTooltip": "Выбор модели",
+    "lockScrollTooltip": "Заблокировать автопрокрутку",
+    "followScrollTooltip": "Следовать за новыми сообщениями",
     "chatHistoryTooltip": "История чатов",
     "messageDisplay": {
       "stepsRunning": "Выполняется… · шагов: {{count}}",

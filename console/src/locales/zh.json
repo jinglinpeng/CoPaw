@@ -4144,6 +4144,8 @@
     "modelSelectTooltip": "模型选择",
     "newTask": "新建任务",
     "newChat": "新对话",
+    "lockScrollTooltip": "锁定自动滚动",
+    "followScrollTooltip": "恢复跟随最新消息",
     "chatHistoryTooltip": "聊天历史",
     "messageDisplay": {
       "stepsRunning": "正在执行中… · {{count}} 个步骤",
