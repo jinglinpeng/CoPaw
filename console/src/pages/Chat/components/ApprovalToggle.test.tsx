@@ -104,6 +104,43 @@ describe("compact approval controls", () => {
     expect(trigger?.querySelectorAll("svg")).toHaveLength(1);
   });
 
+  it.each(["native", "harness"])(
+    "keeps %s approval mounted when browser translation wraps the label",
+    (kind) => {
+      const control = (compact: boolean) =>
+        kind === "native" ? (
+          <ApprovalLevelToggle
+            sessionId="dom-wrapper"
+            runningConfigApprovalLevel="AUTO"
+            compact={compact}
+          />
+        ) : (
+          <HarnessApprovalToggle
+            backend="codex"
+            sessionId="dom-wrapper"
+            onChange={vi.fn()}
+            presets={[
+              { id: "auto", name: "Automatic", description: "", settings: {} },
+            ]}
+            compact={compact}
+          />
+        );
+      const view = renderWithProviders(control(false));
+      const trigger = view.container.querySelector("button")!;
+      const walker = document.createTreeWalker(trigger, NodeFilter.SHOW_TEXT);
+      const label = walker.nextNode()!;
+      const wrapper = document.createElement("font");
+      label.parentNode!.replaceChild(wrapper, label);
+      wrapper.appendChild(label);
+
+      // React must remove its own host element, not the re-parented text.
+      view.rerender(control(true));
+      expect(trigger.textContent).toBe("");
+      view.rerender(control(false));
+      expect(trigger.textContent).not.toBe("");
+    },
+  );
+
   it("uses a bottom drawer for QwenPaw approval on mobile", async () => {
     mockUseIsMobile.mockReturnValue(true);
     const user = userEvent.setup();
