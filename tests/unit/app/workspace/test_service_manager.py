@@ -316,6 +316,126 @@ async def test_workspace_cleans_up_after_partial_start_failure(workspace):
 
 
 @pytest.mark.asyncio
+async def test_channel_import_keeps_loop_responsive_and_constructor_on_loop(
+    monkeypatch,
+    tmp_path,
+):
+    from qwenpaw.app.channels import registry
+    from qwenpaw.app.channels.manager import ChannelManager
+    from qwenpaw.app.workspace.service_factories import create_channel_service
+    from qwenpaw.config.config import ChannelConfig
+
+    loop = asyncio.get_running_loop()
+    release = threading.Event()
+    import_threads = []
+    constructor_loops = []
+    original_registry = registry._load_builtin_channels
+    original_constructor = ChannelManager.from_config
+
+    def slow_registry():
+        import_threads.append(threading.current_thread())
+        assert release.wait(2)
+        return original_registry()
+
+    def loop_sensitive_constructor(*args, **kwargs):
+        constructor_loops.append(asyncio.get_running_loop())
+        return original_constructor(*args, **kwargs)
+
+    registry.clear_builtin_channel_cache()
+    monkeypatch.setattr(registry, "_load_builtin_channels", slow_registry)
+    monkeypatch.setattr(
+        ChannelManager,
+        "from_config",
+        loop_sensitive_constructor,
+    )
+    instance = SimpleNamespace(
+        agent_id="default",
+        workspace_dir=tmp_path,
+        _config=SimpleNamespace(channels=ChannelConfig(), language="en"),
+        stream_query=lambda *args, **kwargs: None,
+    )
+    published = []
+    # The loop must release this gate while initialization is still pending.
+    # A watchdog prevents a broken implementation from hanging the suite.
+    fallback = threading.Timer(1, release.set)
+    fallback.start()
+    timer = loop.call_later(0.02, release.set)
+    try:
+        service = await create_channel_service(
+            instance,
+            None,
+            published.append,
+        )
+    finally:
+        timer.cancel()
+        fallback.cancel()
+        release.set()
+
+    assert import_threads
+    assert all(t is not threading.main_thread() for t in import_threads)
+    assert constructor_loops == [loop]
+    assert published == [service]
+    assert service._workspace is instance
+    await service.stop_all()
+    registry.clear_builtin_channel_cache()
+
+
+@pytest.mark.asyncio
+async def test_cancelling_channel_preload_does_not_construct_or_publish(
+    monkeypatch,
+    tmp_path,
+):
+    from qwenpaw.app.channels import registry
+    from qwenpaw.app.channels.manager import ChannelManager
+    from qwenpaw.app.workspace.service_factories import create_channel_service
+    from qwenpaw.config.config import ChannelConfig
+
+    entered = threading.Event()
+    release = threading.Event()
+    published = []
+    constructed = []
+
+    def slow_registry():
+        entered.set()
+        assert release.wait(3)
+        return {}
+
+    def unexpected_constructor(*args, **kwargs):
+        constructed.append(True)
+        pytest.fail("Cancelled preload constructed a channel manager")
+
+    registry.clear_builtin_channel_cache()
+    monkeypatch.setattr(registry, "_load_builtin_channels", slow_registry)
+    monkeypatch.setattr(
+        ChannelManager,
+        "from_config",
+        unexpected_constructor,
+    )
+    instance = SimpleNamespace(
+        agent_id="default",
+        workspace_dir=tmp_path,
+        _config=SimpleNamespace(channels=ChannelConfig()),
+    )
+    task = asyncio.create_task(
+        create_channel_service(instance, None, published.append),
+    )
+    try:
+        await asyncio.wait_for(_wait_for(entered), timeout=1)
+        task.cancel()
+        await asyncio.sleep(0)
+        assert not task.done()
+        assert not constructed
+        assert not published
+    finally:
+        release.set()
+    with pytest.raises(asyncio.CancelledError):
+        await task
+    assert not constructed
+    assert not published
+    registry.clear_builtin_channel_cache()
+
+
+@pytest.mark.asyncio
 async def test_concurrent_failure_cancels_sibling_before_cleanup(workspace):
     slow_entered = asyncio.Event()
     slow_cancelled = asyncio.Event()
