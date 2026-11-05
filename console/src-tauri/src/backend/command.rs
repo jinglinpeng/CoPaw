@@ -175,11 +175,25 @@ fn path_with_backend_dir(backend_dir: &Path) -> Result<String, String> {
     if let Some(existing) = std::env::var_os(path_env_key()) {
         paths.extend(std::env::split_paths(&existing));
     }
+    // Finder/Dock launches inherit launchd's minimal PATH. Keep inherited
+    // tools first, then allow both standard Homebrew prefixes as fallbacks.
+    #[cfg(target_os = "macos")]
+    append_macos_tool_paths(&mut paths);
 
     std::env::join_paths(paths)
         .map_err(|err| format!("failed to join backend PATH entries: {err}"))?
         .into_string()
         .map_err(|_| "backend PATH contains non-Unicode data".to_string())
+}
+
+#[cfg(any(test, all(not(debug_assertions), target_os = "macos")))]
+fn append_macos_tool_paths(paths: &mut Vec<PathBuf>) {
+    for directory in ["/opt/homebrew/bin", "/usr/local/bin"] {
+        let path = PathBuf::from(directory);
+        if !paths.contains(&path) {
+            paths.push(path);
+        }
+    }
 }
 
 #[cfg(all(not(debug_assertions), windows))]
@@ -237,5 +251,46 @@ fn python_command(repo_root: &Path) -> (String, Vec<&'static str>) {
         ("python3".to_string(), vec![])
     } else {
         ("python".to_string(), vec![])
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::append_macos_tool_paths;
+    use std::path::PathBuf;
+
+    #[test]
+    fn macos_tool_paths_follow_backend_and_inherited_paths() {
+        let mut paths = vec![
+            PathBuf::from("/app/backend"),
+            PathBuf::from("/custom/bin"),
+            PathBuf::from("/usr/bin"),
+        ];
+        append_macos_tool_paths(&mut paths);
+        assert_eq!(
+            paths,
+            vec![
+                PathBuf::from("/app/backend"),
+                PathBuf::from("/custom/bin"),
+                PathBuf::from("/usr/bin"),
+                PathBuf::from("/opt/homebrew/bin"),
+                PathBuf::from("/usr/local/bin"),
+            ]
+        );
+    }
+
+    #[test]
+    fn macos_tool_paths_keep_existing_homebrew_priority_without_duplicates() {
+        let mut paths = vec![PathBuf::from("/usr/local/bin"), PathBuf::from("/usr/bin")];
+        append_macos_tool_paths(&mut paths);
+        append_macos_tool_paths(&mut paths);
+        assert_eq!(
+            paths,
+            vec![
+                PathBuf::from("/usr/local/bin"),
+                PathBuf::from("/usr/bin"),
+                PathBuf::from("/opt/homebrew/bin"),
+            ]
+        );
     }
 }
