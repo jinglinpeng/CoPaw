@@ -457,6 +457,7 @@ async def lifespan(  # pylint: disable=too-many-statements,too-many-branches
     app.state.get_agent_by_id = _get_agent_by_id
 
     app.state.startup_ready = asyncio.Event()
+    app.state.frontend_plugins_ready = asyncio.Event()
     app.state.market_ready = asyncio.Event()
     app.state.market_startup_failed = False
     app.state.startup_time = startup_start_time
@@ -664,6 +665,7 @@ async def lifespan(  # pylint: disable=too-many-statements,too-many-branches
 
             logger.debug("Activating loaded plugins...")
             await plugin_loader.activate_all_loaded()
+            app.state.frontend_plugins_ready.set()
 
             # ---- Approval Service ----
             try:

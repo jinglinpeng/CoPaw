@@ -10,7 +10,7 @@ Only read operations are exposed here.  All plugin management operations
 require a valid Bearer token.
 """
 
-from fastapi import APIRouter, Request
+from fastapi import APIRouter, HTTPException, Request
 
 from .plugins import (
     _list_plugins_from_disk,
@@ -35,6 +35,12 @@ async def list_frontend_plugins(request: Request):
     Only fields required by the frontend loader are included.  Sensitive
     management data (install paths, etc.) is not exposed here.
     """
+    # The loader is published before the background phases finish. An empty
+    # or partial 200 response would make the Console permanently skip plugins.
+    ready = getattr(request.app.state, "frontend_plugins_ready", None)
+    if ready is not None and not ready.is_set():
+        raise HTTPException(503, "Frontend plugins are still initializing")
+
     loader = getattr(request.app.state, "plugin_loader", None)
 
     if loader is None:
