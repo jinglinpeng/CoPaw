@@ -154,6 +154,30 @@ def test_desktop_spec_collects_reme_entry_point_plugins():
     assert {"reme-ai", *plugin_distributions} <= _metadata_packages()
 
 
+def test_desktop_spec_distributes_python_modules_outside_executables():
+    tree = ast.parse(SPEC_PATH.read_text(encoding="utf-8"))
+    calls = {
+        node.func.id: node
+        for node in ast.walk(tree)
+        if isinstance(node, ast.Call)
+        and isinstance(node.func, ast.Name)
+        and node.func.id in {"Analysis", "COLLECT"}
+    }
+    options = {
+        option.arg: option.value for option in calls["Analysis"].keywords
+    }
+    assert ast.literal_eval(options["noarchive"]) is True
+    # External .pyc files are Analysis data, not a.binaries or a.pure. Omitting
+    # a.datas from the shared bundle would leave both executables unimportable.
+    assert any(
+        isinstance(arg, ast.Attribute)
+        and isinstance(arg.value, ast.Name)
+        and arg.value.id == "a"
+        and arg.attr == "datas"
+        for arg in calls["COLLECT"].args
+    )
+
+
 def test_executable_scripts_preserves_runtime_hooks_and_selected_entry(
     tmp_path,
 ):
