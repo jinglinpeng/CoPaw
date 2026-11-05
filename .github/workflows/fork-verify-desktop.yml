@@ -191,6 +191,22 @@ jobs:
           dashscope-api-key: ${{ inputs.run_real_llm && secrets.QWENPAW_DASHSCOPE_API_KEY || '' }}
           allow-flaky-llm: "true"
 
+      - name: Verify Windows window state across accepted exits (issue 8115)
+        timeout-minutes: 15
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          $desktop = Get-CimInstance Win32_Process |
+            Where-Object { $_.Name -eq "qwenpaw-desktop.exe" -and $_.CommandLine -notmatch "--agent-host" } |
+            Select-Object -First 1
+          if (-not $desktop) { throw "Installed desktop process is not running" }
+          python scripts/verify/windows_window_state_smoke.py `
+            --exe $desktop.ExecutablePath --pid $desktop.ProcessId `
+            --working-dir (Join-Path $env:USERPROFILE ".qwenpaw") `
+            --cdp-url "http://127.0.0.1:9222" `
+            --output (Join-Path $env:RUNNER_TEMP "qwenpaw-window-state-smoke")
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
       - name: Stop desktop server
         if: always()
         shell: pwsh
