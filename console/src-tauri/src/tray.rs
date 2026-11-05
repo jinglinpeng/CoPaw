@@ -353,15 +353,27 @@ pub(crate) fn exit_app(app: &tauri::AppHandle, code: i32) {
     {
         return;
     }
-    // Destroy the document and release this client without stopping shared work.
-    if let Some(window) = app.get_webview_window("main") {
-        if let Err(err) = window.destroy() {
-            log::warn!("[desktop] failed to destroy window: {err}");
-            let _ = window.hide();
-        }
-    }
     let app = app.clone();
     tauri::async_runtime::spawn(async move {
+        let handle = app.clone();
+        // Geometry capture may dispatch to the UI and wait for crash recovery.
+        // Never wait for that lifecycle lock on the main/UI thread. The close
+        // decision is already accepted; a pending prompt never reaches here.
+        let _ = tauri::async_runtime::spawn_blocking(move || {
+            let controller = handle.state::<crate::window_state::Controller>();
+            let _guard = controller.lock();
+            if let Err(error) = crate::window_state::save_on_exit(&handle) {
+                log::warn!("[desktop] could not save window geometry: {error}");
+            }
+            // Release only this client, without stopping shared work.
+            if let Some(window) = handle.get_webview_window("main") {
+                if let Err(error) = window.destroy() {
+                    log::warn!("[desktop] failed to destroy window: {error}");
+                    let _ = window.hide();
+                }
+            }
+        })
+        .await;
         backend::detach(&app);
         let handle = app.clone();
         let _ = tauri::async_runtime::spawn_blocking(move || {

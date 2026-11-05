@@ -15,6 +15,7 @@ mod macos_dev_bundle;
 mod runtime_env;
 mod tray;
 mod updates;
+mod window_state;
 #[cfg(windows)]
 mod webview_recovery;
 
@@ -91,9 +92,13 @@ pub fn run() {
         .manage(backend::BackendState::default())
         .manage(computer_use_runtime::ComputerUseRuntimeState::default())
         .manage(tray::TrayState::default())
+        .manage(window_state::Controller::default())
         .manage(notifications::NotificationState::default())
         .manage(notification_delivery::ActivationState::default())
         .setup(|app| {
+            if let Err(error) = window_state::restore_on_start(app.handle()) {
+                log::warn!("[desktop] could not restore window geometry: {error}");
+            }
             updates::coordination::setup(app.handle())?;
             backend::setup(app)?;
             tray::setup(app)?;

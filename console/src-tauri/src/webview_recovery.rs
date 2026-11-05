@@ -1,16 +1,13 @@
 use std::{
     sync::{
         atomic::{AtomicUsize, Ordering},
-        mpsc, Mutex,
+        mpsc,
     },
     thread,
     time::{Duration, Instant},
 };
 
-use tauri::{
-    utils::config::WindowConfig, AppHandle, Manager, PhysicalPosition, PhysicalSize, WebviewWindow,
-    WebviewWindowBuilder,
-};
+use tauri::{utils::config::WindowConfig, AppHandle, Manager, WebviewWindow, WebviewWindowBuilder};
 use webview2_com::{
     BrowserProcessExitedEventHandler,
     Microsoft::Web::WebView2::Win32::{
@@ -19,12 +16,13 @@ use webview2_com::{
 };
 use windows::core::Interface;
 
+use crate::window_state::{self, WindowState};
+
 const WEBVIEW_TIMEOUT: Duration = Duration::from_secs(5);
 const DESTROY_TIMEOUT: Duration = Duration::from_secs(2);
 const RETRY_DELAY: Duration = Duration::from_millis(250);
 const MAX_ATTEMPTS: usize = 3;
 
-static RECOVERY_LOCK: Mutex<()> = Mutex::new(());
 static ACTIVE_RECOVERIES: AtomicUsize = AtomicUsize::new(0);
 
 struct RecoveryGuard;
@@ -39,64 +37,6 @@ impl RecoveryGuard {
 impl Drop for RecoveryGuard {
     fn drop(&mut self) {
         ACTIVE_RECOVERIES.fetch_sub(1, Ordering::AcqRel);
-    }
-}
-
-#[derive(Clone, Copy)]
-struct WindowState {
-    visible: bool,
-    focused: bool,
-    minimized: bool,
-    maximized: bool,
-    fullscreen: bool,
-    position: Option<PhysicalPosition<i32>>,
-    size: Option<PhysicalSize<u32>>,
-}
-
-impl WindowState {
-    fn capture(window: &WebviewWindow, config: &WindowConfig) -> Self {
-        let visible = window.is_visible().unwrap_or(config.visible);
-        let focused = window.is_focused().unwrap_or(config.focus);
-        let minimized = window.is_minimized().unwrap_or(false);
-        let maximized = window.is_maximized().unwrap_or(config.maximized);
-        let fullscreen = window.is_fullscreen().unwrap_or(config.fullscreen);
-
-        // Normalize while hidden so the normal (non-maximized) bounds can be read.
-        let _ = window.hide();
-        if fullscreen {
-            let _ = window.set_fullscreen(false);
-        }
-        if minimized {
-            let _ = window.unminimize();
-        }
-        if maximized {
-            let _ = window.unmaximize();
-        }
-
-        let position = window.outer_position().ok();
-        let size = window.inner_size().ok();
-
-        Self {
-            visible,
-            focused,
-            minimized,
-            maximized,
-            fullscreen,
-            position,
-            size,
-        }
-    }
-
-    fn from_config(config: &WindowConfig) -> Self {
-        Self {
-            visible: config.visible,
-            focused: config.focus,
-            minimized: false,
-            maximized: config.maximized,
-            fullscreen: config.fullscreen,
-            position: None,
-            size: None,
-        }
     }
 }
 
@@ -179,9 +119,10 @@ fn schedule_recovery(app: AppHandle, label: String, process_id: u32) {
 
 fn recreate(app: &AppHandle, label: &str) -> Result<(), String> {
     let _active = RecoveryGuard::new();
-    let _guard = RECOVERY_LOCK
-        .lock()
-        .unwrap_or_else(|poisoned| poisoned.into_inner());
+    // Exit and crash recovery share ownership of the document snapshot. The
+    // exit worker waits here without blocking the UI dispatcher.
+    let controller = app.state::<window_state::Controller>();
+    let _guard = controller.lock();
     let config = app
         .config()
         .app
@@ -192,7 +133,11 @@ fn recreate(app: &AppHandle, label: &str) -> Result<(), String> {
         .ok_or_else(|| format!("window configuration not found: {label}"))?;
     let state = app
         .get_webview_window(label)
-        .map(|window| WindowState::capture(&window, &config))
+        .map(|window| {
+            let state = WindowState::capture(&window, &config);
+            window_state::remember(&window, state);
+            state
+        })
         .unwrap_or_else(|| WindowState::from_config(&config));
 
     let mut last_error = String::new();
@@ -244,7 +189,7 @@ fn recreate_window(
         return window.destroy().map_err(|err| err.to_string());
     }
     install(&window)?;
-    restore_state(&window, state)?;
+    window_state::restore_state(&window, state)?;
     Ok(())
 }
 
@@ -255,36 +200,6 @@ fn wait_until_destroyed(app: &AppHandle, label: &str) -> Result<(), String> {
             return Err(format!("timed out destroying window: {label}"));
         }
         thread::sleep(Duration::from_millis(10));
-    }
-    Ok(())
-}
-
-fn restore_state(window: &WebviewWindow, state: WindowState) -> Result<(), String> {
-    if let Some(position) = state.position {
-        window
-            .set_position(position)
-            .map_err(|err| err.to_string())?;
-    }
-    if let Some(size) = state.size {
-        window.set_size(size).map_err(|err| err.to_string())?;
-    }
-    if state.fullscreen {
-        window.set_fullscreen(true).map_err(|err| err.to_string())?;
-    } else if state.maximized {
-        window.maximize().map_err(|err| err.to_string())?;
-    }
-    if state.visible {
-        window.show().map_err(|err| err.to_string())?;
-        if state.minimized {
-            window.minimize().map_err(|err| err.to_string())?;
-        } else if state.focused {
-            window.set_focus().map_err(|err| err.to_string())?;
-        }
-    } else {
-        if state.minimized {
-            window.minimize().map_err(|err| err.to_string())?;
-        }
-        window.hide().map_err(|err| err.to_string())?;
     }
     Ok(())
 }
