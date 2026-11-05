@@ -2,10 +2,9 @@
 """
 PyInstaller spec file for QwenPaw Desktop (Tauri sidecar).
 
-Shared spec for both macOS and Windows. Builds an onedir backend bundle so the
-desktop startup can load Python directly without onefile extraction. The same
-bundle also includes a qwenpaw CLI executable for the Windows installer PATH
-option.
+Shared spec for both macOS and Windows. Builds an onedir backend bundle with
+external Python modules, avoiding repeated reads of a large executable during
+imports. Both the sidecar and CLI use the same collected module files.
 """
 
 import os
@@ -293,7 +292,11 @@ a = Analysis(
         "alibabacloud_dingtalk",
         *_external_channel_modules,
     ],
-    noarchive=False,
+    # onedir alone still embeds pure Python modules in each executable's PYZ.
+    # External bytecode keeps cold/AV-scanned imports from repeatedly opening
+    # the large executable. COLLECT must retain a.datas below: it now includes
+    # these module files as well as ordinary package resources.
+    noarchive=True,
 )
 
 pyz = PYZ(a.pure)
