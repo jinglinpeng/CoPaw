@@ -82,6 +82,8 @@ cd console
 npm ci
 echo "Generating Tauri icons..."
 npm exec -- tauri icon ../scripts/pack/assets/icon.svg
+echo "Generating the macOS bundle icon with transparent margins..."
+node ../scripts/pack/generate_macos_icon.mjs
 echo "Syncing Tauri version..."
 node ../scripts/pack-tauri/sync_tauri_version.mjs
 echo "Building console frontend..."
