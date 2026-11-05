@@ -39,7 +39,22 @@ async def list_frontend_plugins(request: Request):
     # or partial 200 response would make the Console permanently skip plugins.
     ready = getattr(request.app.state, "frontend_plugins_ready", None)
     if ready is not None and not ready.is_set():
-        raise HTTPException(503, "Frontend plugins are still initializing")
+        raise HTTPException(
+            503,
+            {
+                "code": "FRONTEND_PLUGINS_STARTING",
+                "message": "Frontend plugins are still initializing",
+            },
+            headers={"Retry-After": "1"},
+        )
+    if getattr(request.app.state, "frontend_plugins_startup_failed", False):
+        raise HTTPException(
+            503,
+            {
+                "code": "FRONTEND_PLUGINS_FAILED",
+                "message": "Frontend plugin startup failed; check the backend logs and retry after recovery",
+            },
+        )
 
     loader = getattr(request.app.state, "plugin_loader", None)
 
