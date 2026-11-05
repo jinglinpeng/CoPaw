@@ -745,6 +745,29 @@ with `--agent-id`.
 
 ---
 
+## Backups and system scheduling
+
+`qwenpaw backup create` creates a backup through a running QwenPaw server, waits for completion, and prints JSON metadata without prompts. The server must be running at the scheduled time. Archives stay in the server's configured backup directory (by default, the `.backups` directory beside its working directory), not the command's current directory.
+
+```bash
+qwenpaw backup create                         # Timestamped name by default
+qwenpaw backup create --name "Manual backup"
+qwenpaw backup create --agent default          # Repeat --agent to select agents
+qwenpaw --host 127.0.0.1 --port 8088 backup create
+```
+
+By default, all agent workspaces, global configuration, and the skill pool are included; the secrets directory is excluded. Use `--no-agents`, `--no-global-config`, or `--no-skill-pool` to exclude content, or `--include-secrets` to include secrets explicitly. `--agent` cannot be combined with `--no-agents`.
+
+For Linux cron, find the executable's absolute path with `command -v qwenpaw`, then use `crontab -e` to add a daily 02:00 job, replacing the example paths:
+
+```cron
+0 2 * * * /absolute/path/qwenpaw --host 127.0.0.1 --port 8088 backup create >> /absolute/path/qwenpaw-backup.log 2>&1
+```
+
+For a custom working directory, set the same `QWENPAW_WORKING_DIR` as the server in the scheduled environment. On macOS, configure the same command with launchd `ProgramArguments` and `StartCalendarInterval`. On Windows, configure `qwenpaw.exe` and the same arguments in Task Scheduler with a daily trigger. Scheduling belongs to the operating system; this command does not add an in-app backup scheduler.
+
+Failures and concurrent backup/restore conflicts return a nonzero exit status. `--timeout` defaults to 3600 seconds and can be increased for larger backups. A wait timeout prints the job ID but does not cancel the server job; check its result in the Console before retrying. Historical archives are not automatically removed; manage backup storage in the Console as needed.
+
 ## Maintenance
 
 ### qwenpaw clean
@@ -818,6 +841,7 @@ See [Config & Working Directory](./config) and [Multi-Agent](./multi-agent) for 
 | `qwenpaw env`       | `list` · `set` · `delete`                                                            |        No        |
 | `qwenpaw channels`  | `list` · `send` · `install` · `add` · `remove` · `config`                            |     **Yes**      |
 | `qwenpaw agents`    | `list` · `create` · `delete` · `chat`                                                |    Partial ¹     |
+| `qwenpaw backup`    | `create` | **Yes** |
 | `qwenpaw cron`      | `list` · `get` · `state` · `create` · `delete` · `pause` · `resume` · `run`          |     **Yes**      |
 | `qwenpaw chats`     | `list` · `get` · `create` · `update` · `delete`                                      |     **Yes**      |
 | `qwenpaw skills`    | `install` · `uninstall` · `list` · `config` · `enable` · `disable` · `info` · `test` |        No        |

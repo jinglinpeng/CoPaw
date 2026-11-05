@@ -724,6 +724,29 @@ qwenpaw skills test ./my_skill --workspace /path/to/workspace --json
 
 ---
 
+## 备份与系统定时任务
+
+`qwenpaw backup create` 通过正在运行的 QwenPaw 服务创建备份，等待完成后输出 JSON 元数据，适合无需交互的系统定时任务。服务必须在计划执行时运行；归档保存在服务配置的备份目录中（默认是工作目录旁的 `.backups` 目录），而不是命令当前目录。
+
+```bash
+qwenpaw backup create                         # 默认名称包含当前时间
+qwenpaw backup create --name "手动备份"
+qwenpaw backup create --agent default          # 可重复 --agent 选择多个智能体
+qwenpaw --host 127.0.0.1 --port 8088 backup create
+```
+
+默认包含全部智能体工作区、全局配置和技能池，不包含 secrets 目录。可使用 `--no-agents`、`--no-global-config`、`--no-skill-pool` 排除内容，或用 `--include-secrets` 显式包含 secrets。`--agent` 与 `--no-agents` 不能同时使用。
+
+Linux 的 cron 示例：每天凌晨 02:00 执行。用 `command -v qwenpaw` 确定可执行文件的绝对路径，再通过 `crontab -e` 添加以下条目，并替换示例路径：
+
+```cron
+0 2 * * * /absolute/path/qwenpaw --host 127.0.0.1 --port 8088 backup create >> /absolute/path/qwenpaw-backup.log 2>&1
+```
+
+如果使用自定义工作目录，定时任务应设置与服务相同的 `QWENPAW_WORKING_DIR`。macOS 可在 launchd 中以 `ProgramArguments` 配置相同命令并设置 `StartCalendarInterval`；Windows 可在任务计划程序中配置 `qwenpaw.exe` 与相同参数，每天触发。这里的定时由操作系统负责，QwenPaw 不新增内置备份调度设置。
+
+创建失败或已有备份／恢复操作正在运行时，命令以非零状态退出。`--timeout` 默认等待 3600 秒，可按备份规模调整；等待超时会输出 job ID，但不会取消服务器上的备份。可在控制台检查结果后再决定是否重试，避免重复创建。此命令不自动清理历史归档，按需在控制台管理备份占用。
+
 ## 维护
 
 ### qwenpaw clean
@@ -797,6 +820,7 @@ qwenpaw --host 0.0.0.0 --port 9090 cron list
 | `qwenpaw env`       | `list` · `set` · `delete`                                                            |        否         |
 | `qwenpaw channels`  | `list` · `send` · `install` · `add` · `remove` · `config`                            |      **是**       |
 | `qwenpaw agents`    | `list` · `create` · `delete` · `chat`                                                |    部分需要 ¹     |
+| `qwenpaw backup`    | `create` | **是** |
 | `qwenpaw cron`      | `list` · `get` · `state` · `create` · `delete` · `pause` · `resume` · `run`          |      **是**       |
 | `qwenpaw chats`     | `list` · `get` · `create` · `update` · `delete`                                      |      **是**       |
 | `qwenpaw skills`    | `install` · `uninstall` · `list` · `config` · `enable` · `disable` · `info` · `test` |        否         |
