@@ -24,6 +24,11 @@ on:
           - 'tauri-only'
           - 'macos-only'
           - 'windows-only'
+      run_real_llm:
+        description: 'Run paid DashScope LLM verification (requires API key)'
+        required: false
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -98,7 +103,7 @@ jobs:
         timeout-minutes: 10
         uses: ./.github/actions/verify-tauri-macos
         with:
-          dashscope-api-key: ${{ secrets.QWENPAW_DASHSCOPE_API_KEY }}
+          dashscope-api-key: ${{ inputs.run_real_llm && secrets.QWENPAW_DASHSCOPE_API_KEY || '' }}
           allow-flaky-llm: "true"
 
       - name: Stop desktop server
@@ -183,7 +188,7 @@ jobs:
         timeout-minutes: 10
         uses: ./.github/actions/verify-tauri-windows
         with:
-          dashscope-api-key: ${{ secrets.QWENPAW_DASHSCOPE_API_KEY }}
+          dashscope-api-key: ${{ inputs.run_real_llm && secrets.QWENPAW_DASHSCOPE_API_KEY || '' }}
           allow-flaky-llm: "true"
 
       - name: Stop desktop server
