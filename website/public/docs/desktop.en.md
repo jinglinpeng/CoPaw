@@ -246,8 +246,6 @@ A: Currently using:
 
 ### Installation Steps
 
-**Option 1 — Debian package (recommended)**
-
 1. Download `QwenPaw-Tauri-<version>-linux-x86_64.deb` from the [Release page][releases]
 2. Install it with apt so dependencies resolve automatically:
 
@@ -256,18 +254,6 @@ A: Currently using:
    ```
 
 3. Launch **QwenPaw Desktop** from the application grid, or run `qwenpaw-desktop`
-
-**Option 2 — AppImage (no installation)**
-
-1. Download `QwenPaw-Tauri-<version>-linux-x86_64.AppImage`
-2. Make it executable and run it:
-
-   ```bash
-   chmod +x QwenPaw-Tauri-<version>-linux-x86_64.AppImage
-   ./QwenPaw-Tauri-<version>-linux-x86_64.AppImage
-   ```
-
-An AppImage carries no dependency metadata: install `libwebkit2gtk-4.1-0` and `libfuse2` first if the system does not have them.
 
 ### First Run
 
@@ -285,7 +271,7 @@ The app creates `~/.qwenpaw` on first launch and initializes a default workspace
 
 ### Updates and Uninstall
 
-- **Updates**: download and install the newer package, or replace the AppImage file
+- **Updates**: download and install the newer Debian package
 - **Uninstall**: `sudo apt remove qwen-paw-desktop` — this keeps `~/.qwenpaw`, remove it manually for a clean wipe
 
 ## Technical Support

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Build QwenPaw Desktop for Linux: a .deb and an .AppImage from the same
+# Build QwenPaw Desktop for Linux: a .deb from the same
 # Tauri shell used on Windows/macOS (bundled Python runtime + PyInstaller
 # backend + Node runtime, no Docker).
 #
@@ -8,12 +8,10 @@
 #
 # Output:
 #   console/src-tauri/target/release/bundle/deb/*.deb
-#   console/src-tauri/target/release/bundle/appimage/*.AppImage
 #   dist/QwenPaw-Tauri-<version>-linux-<arch>.deb
-#   dist/QwenPaw-Tauri-<version>-linux-<arch>.AppImage
 #
 # Prerequisites (Ubuntu/Debian):
-#   sudo apt-get install -y build-essential curl file patchelf libfuse2 libtbb12 \
+#   sudo apt-get install -y build-essential curl file libtbb12 pkgconf \
 #     libgtk-3-dev libsoup-3.0-dev librsvg2-dev libayatana-appindicator3-dev \
 #     libwebkit2gtk-4.1-dev
 #   Rust (rustup) and Node.js >= 22 must be on PATH; Python 3.11-3.13 is used
@@ -71,7 +69,7 @@ if [ ${#missing[@]} -gt 0 ]; then
   echo "Missing prerequisites: ${missing[*]}"
   echo ""
   echo "Install the system packages:"
-  echo "  sudo apt-get install -y build-essential curl file patchelf libfuse2 libtbb12 pkgconf \\"
+  echo "  sudo apt-get install -y build-essential curl file libtbb12 pkgconf \\"
   echo "    libgtk-3-dev libsoup-3.0-dev librsvg2-dev \\"
   echo "    libayatana-appindicator3-dev libwebkit2gtk-4.1-dev"
   echo ""
@@ -102,35 +100,14 @@ echo ""
 fi
 
 # ------------------------------------------------------------------- 3) Tauri bundles
-# Tauri merges into an existing AppDir instead of recreating it, so leftovers
-# from an earlier product name (or an earlier failed run) stay behind and can
-# break the next bundling step. Always start from clean bundle directories.
-rm -rf "${REPO_ROOT}/console/src-tauri/target/release/bundle/deb" \
-       "${REPO_ROOT}/console/src-tauri/target/release/bundle/appimage"
+# Start from a clean bundle directory so collection cannot pick up an old deb.
+rm -rf "${REPO_ROOT}/console/src-tauri/target/release/bundle/deb"
 
-# Tauri 2.11.4 caches AppRun with mode 0770. Current appimagetool requires
-# other users to be able to read and execute it. Stage the same upstream
-# launcher with public read/execute permissions before Tauri copies it.
-TOOL_CACHE="${XDG_CACHE_HOME:-${HOME}/.cache}/tauri"
-APPRUN="${TOOL_CACHE}/AppRun-${ARCH}"
-mkdir -p "${TOOL_CACHE}"
-if [ ! -f "${APPRUN}" ]; then
-  curl -fL --retry 3 -o "${APPRUN}.tmp" \
-    "https://github.com/tauri-apps/binary-releases/releases/download/apprun-old/AppRun-${ARCH}"
-  mv "${APPRUN}.tmp" "${APPRUN}"
-fi
-chmod 755 "${APPRUN}"
-
-echo "== Step 3: Tauri bundles (deb + AppImage) =="
+echo "== Step 3: Tauri Debian package =="
 cd console
-# Verbose output preserves linuxdeploy errors. A deployment failure must stop
-# the build; compressing a partial AppDir can ship missing GTK dependencies.
-# Some torch helper executables lack a relative RPATH. Let linuxdeploy's ldd
-# resolve their dependencies from the libraries already shipped in our bundle.
-LD_LIBRARY_PATH="${REPO_ROOT}/console/src-tauri/binaries/qwenpaw-backend/_internal/torch/lib${LD_LIBRARY_PATH:+:${LD_LIBRARY_PATH}}" \
-APPIMAGE_EXTRACT_AND_RUN=1 npm exec -- tauri build --verbose \
+npm exec -- tauri build \
   --config src-tauri/tauri.version.conf.json \
-  --bundles deb,appimage
+  --bundles deb
 cd ..
 echo ""
 
@@ -144,37 +121,23 @@ mkdir -p "${DIST}"
 
 BUNDLE_DIR="${REPO_ROOT}/console/src-tauri/target/release/bundle"
 DEB_PATH="$(ls -1 "${BUNDLE_DIR}"/deb/*.deb 2>/dev/null | head -1 || true)"
-APPIMAGE_PATH="$(ls -1 "${BUNDLE_DIR}"/appimage/*.AppImage 2>/dev/null | head -1 || true)"
 
 if [ -z "${DEB_PATH}" ]; then
   echo "ERROR: no .deb produced under ${BUNDLE_DIR}/deb"
   exit 1
 fi
-if [ -z "${APPIMAGE_PATH}" ]; then
-  echo "ERROR: no .AppImage produced under ${BUNDLE_DIR}/appimage"
-  exit 1
-fi
-
 DEB_OUT="${DIST}/QwenPaw-Tauri-${VERSION}-linux-${ARCH}.deb"
-APPIMAGE_OUT="${DIST}/QwenPaw-Tauri-${VERSION}-linux-${ARCH}.AppImage"
 cp -f "${DEB_PATH}" "${DEB_OUT}"
-cp -f "${APPIMAGE_PATH}" "${APPIMAGE_OUT}"
-chmod +x "${APPIMAGE_OUT}"
 
 # --------------------------------------------------------------- 5) cleanup
-# Tauri stages a full copy of the bundle resources under
-# target/release/binaries, and linuxdeploy keeps its working trees under
-# target/release/bundle/appimage_deb. Together they are tens of gigabytes of
-# pure intermediates that are rebuilt on the next run. Drop them by default;
-# set QWENPAW_DESKTOP_KEEP_STAGING=1 to keep them for debugging.
+# Drop Tauri's staged resource copies after collecting the package.
+# Set QWENPAW_DESKTOP_KEEP_STAGING=1 to keep them for debugging.
 if [ "${QWENPAW_DESKTOP_KEEP_STAGING:-0}" != "1" ]; then
   echo "== Step 5: clean packaging intermediates =="
   BUNDLE_ROOT="${REPO_ROOT}/console/src-tauri/target/release"
   rm -rf \
     "${BUNDLE_ROOT}/binaries" \
-    "${BUNDLE_ROOT}/bundle/appimage_deb" \
-    "${BUNDLE_ROOT}/bundle/deb" \
-    "${BUNDLE_ROOT}/bundle/appimage"
+    "${BUNDLE_ROOT}/bundle/deb"
   echo "Removed staged resources and bundle working trees."
   echo "Set QWENPAW_DESKTOP_KEEP_STAGING=1 to keep them."
 fi
@@ -183,8 +146,8 @@ echo ""
 echo "========================================="
 echo "Build complete"
 echo "========================================="
-ls -lh "${DEB_OUT}" "${APPIMAGE_OUT}"
+ls -lh "${DEB_OUT}"
 echo ""
 echo "Install / run:"
 echo "  sudo apt install ./$(basename "${DEB_OUT}")"
-echo "  ./$(basename "${APPIMAGE_OUT}")"
+echo "  qwenpaw-desktop"

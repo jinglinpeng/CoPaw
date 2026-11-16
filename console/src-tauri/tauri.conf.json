@@ -42,7 +42,7 @@
     "active": true,
     "publisher": "QwenPaw Contributors <qwenpaw@users.noreply.github.com>",
     "copyright": "Copyright © QwenPaw Contributors",
-    "targets": ["app", "nsis", "deb", "appimage"],
+    "targets": ["app", "nsis", "deb"],
     "icon": [
       "../../scripts/pack/assets/icon.icns",
       "../../scripts/pack/assets/icon.ico",
