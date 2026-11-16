@@ -73,29 +73,35 @@ def main() -> int:
             # Do not navigate: the packaged window must load the console itself.
             # CSS :visible is a Playwright extension, so check geometry here.
             script = """
+                const done = arguments[arguments.length - 1];
                 const input = [...document.querySelectorAll(arguments[0])]
                   .find(el => el.getBoundingClientRect().width > 0 &&
                               el.getBoundingClientRect().height > 0 &&
                               getComputedStyle(el).visibility === 'visible');
-                return input ? location.origin : null;
+                if (!input) { done(null); return; }
+                window.__TAURI_INTERNALS__.invoke('agent_host_state').then(
+                    state => done(state.phase === 'ready' ? state.port : null),
+                    error => done({error: String(error)})
+                );
             """
-            base_url = None
+            port = None
             for _ in range(90):
-                base_url = command(
+                port = command(
                     "POST",
-                    session + "/execute/sync",
+                    session + "/execute/async",
                     {
                         "script": script,
                         "args": [SEL_INPUT.replace(":visible", "")],
                     },
                 )
-                if base_url:
+                if port:
                     break
                 time.sleep(2)
-            if not base_url or not base_url.startswith("http://127.0.0.1:"):
+            if not isinstance(port, int) or not 1 <= port <= 65535:
                 raise RuntimeError(
-                    "Native window did not render the chat input"
+                    f"Native window did not render the chat input: {port}"
                 )
+            base_url = f"http://127.0.0.1:{port}"
             screenshot = command("GET", session + "/screenshot")
             (screenshots / "00-native-window.png").write_bytes(
                 base64.b64decode(screenshot),
