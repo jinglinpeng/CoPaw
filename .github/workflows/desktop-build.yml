@@ -31,6 +31,7 @@ permissions:
 
 jobs:
   build-tauri-windows:
+    if: ${{ false }}
     runs-on: windows-latest
     timeout-minutes: 60
     steps:
@@ -219,6 +220,7 @@ jobs:
             dist/tauri-windows-x86_64-updater.json.sha256
 
   build-tauri-macos:
+    if: ${{ false }}
     runs-on: macos-15
     timeout-minutes: 90
     steps:
@@ -396,6 +398,7 @@ jobs:
         with:
           ref: ${{ inputs.ref || github.ref }}
           submodules: recursive
+          persist-credentials: false
 
       - name: Get version
         id: version
@@ -439,24 +442,19 @@ jobs:
         run: rm -rf dist && mkdir -p dist
 
       - name: Build Tauri Linux package
+        shell: bash
         env:
           NODE_OPTIONS: "--max-old-space-size=8192"
           # Authenticate the python-build-standalone release lookup in
           # stage_python_runtime.py to avoid anonymous API rate limits.
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
-          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
-          TAURI_UPDATER_PUBKEY: ${{ vars.TAURI_UPDATER_PUBKEY }}
-          TAURI_UPDATER_ENDPOINTS: ${{ vars.TAURI_UPDATER_ENDPOINTS }}
         run: |
           chmod +x scripts/pack-tauri/build_linux_pyinstaller.sh
-          bash scripts/pack-tauri/build_linux_pyinstaller.sh
+          bash scripts/pack-tauri/build_linux_pyinstaller.sh 2>&1 | tee "${RUNNER_TEMP}/pr8444-build.log"
 
       - name: Verify desktop (Tauri Linux)
         timeout-minutes: 15
         uses: ./.github/actions/verify-tauri-linux
-        with:
-          dashscope-api-key: ${{ secrets.QWENPAW_DASHSCOPE_API_KEY }}
 
       - name: Stop desktop server (Tauri Linux)
         if: always()
@@ -495,6 +493,19 @@ jobs:
         with:
           name: desktop-verify-logs-tauri-linux-${{ steps.version.outputs.version }}
           path: |
+            ${{ runner.temp }}/qwenpaw-desktop-stdout.log
+            ${{ runner.temp }}/qwenpaw-desktop-stderr.log
+            ${{ runner.temp }}/verify-screenshots/
+
+      - name: Preserve Linux validation logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: pr8444-deb-validation-logs
+          if-no-files-found: warn
+          retention-days: 14
+          path: |
+            ${{ runner.temp }}/pr8444-build.log
             ${{ runner.temp }}/qwenpaw-desktop-stdout.log
             ${{ runner.temp }}/qwenpaw-desktop-stderr.log
             ${{ runner.temp }}/verify-screenshots/
