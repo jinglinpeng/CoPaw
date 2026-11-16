@@ -30,7 +30,7 @@ RELEASE_HELPERS = (
 @pytest.mark.skipif(sys.platform != "linux", reason="Linux packaging script")
 @pytest.mark.parametrize("status", [0, 37])
 def test_linux_packaging_preserves_bundler_failure(tmp_path, status):
-    """A partial AppDir must never be published after dependency deployment fails."""
+    """A partial package must never be published after the bundler fails."""
     script = tmp_path / "scripts/pack-tauri/build_linux_pyinstaller.sh"
     script.parent.mkdir(parents=True)
     shutil.copyfile(REPO_ROOT / script.relative_to(tmp_path), script)
@@ -39,11 +39,6 @@ def test_linux_packaging_preserves_bundler_failure(tmp_path, status):
     version.write_text('__version__ = "1.0.0"\n')
     bundle = tmp_path / "console/src-tauri/target/release/bundle"
     bundle.mkdir(parents=True)
-    cache = tmp_path / "cache"
-    apprun = cache / "tauri" / f"AppRun-{os.uname().machine}"
-    apprun.parent.mkdir(parents=True)
-    apprun.write_text("#!/bin/sh\n")
-    apprun.chmod(0o770)
     bin_dir = tmp_path / "bin"
     bin_dir.mkdir()
     for name in ("node", "rustc", "cargo", "pkg-config"):
@@ -53,12 +48,8 @@ def test_linux_packaging_preserves_bundler_failure(tmp_path, status):
     npm = bin_dir / "npm"
     npm.write_text(
         "#!/bin/sh\n"
-        'mkdir -p "$BUNDLE/deb" "$BUNDLE/appimage/QwenPaw.AppDir"\n'
-        'cp "$APPRUN" "$BUNDLE/appimage/QwenPaw.AppDir/AppRun"\n'
+        'mkdir -p "$BUNDLE/deb"\n'
         'touch "$BUNDLE/deb/test.deb"\n'
-        'if [ "$BUNDLER_STATUS" = 0 ]; then\n'
-        '  touch "$BUNDLE/appimage/test.AppImage"\n'
-        "fi\n"
         'exit "$BUNDLER_STATUS"\n',
     )
     npm.chmod(0o755)
@@ -68,10 +59,8 @@ def test_linux_packaging_preserves_bundler_failure(tmp_path, status):
         env={
             **os.environ,
             "PATH": str(bin_dir) + os.pathsep + os.environ["PATH"],
-            "XDG_CACHE_HOME": str(cache),
             "QWENPAW_SKIP_BACKEND_BUILD": "1",
             "BUNDLE": str(bundle),
-            "APPRUN": str(apprun),
             "BUNDLER_STATUS": str(status),
         },
         capture_output=True,
@@ -80,9 +69,8 @@ def test_linux_packaging_preserves_bundler_failure(tmp_path, status):
         check=False,
     )
     assert result.returncode == status, result.stdout + result.stderr
-    assert apprun.stat().st_mode & 0o777 == 0o755
     outputs = list((tmp_path / "dist").glob("*"))
-    assert len(outputs) == (2 if status == 0 else 0)
+    assert len(outputs) == (1 if status == 0 else 0)
 
 
 @pytest.mark.parametrize("rendered", [True, False])
@@ -99,17 +87,17 @@ def test_linux_native_window_required_before_web_checks(
     monkeypatch.setattr(verifier.Path, "home", lambda: tmp_path)
     monkeypatch.setattr(verifier.time, "sleep", lambda _: None)
     monkeypatch.setattr(sys, "argv", ["verify_tauri_linux.py"])
-    artifact = tmp_path / "dist/QwenPaw-Tauri-test-linux-x86_64.AppImage"
-    artifact.parent.mkdir()
-    artifact.touch()
     calls = []
 
     def http(method, url, body, timeout):
         calls.append((method, url))
         if url.endswith("/session"):
-            assert body["capabilities"]["alwaysMatch"][
-                "webkitgtk:browserOptions"
-            ]["binary"] == str(artifact)
+            assert (
+                body["capabilities"]["alwaysMatch"][
+                    "webkitgtk:browserOptions"
+                ]["binary"]
+                == "/usr/bin/qwenpaw-desktop"
+            )
             value = {"sessionId": "native"}
         elif url.endswith("/execute/async"):
             value = 8088 if rendered else None
