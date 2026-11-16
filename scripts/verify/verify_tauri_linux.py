@@ -13,9 +13,6 @@ from desktop_verify import SEL_INPUT, _http
 
 
 def main() -> int:
-    artifacts = list(Path("dist").glob("QwenPaw-Tauri-*-linux-*.AppImage"))
-    if len(artifacts) != 1:
-        raise RuntimeError(f"Expected one AppImage, found {len(artifacts)}")
     log_dir = Path(os.environ.get("RUNNER_TEMP", "/tmp"))
     screenshots = log_dir / "verify-screenshots"
     screenshots.mkdir(parents=True, exist_ok=True)
@@ -29,7 +26,6 @@ def main() -> int:
 
     env = {
         **os.environ,
-        "APPIMAGE_EXTRACT_AND_RUN": "1",
         "TAURI_WEBVIEW_AUTOMATION": "true",
         "WEBKIT_DISABLE_COMPOSITING_MODE": "1",
         "WEBKIT_DISABLE_DMABUF_RENDERER": "1",
@@ -62,7 +58,7 @@ def main() -> int:
                     "capabilities": {
                         "alwaysMatch": {
                             "webkitgtk:browserOptions": {
-                                "binary": str(artifacts[0].resolve()),
+                                "binary": "/usr/bin/qwenpaw-desktop",
                             },
                         },
                     },

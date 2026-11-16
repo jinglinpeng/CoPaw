@@ -246,8 +246,6 @@ A: 当前采用
 
 ### 安装步骤
 
-**方式一 —— deb 包（推荐）**
-
 1. 从 [Release 页面][releases] 下载 `QwenPaw-Tauri-<version>-linux-x86_64.deb`
 2. 用 apt 安装，依赖会自动补齐：
 
@@ -256,18 +254,6 @@ A: 当前采用
    ```
 
 3. 从应用列表启动 **QwenPaw Desktop**，或执行 `qwenpaw-desktop`
-
-**方式二 —— AppImage（免安装）**
-
-1. 下载 `QwenPaw-Tauri-<version>-linux-x86_64.AppImage`
-2. 赋可执行权限并运行：
-
-   ```bash
-   chmod +x QwenPaw-Tauri-<version>-linux-x86_64.AppImage
-   ./QwenPaw-Tauri-<version>-linux-x86_64.AppImage
-   ```
-
-AppImage 不带依赖元数据：系统若缺 `libwebkit2gtk-4.1-0` 或 `libfuse2`，需先手动安装。
 
 ### 首次启动
 
@@ -285,7 +271,7 @@ AppImage 不带依赖元数据：系统若缺 `libwebkit2gtk-4.1-0` 或 `libfuse
 
 ### 更新与卸载
 
-- **更新**：下载并安装更新的包，或替换 AppImage 文件
+- **更新**：下载并安装更新的 deb 包
 - **卸载**：`sudo apt remove qwen-paw-desktop` —— 会保留 `~/.qwenpaw`，需要彻底清除请手动删除
 
 ## 技术支持
