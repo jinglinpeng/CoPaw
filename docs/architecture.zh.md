@@ -19,8 +19,8 @@ QwenPaw 完全跑在你自己的环境里，是一个常驻服务。一次安装
     </marker>
   </defs>
   <!-- Title -->
-  <text x="450" y="30" text-anchor="middle" font-size="16" font-weight="700" fill="currentColor">QwenPaw Agent OS · 一图看懂</text>
-  <text x="450" y="49" text-anchor="middle" font-size="10.5" fill="currentColor" fill-opacity="0.6">上层 Runtime ／ 下层 Workspace ‖ Drivers · 构建于 AgentScope 基座之上</text>
+  <text x="450" y="30" text-anchor="middle" font-size="16" font-weight="700" fill="currentColor">Agent OS Foundation</text>
+  <text x="450" y="49" text-anchor="middle" font-size="10.5" fill="currentColor" fill-opacity="0.6">上层 Runtime ／ 下层 Workspace ‖ Drivers · 构建于 AgentScope 基建之上</text>
   <!-- Surfaces strip -->
   <rect x="20" y="60" width="860" height="40" rx="9" fill="currentColor" fill-opacity="0.03" stroke="currentColor" stroke-opacity="0.18"/>
   <text x="34" y="84" font-size="10" letter-spacing="1.2" font-weight="700" fill="currentColor" fill-opacity="0.7">入口</text>
@@ -39,7 +39,7 @@ QwenPaw 完全跑在你自己的环境里，是一个常驻服务。一次安装
   <g>
     <rect x="40" y="164" width="193" height="54" rx="7" fill="#a855f7" fill-opacity="0.1" stroke="#a855f7" stroke-opacity="0.55"/><text x="136" y="188" text-anchor="middle" font-size="12" font-weight="600" fill="currentColor">请求路由器</text><text x="136" y="205" text-anchor="middle" font-size="9.5" fill="currentColor" fill-opacity="0.62">路由到目标智能体</text>
     <rect x="249" y="164" width="193" height="54" rx="7" fill="#a855f7" fill-opacity="0.1" stroke="#a855f7" stroke-opacity="0.55"/><text x="345" y="188" text-anchor="middle" font-size="12" font-weight="600" fill="currentColor">运行时生命周期</text><text x="345" y="205" text-anchor="middle" font-size="9.5" fill="currentColor" fill-opacity="0.62">钩子阶段 · 模式</text>
-    <rect x="458" y="164" width="193" height="54" rx="7" fill="#a855f7" fill-opacity="0.1" stroke="#a855f7" stroke-opacity="0.55"/><text x="554" y="188" text-anchor="middle" font-size="12" font-weight="600" fill="currentColor">智能体 — ReAct 循环</text><text x="554" y="205" text-anchor="middle" font-size="9.5" fill="currentColor" fill-opacity="0.62">上下文策略 · 按请求组装</text>
+    <rect x="458" y="164" width="193" height="54" rx="7" fill="#a855f7" fill-opacity="0.1" stroke="#a855f7" stroke-opacity="0.55"/><text x="554" y="188" text-anchor="middle" font-size="12" font-weight="600" fill="currentColor">智能体 — ReAct 循环</text><text x="554" y="205" text-anchor="middle" font-size="9.5" fill="currentColor" fill-opacity="0.62">循环工程 · 上下文策略</text>
     <rect x="667" y="164" width="193" height="54" rx="7" fill="#a855f7" fill-opacity="0.1" stroke="#a855f7" stroke-opacity="0.55"/><text x="763" y="188" text-anchor="middle" font-size="12" font-weight="600" fill="currentColor">Harness 适配器</text><text x="763" y="205" text-anchor="middle" font-size="9.5" fill="currentColor" fill-opacity="0.62">外部 agent · ACP</text>
   </g>
   <line x1="450" y1="232" x2="450" y2="246" stroke="currentColor" stroke-opacity="0.4" stroke-width="1.4" marker-end="url(#qpMapArrow)"/>
@@ -54,8 +54,9 @@ QwenPaw 完全跑在你自己的环境里，是一个常驻服务。一次安装
   <!-- memory lane -->
   <rect x="44" y="330" width="102" height="140" rx="7" fill="#2fb26b" fill-opacity="0.07" stroke="#2fb26b" stroke-opacity="0.4"/>
   <text x="95" y="348" text-anchor="middle" font-size="11" font-weight="700" fill="#2fb26b">记忆</text>
-  <rect x="52" y="358" width="86" height="42" rx="6" fill="#2fb26b" fill-opacity="0.1" stroke="#2fb26b" stroke-opacity="0.5"/><text x="95" y="384" text-anchor="middle" font-size="10" fill="currentColor">召回 / 写入</text>
-  <rect x="52" y="408" width="86" height="42" rx="6" fill="#2fb26b" fill-opacity="0.1" stroke="#2fb26b" stroke-opacity="0.5"/><text x="95" y="434" text-anchor="middle" font-size="10" fill="currentColor">Markdown 文件</text>
+  <rect x="52" y="356" width="86" height="34" rx="6" fill="#2fb26b" fill-opacity="0.1" stroke="#2fb26b" stroke-opacity="0.5"/><text x="95" y="377" text-anchor="middle" font-size="10" fill="currentColor">召回 / 写入</text>
+  <rect x="52" y="394" width="86" height="34" rx="6" fill="#2fb26b" fill-opacity="0.1" stroke="#2fb26b" stroke-opacity="0.5"/><text x="95" y="415" text-anchor="middle" font-size="10" fill="currentColor">Scroll</text>
+  <rect x="52" y="432" width="86" height="34" rx="6" fill="#2fb26b" fill-opacity="0.1" stroke="#2fb26b" stroke-opacity="0.5"/><text x="95" y="453" text-anchor="middle" font-size="10" fill="currentColor">Markdown 文件</text>
   <!-- skills lane -->
   <rect x="154" y="330" width="102" height="140" rx="7" fill="#e0a021" fill-opacity="0.07" stroke="#e0a021" stroke-opacity="0.4"/>
   <text x="205" y="348" text-anchor="middle" font-size="11" font-weight="700" fill="#e0a021">Skills</text>
@@ -85,7 +86,7 @@ QwenPaw 完全跑在你自己的环境里，是一个常驻服务。一次安装
   <rect x="44" y="514" width="12" height="12" rx="3" fill="#f0921f"/>
   <text x="62" y="524" font-size="11" font-weight="700" fill="#f0921f">沙箱 · 执行底座</text>
   <text x="250" y="524" font-size="9.5" fill="currentColor" fill-opacity="0.6">每次工具调用新建，用完销毁</text>
-  <text x="365" y="548" text-anchor="middle" font-size="10.5" fill="currentColor">原生 OS 隔离 —— macOS seatbelt · Linux bubblewrap/landlock · Windows（开发中）· 或不用</text>
+  <text x="365" y="548" text-anchor="middle" font-size="10.5" fill="currentColor">原生 OS 隔离 —— macOS seatbelt · Linux bubblewrap/landlock · Windows AppContainer/Write Restricted Token · 或不用</text>
   <!-- Drivers column -->
   <rect x="722" y="248" width="158" height="336" rx="10" fill="#eb5545" fill-opacity="0.05" stroke="#eb5545" stroke-opacity="0.45"/>
   <rect x="734" y="266" width="12" height="12" rx="3" fill="#eb5545"/>
@@ -99,7 +100,7 @@ QwenPaw 完全跑在你自己的环境里，是一个常驻服务。一次安装
   <line x1="450" y1="584" x2="450" y2="596" stroke="currentColor" stroke-opacity="0.4" stroke-width="1.4" marker-end="url(#qpMapArrow)"/>
   <!-- Foundation -->
   <rect x="20" y="596" width="860" height="48" rx="10" fill="currentColor" fill-opacity="0.05" stroke="currentColor" stroke-opacity="0.25"/>
-  <text x="450" y="618" text-anchor="middle" font-size="12" font-weight="700" fill="currentColor">基座 · AgentScope 2.0</text>
+  <text x="450" y="618" text-anchor="middle" font-size="12" font-weight="700" fill="currentColor">基建 · AgentScope 2.0</text>
   <text x="450" y="634" text-anchor="middle" font-size="9.5" fill="currentColor" fill-opacity="0.62">智能体循环 · 会话 · 事件流 · 工具层 —— 作为库在进程内使用</text>
   <!-- Legend -->
   <text x="20" y="669" font-size="10" font-weight="700" fill="currentColor" fill-opacity="0.7">图例</text>
@@ -136,7 +137,7 @@ QwenPaw 构建在 **AgentScope 2.0** 之上，把它当作一个库来用。Agen
 
 **工作区**是隔离的基本单位。一次安装可以跑多个智能体，每个智能体正好对应一个工作区：一个磁盘目录，加上一组在它之上运行的实时服务。某个智能体第一次被用到时，工作区才懒加载；服务停止时则干净退出。除非一个智能体主动给另一个发消息，否则谁也看不到对方的文件、记忆和对话。
 
-每个工作区打包两样东西：智能体运行时要用的**服务**（会话与历史、记忆、连接器、频道、聊天、定时任务），以及一组**扩展注册表**，用来登记工具、钩子、命令和提示词片段。第三方**插件**往这些注册表里添东西——模型提供商、工具、钩子、魔法命令、提示词区块、HTTP 路由，还有智能体中间件——这样不用改动核心就能扩展平台。参见[插件](./plugins)。
+每个工作区打包两样东西：智能体运行时要用的**服务**（会话与历史、记忆、连接器、频道、聊天、定时任务），以及一组**扩展注册表**，用来登记工具、钩子、命令、提示词片段和记忆后端。第三方**插件**往这些注册表里添东西——模型提供商、工具、记忆存储、钩子、魔法命令、提示词区块、HTTP 路由，还有智能体中间件——这样不用改动核心就能扩展平台。启动关键的 channel 和 memory 插件会在创建 workspace 前完成注册。参见[插件](./plugins)。
 
 <svg viewBox="0 0 860 420" width="100%" role="img" aria-label="工作区剖析：注册表持有多个相互隔离、各智能体专属的工作区；每个工作区都打包了服务以及一个磁盘目录。" xmlns="http://www.w3.org/2000/svg" font-family="ui-sans-serif, system-ui, -apple-system, Segoe UI, sans-serif">
   <defs>
@@ -191,56 +192,60 @@ QwenPaw 构建在 **AgentScope 2.0** 之上，把它当作一个库来用。Agen
 
 运行时把每个进来的请求变成一串 UI 事件。它是一条带阶段、阶段之间留有钩子点的固定流程，各项功能因此能挂上自己的行为，而不用动核心循环。请求被分到目标智能体的工作区，在那里为这次请求组装好智能体、运行，再把输出流式发回。
 
-<svg viewBox="0 0 820 600" width="100%" role="img" aria-label="请求生命周期：钩子阶段与固定步骤交错，用于命令分发、智能体组装和执行，而出错与清理处理器始终运行。" xmlns="http://www.w3.org/2000/svg" font-family="ui-sans-serif, system-ui, -apple-system, Segoe UI, sans-serif">
+<svg viewBox="0 0 820 254" width="100%" role="img" aria-label="请求生命周期：钩子阶段与固定步骤交错，用于命令分发、智能体组装和执行；清理始终运行。" xmlns="http://www.w3.org/2000/svg" font-family="ui-sans-serif, system-ui, -apple-system, Segoe UI, sans-serif">
   <defs>
     <marker id="qpFlowArrow" markerWidth="9" markerHeight="9" refX="5.5" refY="3" orient="auto" markerUnits="strokeWidth">
       <path d="M0,0 L6,3 L0,6 Z" fill="#ff9d4d"/>
     </marker>
   </defs>
   <!-- legend -->
-  <rect x="556" y="20" width="20" height="14" rx="3" fill="#ff9d4d" fill-opacity="0.14" stroke="#ff9d4d" stroke-opacity="0.55"/>
-  <text x="582" y="31" font-size="10.5" fill="currentColor" fill-opacity="0.7">钩子阶段</text>
-  <rect x="664" y="20" width="20" height="14" rx="3" fill="currentColor" fill-opacity="0.05" stroke="currentColor" stroke-opacity="0.3"/>
-  <text x="690" y="31" font-size="10.5" fill="currentColor" fill-opacity="0.7">固定步骤</text>
-  <!-- short flow arrows, one in each gap between consecutive boxes -->
+  <rect x="556" y="8" width="20" height="14" rx="3" fill="#ff9d4d" fill-opacity="0.14" stroke="#ff9d4d" stroke-opacity="0.55"/>
+  <text x="582" y="19" font-size="10.5" fill="currentColor" fill-opacity="0.7">钩子阶段</text>
+  <rect x="664" y="8" width="20" height="14" rx="3" fill="currentColor" fill-opacity="0.05" stroke="currentColor" stroke-opacity="0.3"/>
+  <text x="690" y="19" font-size="10.5" fill="currentColor" fill-opacity="0.7">固定步骤</text>
+  <!-- ═══ ROW 1: 分发 ═══ -->
   <g stroke="#ff9d4d" stroke-width="1.4">
-    <line x1="250" y1="75" x2="250" y2="91" marker-end="url(#qpFlowArrow)"/>
-    <line x1="250" y1="121" x2="250" y2="137" marker-end="url(#qpFlowArrow)"/>
-    <line x1="250" y1="167" x2="250" y2="183" marker-end="url(#qpFlowArrow)"/>
-    <line x1="250" y1="213" x2="250" y2="229" marker-end="url(#qpFlowArrow)"/>
-    <line x1="250" y1="259" x2="250" y2="275" marker-end="url(#qpFlowArrow)"/>
-    <line x1="250" y1="305" x2="250" y2="321" marker-end="url(#qpFlowArrow)"/>
-    <line x1="250" y1="351" x2="250" y2="367" marker-end="url(#qpFlowArrow)"/>
-    <line x1="250" y1="397" x2="250" y2="413" marker-end="url(#qpFlowArrow)"/>
-    <line x1="250" y1="459" x2="250" y2="475" marker-end="url(#qpFlowArrow)"/>
-    <line x1="250" y1="505" x2="250" y2="521" marker-end="url(#qpFlowArrow)"/>
+    <line x1="238" y1="53" x2="254" y2="53" marker-end="url(#qpFlowArrow)"/>
+    <line x1="402" y1="53" x2="418" y2="53" marker-end="url(#qpFlowArrow)"/>
+    <line x1="566" y1="53" x2="582" y2="53" marker-end="url(#qpFlowArrow)"/>
   </g>
-  <!-- rows -->
-  <g font-size="12">
-    <!-- input -->
-    <rect x="90" y="44" width="320" height="30" rx="15" fill="#ff9d4d" fill-opacity="0.18" stroke="#ff9d4d" stroke-opacity="0.6"/><text x="250" y="63" text-anchor="middle" font-weight="600" fill="currentColor">传入请求（来自频道或定时任务）</text>
-    <rect x="90" y="92" width="320" height="28" rx="7" fill="#ff9d4d" fill-opacity="0.1" stroke="#ff9d4d" stroke-opacity="0.5"/><text x="250" y="110" text-anchor="middle" fill="currentColor">分发前</text>
-    <rect x="90" y="138" width="320" height="28" rx="7" fill="currentColor" fill-opacity="0.05" stroke="currentColor" stroke-opacity="0.3"/><text x="250" y="156" text-anchor="middle" fill="currentColor">命令分发</text>
-    <text x="424" y="156" font-size="10.5" fill="currentColor" fill-opacity="0.6">/命令 → 直接回复并跳过智能体</text>
-    <rect x="90" y="184" width="320" height="28" rx="7" fill="#ff9d4d" fill-opacity="0.1" stroke="#ff9d4d" stroke-opacity="0.5"/><text x="250" y="202" text-anchor="middle" fill="currentColor">分发后</text>
-    <rect x="90" y="230" width="320" height="28" rx="7" fill="#ff9d4d" fill-opacity="0.1" stroke="#ff9d4d" stroke-opacity="0.5"/><text x="250" y="248" text-anchor="middle" fill="currentColor">构建前</text>
-    <text x="424" y="248" font-size="10.5" fill="currentColor" fill-opacity="0.6">加载会话 · 媒体 · 请求上下文</text>
-    <rect x="90" y="276" width="320" height="28" rx="7" fill="currentColor" fill-opacity="0.05" stroke="currentColor" stroke-opacity="0.3"/><text x="250" y="294" text-anchor="middle" fill="currentColor" font-weight="600">组装智能体</text>
-    <text x="424" y="290" font-size="10.5" fill="currentColor" fill-opacity="0.6">模型 · 工具 · 提示词</text>
-    <text x="424" y="303" font-size="10.5" fill="currentColor" fill-opacity="0.6">记忆 · 上下文策略 · 策略</text>
-    <rect x="90" y="322" width="320" height="28" rx="7" fill="#ff9d4d" fill-opacity="0.1" stroke="#ff9d4d" stroke-opacity="0.5"/><text x="250" y="340" text-anchor="middle" fill="currentColor">构建后</text>
-    <text x="424" y="340" font-size="10.5" fill="currentColor" fill-opacity="0.6">注入当前模式上下文</text>
-    <rect x="90" y="368" width="320" height="28" rx="7" fill="#ff9d4d" fill-opacity="0.1" stroke="#ff9d4d" stroke-opacity="0.5"/><text x="250" y="386" text-anchor="middle" fill="currentColor">执行前</text>
-    <text x="424" y="386" font-size="10.5" fill="currentColor" fill-opacity="0.6">首次运行初始化 · 提示词刷新</text>
-    <rect x="90" y="414" width="320" height="44" rx="7" fill="currentColor" fill-opacity="0.05" stroke="currentColor" stroke-opacity="0.3"/><text x="250" y="432" text-anchor="middle" fill="currentColor" font-weight="600">运行智能体</text><text x="250" y="448" text-anchor="middle" font-size="10.5" fill="currentColor" fill-opacity="0.65">ReAct 循环，受最大迭代次数限制约束</text>
-    <rect x="90" y="476" width="320" height="28" rx="7" fill="#ff9d4d" fill-opacity="0.1" stroke="#ff9d4d" stroke-opacity="0.5"/><text x="250" y="494" text-anchor="middle" fill="currentColor">响应后</text>
-    <text x="424" y="494" font-size="10.5" fill="currentColor" fill-opacity="0.6">保存会话 · 定时任务回写</text>
-    <rect x="90" y="522" width="320" height="30" rx="15" fill="#ff9d4d" fill-opacity="0.18" stroke="#ff9d4d" stroke-opacity="0.6"/><text x="250" y="541" text-anchor="middle" font-weight="600" fill="currentColor">将响应流式输出</text>
+  <rect x="90" y="38" width="148" height="30" rx="15" fill="#ff9d4d" fill-opacity="0.18" stroke="#ff9d4d" stroke-opacity="0.6"/><text x="164" y="57" text-anchor="middle" font-size="11" font-weight="600" fill="currentColor">传入请求</text>
+  <rect x="254" y="38" width="148" height="30" rx="7" fill="#ff9d4d" fill-opacity="0.1" stroke="#ff9d4d" stroke-opacity="0.5"/><text x="328" y="57" text-anchor="middle" font-size="11" fill="currentColor">分发前</text>
+  <rect x="418" y="38" width="148" height="30" rx="7" fill="currentColor" fill-opacity="0.05" stroke="currentColor" stroke-opacity="0.3"/><text x="492" y="57" text-anchor="middle" font-size="11" fill="currentColor">命令分发</text>
+  <rect x="582" y="38" width="148" height="30" rx="7" fill="#ff9d4d" fill-opacity="0.1" stroke="#ff9d4d" stroke-opacity="0.5"/><text x="656" y="57" text-anchor="middle" font-size="11" fill="currentColor">分发后</text>
+  <text x="164" y="82" text-anchor="middle" font-size="9" fill="currentColor" fill-opacity="0.55">来自频道 / 定时任务</text>
+  <text x="492" y="82" text-anchor="middle" font-size="9" fill="currentColor" fill-opacity="0.55">/命令 → 直接回复并跳过</text>
+  <!-- connector row 1→2 -->
+  <path d="M730,68 v22 H90 v8" fill="none" stroke="#ff9d4d" stroke-width="1.4" marker-end="url(#qpFlowArrow)"/>
+  <!-- ═══ ROW 2: 构建 ═══ -->
+  <g stroke="#ff9d4d" stroke-width="1.4">
+    <line x1="238" y1="113" x2="254" y2="113" marker-end="url(#qpFlowArrow)"/>
+    <line x1="402" y1="113" x2="418" y2="113" marker-end="url(#qpFlowArrow)"/>
+    <line x1="566" y1="113" x2="582" y2="113" marker-end="url(#qpFlowArrow)"/>
   </g>
-  <!-- error / cleanup bracket -->
-  <path d="M70,92 q-14,0 -14,14 v384 q0,14 14,14" fill="none" stroke="currentColor" stroke-opacity="0.35" stroke-width="1.5"/>
-  <text x="30" y="298" font-size="11" fill="currentColor" fill-opacity="0.7" transform="rotate(-90 30 298)" text-anchor="middle">出错时 · 清理（始终执行）</text>
-  <text x="250" y="576" text-anchor="middle" font-size="10.5" fill="currentColor" fill-opacity="0.6">清理始终执行：取消回复、关闭连接器、重置请求状态。</text>
+  <rect x="90" y="98" width="148" height="30" rx="7" fill="#ff9d4d" fill-opacity="0.1" stroke="#ff9d4d" stroke-opacity="0.5"/><text x="164" y="117" text-anchor="middle" font-size="11" fill="currentColor">构建前</text>
+  <rect x="254" y="98" width="148" height="30" rx="7" fill="currentColor" fill-opacity="0.05" stroke="currentColor" stroke-opacity="0.3"/><text x="328" y="117" text-anchor="middle" font-size="11" font-weight="600" fill="currentColor">组装智能体</text>
+  <rect x="418" y="98" width="148" height="30" rx="7" fill="#ff9d4d" fill-opacity="0.1" stroke="#ff9d4d" stroke-opacity="0.5"/><text x="492" y="117" text-anchor="middle" font-size="11" fill="currentColor">构建后</text>
+  <rect x="582" y="98" width="148" height="30" rx="7" fill="#ff9d4d" fill-opacity="0.1" stroke="#ff9d4d" stroke-opacity="0.5"/><text x="656" y="117" text-anchor="middle" font-size="11" fill="currentColor">执行前</text>
+  <text x="164" y="142" text-anchor="middle" font-size="9" fill="currentColor" fill-opacity="0.55">会话 · 媒体 · 上下文</text>
+  <text x="328" y="142" text-anchor="middle" font-size="9" fill="currentColor" fill-opacity="0.55">模型 · 工具 · 提示词</text>
+  <text x="328" y="153" text-anchor="middle" font-size="9" fill="currentColor" fill-opacity="0.55">记忆 · 上下文策略 · 策略</text>
+  <text x="492" y="142" text-anchor="middle" font-size="9" fill="currentColor" fill-opacity="0.55">注入当前模式上下文</text>
+  <text x="656" y="142" text-anchor="middle" font-size="9" fill="currentColor" fill-opacity="0.55">首次初始化 · 提示词刷新</text>
+  <!-- connector row 2→3 -->
+  <path d="M730,128 v30 H90 v10" fill="none" stroke="#ff9d4d" stroke-width="1.4" marker-end="url(#qpFlowArrow)"/>
+  <!-- ═══ ROW 3: 执行 ═══ -->
+  <g stroke="#ff9d4d" stroke-width="1.4">
+    <line x1="290" y1="183" x2="310" y2="183" marker-end="url(#qpFlowArrow)"/>
+    <line x1="458" y1="183" x2="478" y2="183" marker-end="url(#qpFlowArrow)"/>
+  </g>
+  <rect x="90" y="168" width="200" height="30" rx="7" fill="currentColor" fill-opacity="0.05" stroke="currentColor" stroke-opacity="0.3"/><text x="190" y="187" text-anchor="middle" font-size="11" font-weight="600" fill="currentColor">运行智能体</text>
+  <rect x="310" y="168" width="148" height="30" rx="7" fill="#ff9d4d" fill-opacity="0.1" stroke="#ff9d4d" stroke-opacity="0.5"/><text x="384" y="187" text-anchor="middle" font-size="11" fill="currentColor">响应后</text>
+  <rect x="478" y="168" width="200" height="30" rx="15" fill="#ff9d4d" fill-opacity="0.18" stroke="#ff9d4d" stroke-opacity="0.6"/><text x="578" y="187" text-anchor="middle" font-size="11" font-weight="600" fill="currentColor">将响应流式输出</text>
+  <text x="190" y="212" text-anchor="middle" font-size="9" fill="currentColor" fill-opacity="0.55">ReAct 循环 · 最大迭代次数</text>
+  <text x="384" y="212" text-anchor="middle" font-size="9" fill="currentColor" fill-opacity="0.55">保存会话 · 定时任务回写</text>
+  <!-- bottom note -->
+  <text x="410" y="244" text-anchor="middle" font-size="10" fill="currentColor" fill-opacity="0.55">清理始终执行：取消回复、关闭连接器、重置请求状态。</text>
 </svg>
 
 ### 钩子、模式与组装智能体
@@ -249,7 +254,7 @@ QwenPaw 构建在 **AgentScope 2.0** 之上，把它当作一个库来用。Agen
 
 **模式**把相关的命令、工具、钩子和提示词片段收拢到一个开关后面。目前有两种：
 
-- **Coding 模式**加上了懂项目的工具（代码搜索、内联 diff 编辑）和一段 Coding 系统提示，作用范围限定在某个项目目录里。参见 [Coding 模式](./coding-mode)。
+- **Coding 模式**加上了懂项目的工具（代码搜索、内联 diff 编辑）和一段 Coding 系统提示，作用范围限定在某个项目目录里。
 - **Mission 模式**用两阶段循环来跑长任务：智能体先写一份计划，再用实现类工具反复迭代，直到每个检查点都通过。
 
 **组装智能体**每个请求只做一次：把智能体配置、模型、工具、系统提示、记忆和上下文策略凑齐，并给每个工具都包上一层，让治理层始终看得到。每次都重新组装，资源调配和策略就都留在智能体之外。
@@ -273,7 +278,7 @@ QwenPaw 的智能体跑的是一个 **ReAct（先推理后行动）循环**，�
 
 QwenPaw 把两个容易混为一谈的概念分开：**记忆**（智能体跨对话记住的东西）和**上下文**（当下能塞进模型窗口的内容）。
 
-<svg viewBox="0 0 860 372" width="100%" role="img" aria-label="记忆是构建在透明 Markdown 文件之上的可插拔后端；上下文管理要么采用总结式压缩，要么采用配备持久化存储和 recall 工具的 Scroll 策略。" xmlns="http://www.w3.org/2000/svg" font-family="ui-sans-serif, system-ui, -apple-system, Segoe UI, sans-serif">
+<svg viewBox="0 0 860 372" width="100%" role="img" aria-label="记忆可以选择内置 ReMe 后端或已安装的插件后端；ReMe 使用透明 Markdown 文件。上下文管理要么采用总结式压缩，要么采用配备持久化存储和 recall 工具的 Scroll 策略。" xmlns="http://www.w3.org/2000/svg" font-family="ui-sans-serif, system-ui, -apple-system, Segoe UI, sans-serif">
   <defs>
     <marker id="qpMemArrow" markerWidth="10" markerHeight="10" refX="6" refY="3" orient="auto" markerUnits="strokeWidth">
       <path d="M0,0 L6,3 L0,6 Z" fill="#ff9d4d"/>
@@ -286,7 +291,7 @@ QwenPaw 把两个容易混为一谈的概念分开：**记忆**（智能体跨�
   <line x1="220" y1="94" x2="220" y2="108" stroke="#ff9d4d" stroke-width="1.4" marker-end="url(#qpMemArrow)"/>
   <rect x="40" y="110" width="360" height="30" rx="7" fill="currentColor" fill-opacity="0.05" stroke="currentColor" stroke-opacity="0.25"/><text x="220" y="129" text-anchor="middle" font-size="12" fill="currentColor">可插拔记忆后端</text>
   <rect x="40" y="152" width="174" height="30" rx="7" fill="#ff9d4d" fill-opacity="0.12" stroke="#ff9d4d" stroke-opacity="0.5"/><text x="127" y="171" text-anchor="middle" font-size="11.5" fill="currentColor">ReMe（默认）</text>
-  <rect x="226" y="152" width="174" height="30" rx="7" fill="currentColor" fill-opacity="0.05" stroke="currentColor" stroke-opacity="0.25"/><text x="313" y="171" text-anchor="middle" font-size="11.5" fill="currentColor">纯 Markdown</text>
+  <rect x="226" y="152" width="174" height="30" rx="7" fill="currentColor" fill-opacity="0.05" stroke="currentColor" stroke-opacity="0.25"/><text x="313" y="171" text-anchor="middle" font-size="11.5" fill="currentColor">已安装插件后端</text>
   <text x="40" y="208" font-size="11" letter-spacing="1" font-weight="700" fill="currentColor" fill-opacity="0.75">工作区中的透明文件</text>
   <g font-size="11.5" fill="currentColor">
     <rect x="40" y="218" width="360" height="26" rx="6" fill="currentColor" fill-opacity="0.05" stroke="currentColor" stroke-opacity="0.25"/><text x="220" y="235" text-anchor="middle">MEMORY.md — 长期笔记</text>
@@ -309,7 +314,14 @@ QwenPaw 把两个容易混为一谈的概念分开：**记忆**（智能体跨�
   <text x="640" y="332" text-anchor="middle" font-size="10.5" fill="currentColor" fill-opacity="0.6">随时都能回放，而不是只剩摘要。</text>
 </svg>
 
-**记忆**是一个可插拔的后端。默认那套基于 [ReMe](https://github.com/agentscope-ai/ReMe) 记忆库，在工作区上用后台任务来做取回、写入和整合（“做梦”）；另一套更简单的则直接读写同一批文件。不管哪套，底层都是**人能读的 Markdown**——`MEMORY.md` 放长期笔记，再配上按日期分的每日文件——所以记忆你随时都能打开、查看、修改。参见[记忆](./memory)和[记忆演化与主动交互](./memory-evolving-and-proactive)。
+**记忆**通过带 owner 信息的 backend registry 选择。内置默认后端基于
+[ReMe](https://github.com/agentscope-ai/ReMe)，在透明的 workspace Markdown 文件上用后台
+任务执行召回、写入和整合（“做梦”）。也可以安装 ADBPG、PowerContext 等插件，由插件拥有
+远程存储、配置校验、工具和检索行为。每个 workspace 会向选中的 backend 传入稳定上下文，
+其中包含 Agent 身份、workspace、语言和该 Agent 的插件配置；backend 不可用时会明确失败，
+不会回退到其他记忆存储。参见[记忆](./memory)、
+[记忆演化与主动交互](./memory-evolving-and-proactive)和
+[插件](./plugins#memory-backend-插件)。
 
 **上下文**管理同样可插拔。默认情况下，窗口一满，QwenPaw 就把较早的对话轮次总结掉。可选的 **Scroll 策略**换了个思路：它把每一轮都存进持久化存储，给已经滚出窗口的内容留一份精简索引，再给智能体一个工具，按需就能回放早先的任意一段对话——长对话因此能完整找回。参见[上下文](./context)。
 
@@ -384,7 +396,7 @@ QwenPaw 把**频道**（人怎么联系到智能体）和**驱动**（智能体�
   <line x1="683" y1="226" x2="683" y2="252" stroke="#ff9d4d" stroke-width="1.5" marker-end="url(#qpSecArrow)"/>
   <rect x="560" y="256" width="246" height="40" rx="8" fill="currentColor" fill-opacity="0.05" stroke="currentColor" stroke-opacity="0.3"/><text x="683" y="275" text-anchor="middle" font-size="12" fill="currentColor">工具守卫 — 内容筛查</text><text x="683" y="289" text-anchor="middle" font-size="10" fill="currentColor" fill-opacity="0.65">路径 · 模式 · Shell 规避检查</text>
   <line x1="683" y1="296" x2="683" y2="320" stroke="#ff9d4d" stroke-width="1.5" marker-end="url(#qpSecArrow)"/>
-  <rect x="560" y="324" width="246" height="44" rx="8" fill="#ff9d4d" fill-opacity="0.12" stroke="#ff9d4d" stroke-opacity="0.55"/><text x="683" y="343" text-anchor="middle" font-size="12" font-weight="600" fill="currentColor">在原生 OS 沙箱中执行</text><text x="683" y="358" text-anchor="middle" font-size="10" fill="currentColor" fill-opacity="0.7">seatbelt · bubblewrap · landlock · 无</text>
+  <rect x="560" y="324" width="246" height="56" rx="8" fill="#ff9d4d" fill-opacity="0.12" stroke="#ff9d4d" stroke-opacity="0.55"/><text x="683" y="341" text-anchor="middle" font-size="12" font-weight="600" fill="currentColor">在原生 OS 沙箱中执行</text><text x="683" y="356" text-anchor="middle" font-size="9.5" fill="currentColor" fill-opacity="0.7">seatbelt · bubblewrap · landlock</text><text x="683" y="370" text-anchor="middle" font-size="9.5" fill="currentColor" fill-opacity="0.7">appcontainer · write restricted token · 无</text>
   <!-- side: skill scanner + secrets -->
   <rect x="40" y="256" width="280" height="40" rx="8" fill="currentColor" fill-opacity="0.05" stroke="currentColor" stroke-opacity="0.3"/><text x="180" y="275" text-anchor="middle" font-size="11.5" fill="currentColor">技能扫描器 — 把关技能安装</text><text x="180" y="289" text-anchor="middle" font-size="9.5" fill="currentColor" fill-opacity="0.6">代码运行前先静态分析</text>
   <rect x="40" y="324" width="280" height="40" rx="8" fill="currentColor" fill-opacity="0.05" stroke="currentColor" stroke-opacity="0.3"/><text x="180" y="343" text-anchor="middle" font-size="11.5" fill="currentColor">加密凭据存储</text><text x="180" y="357" text-anchor="middle" font-size="9.5" fill="currentColor" fill-opacity="0.6">静态存储的提供商密钥和连接器密钥</text>
@@ -394,7 +406,7 @@ QwenPaw 把**频道**（人怎么联系到智能体）和**驱动**（智能体�
 
 - **治理策略**——每次工具调用都拿内置规则和你自己的规则比对，给出放行、拒绝、询问或沙箱之一。工具在智能体调用之前就已经包好，所以这道检查绕不过去。给出*询问*时会弹出一个审批，你可以在控制台或自己的 IM 频道里回应。
 - **工具守卫**——对已放行的调用再查一遍内容，盯着路径穿越、敏感文件、危险写法和 Shell 绕过手法。
-- **沙箱**——把有风险的执行放进宿主自带的隔离里跑：macOS 用 seatbelt，Linux 用 bubblewrap（首选）或 landlock，也可以不隔离。每次工具调用都新建一个沙箱，带上声明好的挂载点和禁止访问的路径。Windows 上的原生沙箱仍在开发中（参见[路线图](./roadmap)）。
+- **沙箱**——把有风险的执行放进宿主自带的隔离里跑：macOS 用 seatbelt，Linux 用 bubblewrap（首选）或 landlock，Windows 用 AppContainer，也可以不隔离。每次工具调用都新建一个沙箱，带上声明好的挂载点和禁止访问的路径。
 - **技能扫描器**——技能安装前先对它的文件做一遍静态分析。
 - **加密密钥**——提供商密钥和连接器凭据都加密存放。
 

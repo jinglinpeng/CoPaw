@@ -1,15 +1,107 @@
 ---
 title: "QwenPaw 开发者日会合集"
-date: 2026-06-30
+date: 2026-10-13
 author: QwenPaw Team
-tags: [QwenPaw, 日会合集]
+tags: [开发者日会, 会议纪要, 会议录屏]
 cover: /blog/qwenpaw-developer-day-collection-cover.png
 excerpt: "QwenPaw团队召开开发者日会，为每一位 QwenPaw 开发者与爱好者提供一份兼具理论深度与落地价值的完整技术交流档案。"
 ---
 
-最近更新 2026 年 6 月 30 日
+最近更新 2026 年 10 月 13 日
 
 ---
+
+**10-13 QwenPaw 社区交流会：AgentTeams 最新进展详解**
+
+会议链接：https://shanji.dingtalk.com/app/transcribes/76327569643438333132333237355f323034353035363233375f30
+
+**10-08 QwenPaw 社区交流会：QwenPaw Mobile详解**
+
+会议链接：https://shanji.dingtalk.com/app/transcribes/76327569643437353339303638375f323034353035363233375f30
+
+**09-15 QwenPaw 社区交流会：QwenPaw 前端优化详解**
+
+会议链接：https://shanji.dingtalk.com/app/transcribes/76327569643434393938383539385f323034353035363233375f30
+
+**09-10 QwenPaw 社区交流会：QwenPaw-Creator 更新详解**
+
+会议链接：https://shanji.dingtalk.com/app/transcribes/76327569643434333432323139315f323034353035363233375f30
+
+**09-08 QwenPaw 社区交流会：AgentScope Realtime 实时交互 & SOP 能力构建详解**
+
+会议链接：https://shanji.dingtalk.com/app/transcribes/76327569643433393835303931305f323034353035363233375f39
+
+**09-03 QwenPaw 社区交流会：QwenPaw Hub 详解**
+
+会议链接：https://shanji.dingtalk.com/app/transcribes/76327569643433333230363031335f323034353035363233375f30
+
+**09-01 QwenPaw 社区交流会：Agent Mail 功能解析**
+
+会议链接：https://shanji.dingtalk.com/app/transcribes/76327569643432393639363238385f323034353035363233375f30
+
+**08-25 QwenPaw 社区交流会：检查点功能详解和演示**
+
+会议链接：https://shanji.dingtalk.com/app/transcribes/76327569643431393733353733385f323034353035363233375f30
+
+**08-20 QwenPaw 社区交流会：QwenPaw 跨Harness Agent 集成详解**
+
+会议链接：https://shanji.dingtalk.com/app/transcribes/76327569643431333735393339335f323034353035363233375f30
+
+**08-18 QwenPaw 社区交流会：QwenPaw 新版长期记忆详解**
+
+会议链接：https://shanji.dingtalk.com/app/transcribes/76327569643431303630343433335f323034353035363233375f30
+
+**08-13 QwenPaw 社区交流会：QwenPaw Loop Engineering 介绍以及 OMP 插件解析**
+
+会议链接：https://shanji.dingtalk.com/app/transcribes/76327569643430343338313333315f323034353035363233375f30
+
+**08-11 QwenPaw 社区交流会：QwenPaw Apps 模块解析**
+
+会议链接：https://shanji.dingtalk.com/app/transcribes/76327569643430313131363531305f323034353035363233375f30
+
+**08-06 QwenPaw 社区交流会：QwenPaw 全新 computer-use 模块解析**
+
+会议链接：https://shanji.dingtalk.com/app/transcribes/76327569643339353131303638355f323034353035363233375f30
+
+**08-04 QwenPaw 社区交流会：QwenPaw 全新 Browser-use 模块解析**
+
+会议链接：https://shanji.dingtalk.com/app/transcribes/76327569643339313835313434355f323034353035363233375f30
+
+**07-30 QwenPaw 社区交流会：QwenPaw-Data 分享**
+
+会议链接：https://shanji.dingtalk.com/app/transcribes/76327569643338353539353936355f323034353035363233375f30
+
+**07-28 QwenPaw 社区交流会：Agent Teams 分享**
+
+会议链接：https://shanji.dingtalk.com/app/transcribes/76327569643338323538313732325f323034353035363233375f30
+
+**07-23 QwenPaw 开发者日会：QwenPaw-TUI 详解**
+
+会议链接：https://shanji.dingtalk.com/app/transcribes/76327569643337363931373639305f323034353035363233375f30
+
+**07-21 QwenPaw 开发者日会：QwenPaw-Creator 个人视频创作工作台**
+
+会议链接：https://shanji.dingtalk.com/app/transcribes/76327569643337333839323639385f323034353035363233375f30
+
+**07-17 QwenPaw 开发者日会：AgentScope-Java 2.0 正式版详解 & AgentScope-Go 预透**
+
+会议链接：https://shanji.dingtalk.com/app/transcribes/76327569643336373839363436365f323034353035363233375f39
+
+**07-14 QwenPaw 开发者日会：QwenPaw 2.0 WorkSpace & Sandbox 模块详解**
+
+会议链接：https://shanji.dingtalk.com/app/transcribes/76327569643336343833393033335f323034353035363233375f30
+
+**07-09 QwenPaw 开发者日会：AgentScope 2.0 最新更新详解（Agent Team/Agent Service、多租户RAG、长期记忆、实时语音、工具中间件和WebUI）**
+
+会议链接：https://shanji.dingtalk.com/app/transcribes/76327569643335383731333935325f323034353035363233375f30
+
+**07-07 QwenPaw 开发者日会：QwenPaw 2.0 插件迁移指南**
+
+会议链接：https://shanji.dingtalk.com/app/transcribes/76327569643335353433393536335f323034353035363233375f30
+
+**07-02 QwenPaw 开发者日会：QwenPaw 2.0 Runtime 模块详解**
+
+会议链接：https://shanji.dingtalk.com/app/transcribes/76327569643334393537303636305f323034353035363233375f30
 
 **06-30 QwenPaw 开发者日会：QwenPaw 2.0 Driver 模块详解**
 
