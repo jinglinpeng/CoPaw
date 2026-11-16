@@ -497,6 +497,7 @@ jobs:
             dist/QwenPaw-Tauri-*-linux-*.AppImage.sha256
             ${{ runner.temp }}/qwenpaw-desktop-stdout.log
             ${{ runner.temp }}/qwenpaw-desktop-stderr.log
+            ${{ runner.temp }}/verify-screenshots/
 
       - name: Upload desktop verify logs (Tauri Linux)
         if: failure()
@@ -506,3 +507,4 @@ jobs:
           path: |
             ${{ runner.temp }}/qwenpaw-desktop-stdout.log
             ${{ runner.temp }}/qwenpaw-desktop-stderr.log
+            ${{ runner.temp }}/verify-screenshots/

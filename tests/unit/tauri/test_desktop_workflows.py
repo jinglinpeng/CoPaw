@@ -2,6 +2,7 @@
 """Regression tests for desktop packaging workflows."""
 
 import json
+import importlib
 import os
 from pathlib import Path
 import re
@@ -26,6 +27,130 @@ RELEASE_HELPERS = (
     "scripts/pack/generate_oss_metadata.py",
     "scripts/pack-tauri/generate_update_manifest.py",
 )
+
+
+@pytest.mark.skipif(sys.platform != "linux", reason="Linux packaging script")
+@pytest.mark.parametrize("status", [0, 37])
+def test_linux_packaging_preserves_bundler_failure(tmp_path, status):
+    """A partial AppDir must never be published after dependency deployment fails."""
+    script = tmp_path / "scripts/pack-tauri/build_linux_pyinstaller.sh"
+    script.parent.mkdir(parents=True)
+    shutil.copyfile(REPO_ROOT / script.relative_to(tmp_path), script)
+    version = tmp_path / "src/qwenpaw/__version__.py"
+    version.parent.mkdir(parents=True)
+    version.write_text('__version__ = "1.0.0"\n')
+    bundle = tmp_path / "console/src-tauri/target/release/bundle"
+    bundle.mkdir(parents=True)
+    cache = tmp_path / "cache"
+    apprun = cache / "tauri" / f"AppRun-{os.uname().machine}"
+    apprun.parent.mkdir(parents=True)
+    apprun.write_text("#!/bin/sh\n")
+    apprun.chmod(0o770)
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    for name in ("node", "rustc", "cargo", "pkg-config"):
+        tool = bin_dir / name
+        tool.write_text("#!/bin/sh\nexit 0\n")
+        tool.chmod(0o755)
+    npm = bin_dir / "npm"
+    npm.write_text(
+        "#!/bin/sh\n"
+        'mkdir -p "$BUNDLE/deb" "$BUNDLE/appimage/QwenPaw.AppDir"\n'
+        'cp "$APPRUN" "$BUNDLE/appimage/QwenPaw.AppDir/AppRun"\n'
+        'touch "$BUNDLE/deb/test.deb"\n'
+        'if [ "$BUNDLER_STATUS" = 0 ]; then\n'
+        '  touch "$BUNDLE/appimage/test.AppImage"\n'
+        "fi\n"
+        'exit "$BUNDLER_STATUS"\n',
+    )
+    npm.chmod(0o755)
+    result = subprocess.run(
+        ["bash", str(script)],
+        cwd=tmp_path,
+        env={
+            **os.environ,
+            "PATH": str(bin_dir) + os.pathsep + os.environ["PATH"],
+            "XDG_CACHE_HOME": str(cache),
+            "QWENPAW_SKIP_BACKEND_BUILD": "1",
+            "BUNDLE": str(bundle),
+            "APPRUN": str(apprun),
+            "BUNDLER_STATUS": str(status),
+        },
+        capture_output=True,
+        text=True,
+        timeout=10,
+        check=False,
+    )
+    assert result.returncode == status, result.stdout + result.stderr
+    assert apprun.stat().st_mode & 0o777 == 0o755
+    outputs = list((tmp_path / "dist").glob("*"))
+    assert len(outputs) == (2 if status == 0 else 0)
+
+
+@pytest.mark.parametrize("rendered", [True, False])
+def test_linux_native_window_required_before_web_checks(
+    tmp_path,
+    monkeypatch,
+    rendered,
+):
+    """A working API or separate browser cannot substitute for the native UI."""
+    monkeypatch.syspath_prepend(str(REPO_ROOT / "scripts/verify"))
+    verifier = importlib.import_module("verify_tauri_linux")
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("RUNNER_TEMP", str(tmp_path))
+    monkeypatch.setattr(verifier.Path, "home", lambda: tmp_path)
+    monkeypatch.setattr(verifier.time, "sleep", lambda _: None)
+    monkeypatch.setattr(sys, "argv", ["verify_tauri_linux.py"])
+    artifact = tmp_path / "dist/QwenPaw-Tauri-test-linux-x86_64.AppImage"
+    artifact.parent.mkdir()
+    artifact.touch()
+    calls = []
+
+    def http(method, url, body, timeout):
+        calls.append((method, url))
+        if url.endswith("/session"):
+            assert body["capabilities"]["alwaysMatch"][
+                "webkitgtk:browserOptions"
+            ]["binary"] == str(artifact)
+            value = {"sessionId": "native"}
+        elif url.endswith("/execute/sync"):
+            value = "http://127.0.0.1:8088" if rendered else None
+        elif url.endswith("/screenshot"):
+            value = "cG5n"
+        else:
+            value = {}
+        return json.dumps({"value": value})
+
+    class Driver:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        def poll(self):
+            return None
+
+        def terminate(self):
+            calls.append("terminated")
+
+        def wait(self, **kwargs):
+            return 0
+
+    def web_checks(*args, **kwargs):
+        calls.append("web checks")
+        return subprocess.CompletedProcess(args, 0)
+
+    monkeypatch.setattr(verifier, "_http", http)
+    monkeypatch.setattr(verifier.subprocess, "Popen", Driver)
+    monkeypatch.setattr(verifier.subprocess, "run", web_checks)
+    if rendered:
+        assert verifier.main() == 0
+        assert "web checks" in calls
+        assert (tmp_path / "verify-screenshots/00-native-window.png").is_file()
+    else:
+        with pytest.raises(RuntimeError, match="did not render"):
+            verifier.main()
+        assert "web checks" not in calls
+    assert ("DELETE", "http://127.0.0.1:9515/session/native") in calls
+    assert calls[-1] == "terminated"
 
 
 def _load_workflow(name: str) -> dict:
