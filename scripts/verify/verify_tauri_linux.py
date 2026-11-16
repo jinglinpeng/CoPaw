@@ -99,7 +99,7 @@ def main() -> int:
                 time.sleep(2)
             if not isinstance(port, int) or not 1 <= port <= 65535:
                 raise RuntimeError(
-                    f"Native window did not render the chat input: {port}"
+                    f"Native window did not render the chat input: {port}",
                 )
             base_url = f"http://127.0.0.1:{port}"
             screenshot = command("GET", session + "/screenshot")
@@ -133,7 +133,8 @@ def main() -> int:
                     command("DELETE", session, timeout=10)
                 except RuntimeError as exc:
                     print(
-                        f"WARN  closing native window: {exc}", file=sys.stderr
+                        f"WARN  closing native window: {exc}",
+                        file=sys.stderr,
                     )
             driver.terminate()
             try:
