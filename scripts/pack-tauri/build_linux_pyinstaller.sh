@@ -125,6 +125,9 @@ echo "== Step 3: Tauri bundles (deb + AppImage) =="
 cd console
 # Verbose output preserves linuxdeploy errors. A deployment failure must stop
 # the build; compressing a partial AppDir can ship missing GTK dependencies.
+# Some torch helper executables lack a relative RPATH. Let linuxdeploy's ldd
+# resolve their dependencies from the libraries already shipped in our bundle.
+LD_LIBRARY_PATH="${REPO_ROOT}/console/src-tauri/binaries/qwenpaw-backend/_internal/torch/lib${LD_LIBRARY_PATH:+:${LD_LIBRARY_PATH}}" \
 APPIMAGE_EXTRACT_AND_RUN=1 npm exec -- tauri build --verbose \
   --config src-tauri/tauri.version.conf.json \
   --bundles deb,appimage
