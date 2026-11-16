@@ -50,7 +50,7 @@ jobs:
           test -n "$payload"
           mkdir -p console/src-tauri/binaries console/src-tauri/target/release
           cp -a "$payload/." console/src-tauri/binaries/
-          cp prior-deb/usr/bin/qwenpaw-desktop console/src-tauri/target/release/
+          cp -a prior-deb/usr/bin/. console/src-tauri/target/release/
           rm -rf prior-build prior-deb
           cd console
           npm ci
