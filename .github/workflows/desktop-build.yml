@@ -439,6 +439,7 @@ jobs:
         run: rm -rf dist && mkdir -p dist
 
       - name: Build Tauri Linux package
+        shell: bash
         env:
           NODE_OPTIONS: "--max-old-space-size=8192"
           # Authenticate the python-build-standalone release lookup in
