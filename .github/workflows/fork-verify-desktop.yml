@@ -1,4 +1,4 @@
-name: PR 8444 native deb diagnostic
+name: PR 8444 bundle diagnostic
 
 on:
   workflow_dispatch:
@@ -8,9 +8,9 @@ permissions:
   actions: read
 
 jobs:
-  native-deb:
+  rebundle-linux:
     runs-on: ubuntu-24.04
-    timeout-minutes: 20
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
         with:
@@ -20,41 +20,84 @@ jobs:
         with:
           python-version: "3.11"
 
-      - name: Install native runtime and driver dependencies
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+
+      - name: Install packaging and driver dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y --no-install-recommends xvfb webkit2gtk-driver libtbb12
+          sudo apt-get install -y --no-install-recommends \
+            build-essential curl file patchelf libfuse2 libtbb12 pkgconf \
+            libgtk-3-dev libsoup-3.0-dev librsvg2-dev \
+            libayatana-appindicator3-dev libwebkit2gtk-4.1-dev xvfb
 
-      - name: Download deb from the failed AppImage build
+      - name: Download compiled components from the last build
         uses: actions/download-artifact@v4
         with:
           github-token: ${{ github.token }}
-          run-id: 43833266614
+          run-id: 43836080953
           name: pr8444-linux-packaging-evidence
           path: prior-build
 
-      - name: Install prior deb for native-window diagnostics
+      - name: Restore the compiled shell and resource payload
+        shell: bash
         run: |
           deb="$(find "$PWD/prior-build" -name '*.deb' -print -quit)"
           test -n "$deb"
-          sudo apt-get install -y "$deb"
-          mkdir -p dist
-          # The verifier resolves this symlink to the installed native binary.
-          # This diagnoses the deb; it does not validate an AppImage.
-          ln -s /usr/bin/qwenpaw-desktop dist/QwenPaw-Tauri-prior-deb-linux-x86_64.AppImage
+          dpkg-deb -x "$deb" prior-deb
+          payload="$(find prior-deb/usr/lib -maxdepth 2 -name binaries -type d -print -quit)"
+          test -n "$payload"
+          mkdir -p console/src-tauri/binaries console/src-tauri/target/release
+          cp -a "$payload/." console/src-tauri/binaries/
+          cp prior-deb/usr/bin/qwenpaw-desktop console/src-tauri/target/release/
+          rm -rf prior-build prior-deb
+          cd console
+          npm ci
+          node ../scripts/pack-tauri/sync_tauri_version.mjs
 
-      - name: Verify the installed deb's native window and backend
+      - name: Rebundle using the production script
+        shell: bash
+        env:
+          QWENPAW_SKIP_BACKEND_BUILD: "1"
+        run: |
+          # Only replace compilation with Tauri's supported bundle-only command.
+          # All packaging environment, error handling and collection use the fix.
+          export QWENPAW_VALIDATION_NPM="$(command -v npm)"
+          mkdir -p "$RUNNER_TEMP/bundle-only-bin"
+          cat > "$RUNNER_TEMP/bundle-only-bin/npm" <<'SH'
+          #!/usr/bin/env bash
+          if [ "${1-} ${2-} ${3-} ${4-}" = "exec -- tauri build" ]; then
+            shift 4
+            exec "$QWENPAW_VALIDATION_NPM" exec -- tauri bundle "$@"
+          fi
+          exec "$QWENPAW_VALIDATION_NPM" "$@"
+          SH
+          chmod +x "$RUNNER_TEMP/bundle-only-bin/npm"
+          export PATH="$RUNNER_TEMP/bundle-only-bin:$PATH"
+          bash scripts/pack-tauri/build_linux_pyinstaller.sh 2>&1 | tee "$RUNNER_TEMP/pr8444-build.log"
+
+      - name: Verify the repackaged AppImage
         uses: ./.github/actions/verify-tauri-linux
 
-      - name: Preserve native diagnostics
+      - name: Preserve packaging diagnostics
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: pr8444-native-deb-diagnostics
+          name: pr8444-rebundle-diagnostics
           if-no-files-found: warn
           path: |
+            dist/QwenPaw-Tauri-*-linux-*.deb
+            dist/QwenPaw-Tauri-*-linux-*.AppImage
+            ${{ runner.temp }}/pr8444-build.log
             ${{ runner.temp }}/qwenpaw-desktop-stdout.log
             ${{ runner.temp }}/qwenpaw-desktop-stderr.log
             ${{ runner.temp }}/verify-screenshots/
-            ~/.qwenpaw/**/launcher.log
-            ~/.qwenpaw/desktop.log
+
+      - name: Preserve window screenshot separately
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: pr8444-rebundle-native-window
+          if-no-files-found: ignore
+          path: ${{ runner.temp }}/verify-screenshots/
