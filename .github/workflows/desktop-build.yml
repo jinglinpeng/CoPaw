@@ -404,7 +404,11 @@ jobs:
       - name: Install Linux packaging dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y --no-install-recommends             build-essential curl file patchelf libfuse2 pkgconf             libgtk-3-dev libsoup-3.0-dev librsvg2-dev             libayatana-appindicator3-dev libwebkit2gtk-4.1-dev             xvfb
+          # Numba's TBB extension needs libtbb.so.12 during dependency collection.
+          sudo apt-get install -y --no-install-recommends \
+            build-essential curl file patchelf libfuse2 libtbb12 pkgconf \
+            libgtk-3-dev libsoup-3.0-dev librsvg2-dev \
+            libayatana-appindicator3-dev libwebkit2gtk-4.1-dev xvfb
 
       - name: Set up Python
         uses: actions/setup-python@v5
