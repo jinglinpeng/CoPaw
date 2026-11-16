@@ -113,8 +113,8 @@ def test_linux_native_window_required_before_web_checks(
                 "webkitgtk:browserOptions"
             ]["binary"] == str(artifact)
             value = {"sessionId": "native"}
-        elif url.endswith("/execute/sync"):
-            value = "http://127.0.0.1:8088" if rendered else None
+        elif url.endswith("/execute/async"):
+            value = 8088 if rendered else None
         elif url.endswith("/screenshot"):
             value = "cG5n"
         else:
