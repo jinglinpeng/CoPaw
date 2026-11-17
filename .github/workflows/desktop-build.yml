@@ -471,7 +471,10 @@ jobs:
             echo "::error::Expected exactly one Linux deb, found ${#deb_artifacts[@]}"
             exit 1
           fi
-          sha256sum "${deb_artifacts[0]}" > "${deb_artifacts[0]}.sha256"
+          (
+            cd "$(dirname "${deb_artifacts[0]}")"
+            sha256sum "$(basename "${deb_artifacts[0]}")" > "$(basename "${deb_artifacts[0]}").sha256"
+          )
           dpkg-deb -I "${deb_artifacts[0]}" | sed -n '/Depends/p'
 
       - name: Upload desktop artifacts (Tauri Linux)
