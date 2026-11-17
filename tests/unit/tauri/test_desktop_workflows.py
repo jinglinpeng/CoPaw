@@ -29,6 +29,27 @@ RELEASE_HELPERS = (
 )
 
 
+def test_linux_publisher_preserves_windows_install_registry_key():
+    """Linux maintainer metadata must not move existing NSIS installations."""
+    config_dir = REPO_ROOT / "console/src-tauri"
+    config = json.loads(
+        (config_dir / "tauri.conf.json").read_text(encoding="utf-8"),
+    )
+    # Tauri NSIS uses the identifier's second component when publisher is unset.
+    manufacturer = (
+        config["bundle"].get("publisher") or config["identifier"].split(".")[1]
+    )
+    registry_key = rf"Software\{manufacturer}\{config['productName']}"
+    assert registry_key == r"Software\agentscope\QwenPaw Desktop"
+
+    linux = json.loads(
+        (config_dir / "tauri.linux.conf.json").read_text(encoding="utf-8"),
+    )
+    assert linux["bundle"]["publisher"] == (
+        "QwenPaw Contributors <qwenpaw@users.noreply.github.com>"
+    )
+
+
 @pytest.mark.skipif(sys.platform != "linux", reason="Linux packaging script")
 @pytest.mark.parametrize("status", [0, 37])
 def test_linux_packaging_preserves_bundler_failure(tmp_path, status):

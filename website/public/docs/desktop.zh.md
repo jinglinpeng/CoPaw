@@ -237,6 +237,8 @@ A: 当前采用
 
 ## Linux 使用指南
 
+Linux 桌面版目前通过 GitHub Actions 提供测试安装包，尚未发布到 GitHub Releases 或官网下载页，也暂不支持自动更新。
+
 ### 系统要求
 
 - **操作系统**：Ubuntu 24.04 LTS 或更新、Debian 13 或更新（glibc 2.39+），x86_64
@@ -246,7 +248,7 @@ A: 当前采用
 
 ### 安装步骤
 
-1. 从 [Release 页面][releases] 下载 `QwenPaw-Tauri-<version>-linux-x86_64.deb`
+1. 在仓库的 GitHub Actions 中打开一次成功的 **Desktop Build (reusable)** 运行，从 **Artifacts** 下载 `tauri-linux`，解压后找到 `QwenPaw-Tauri-<version>-linux-x86_64.deb`。
 2. 用 apt 安装，依赖会自动补齐：
 
    ```bash
