@@ -243,7 +243,7 @@ Linux desktop packages are currently available for testing through GitHub Action
 
 - **Operating System**: Ubuntu 24.04 LTS or newer, Debian 13 or newer (glibc 2.39+), x86_64
 - **Runtime dependencies**: `libwebkit2gtk-4.1-0`, `libgtk-3-0t64`, `libayatana-appindicator3-1`
-- **Session**: Wayland or X11 (both work; GNOME 50 on Ubuntu 26.04 is Wayland-only)
+- **Session**: Wayland or X11
 - **Disk space**: about 3.5 GB after installation
 
 ### Installation Steps
@@ -268,8 +268,8 @@ The app creates `~/.qwenpaw` on first launch and initializes a default workspace
 
 ### Known Limitations (Linux)
 
-- **Blurry UI under fractional display scaling.** The desktop window is a GTK 3 webview, and GTK 3 has no fractional scaling: at 125% or 150% the compositor renders the window at 1x and scales it up, so text looks soft. Other GTK 3 applications on the same desktop show the same effect. Set the display to an integer scale (100% or 200%) when sharp text matters.
-- **Scrolling and window resizing can feel slower than in a browser.** The same Console UI rendered in a browser uses a different engine; WebKitGTK's compositing path is slower on some GPU/Wayland combinations. This is a rendering-path limitation, not a packaging one.
+- Text may look blurry under fractional display scaling. Try 100% or 200% scaling.
+- On some desktop environments, scrolling and window resizing may feel slower than in a browser.
 
 ### Updates and Uninstall
 
