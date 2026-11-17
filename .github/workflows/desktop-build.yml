@@ -452,9 +452,20 @@ jobs:
           chmod +x scripts/pack-tauri/build_linux_pyinstaller.sh
           bash scripts/pack-tauri/build_linux_pyinstaller.sh 2>&1 | tee "${RUNNER_TEMP}/pr8444-build.log"
 
+      - name: Require the configured chat verification key
+        env:
+          QWENPAW_DASHSCOPE_API_KEY: ${{ secrets.QWENPAW_DASHSCOPE_API_KEY }}
+        run: |
+          if [ -z "$QWENPAW_DASHSCOPE_API_KEY" ]; then
+            echo "::error::QWENPAW_DASHSCOPE_API_KEY is required for chat verification"
+            exit 1
+          fi
+
       - name: Verify desktop (Tauri Linux)
         timeout-minutes: 15
         uses: ./.github/actions/verify-tauri-linux
+        with:
+          dashscope-api-key: ${{ secrets.QWENPAW_DASHSCOPE_API_KEY }}
 
       - name: Stop desktop server (Tauri Linux)
         if: always()
