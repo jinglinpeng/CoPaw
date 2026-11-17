@@ -40,7 +40,6 @@
   },
   "bundle": {
     "active": true,
-    "copyright": "Copyright © QwenPaw Contributors",
     "targets": ["app", "nsis", "deb"],
     "icon": [
       "../../scripts/pack/assets/icon.icns",
