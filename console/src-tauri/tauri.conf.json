@@ -40,7 +40,6 @@
   },
   "bundle": {
     "active": true,
-    "publisher": "QwenPaw Contributors <qwenpaw@users.noreply.github.com>",
     "copyright": "Copyright © QwenPaw Contributors",
     "targets": ["app", "nsis", "deb"],
     "icon": [

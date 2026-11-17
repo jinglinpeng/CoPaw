@@ -237,6 +237,8 @@ A: Currently using:
 
 ## Linux Guide
 
+Linux desktop packages are currently available for testing through GitHub Actions. They are not yet published to GitHub Releases or the download website, and automatic updates are not available.
+
 ### System Requirements
 
 - **Operating System**: Ubuntu 24.04 LTS or newer, Debian 13 or newer (glibc 2.39+), x86_64
@@ -246,7 +248,7 @@ A: Currently using:
 
 ### Installation Steps
 
-1. Download `QwenPaw-Tauri-<version>-linux-x86_64.deb` from the [Release page][releases]
+1. Open a successful **Desktop Build (reusable)** run in the repository's GitHub Actions. Download the `tauri-linux` artifact from **Artifacts**, extract it, and locate `QwenPaw-Tauri-<version>-linux-x86_64.deb`.
 2. Install it with apt so dependencies resolve automatically:
 
    ```bash

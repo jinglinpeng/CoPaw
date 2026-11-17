@@ -3,10 +3,15 @@
 _中文版：[RELEASING_zh.md](RELEASING_zh.md)_
 
 QwenPaw ships four artifacts from a single version — the **PyPI** wheel, the
-**Docker** image, the **desktop** apps (Tauri, Windows + macOS + Linux) and the
+**Docker** image, the **desktop** apps (Tauri, Windows + macOS) and the
 **plugins** bundle. They are published together by one orchestrated workflow so
 that a failure in any one of them blocks the whole release: you can never end up
 with, e.g., a web release that has no matching desktop build.
+
+Linux `.deb` packages are also built and verified during the prepare phase, but
+are currently available only as the `tauri-linux` GitHub Actions artifact for
+testing. Publishing Linux installers to GitHub Releases, OSS and the download
+website, and providing automatic updates, are not yet implemented.
 
 > Orchestrator: [`.github/workflows/release.yml`](.github/workflows/release.yml).
 > The older per-artifact workflows are kept as a fallback — see
@@ -38,10 +43,10 @@ with, e.g., a web release that has no matching desktop build.
    - `build-plugins` — pack the plugin bundle.
 3. **Gate + Publish** — every publish job `needs` **all** prepare jobs, so a
    single failure above skips the entire publish phase. When all prepare jobs are
-   green: publish to PyPI, push the multi-arch Docker image, attach the desktop
-   installers to the release + upload them to OSS, publish plugins — then, as the
-   **last** step, flip the draft to *published* (pinned to the built SHA). After
-   publishing, it promotes the desktop `latest`/updater, deploys the website
+   green: publish to PyPI, push the multi-arch Docker image, attach the Windows
+   and macOS installers to the release + upload them to OSS, publish plugins —
+   then, as the **last** step, flip the draft to *published* (pinned to the built
+   SHA). After publishing, it promotes the desktop `latest`/updater, deploys the website
    (stable/post only — betas are skipped), and opens the Release Duty verification
    issue.
 
