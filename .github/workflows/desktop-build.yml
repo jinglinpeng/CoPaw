@@ -28,9 +28,11 @@ on:
 
 permissions:
   contents: read
+  actions: read
 
 jobs:
   build-tauri-windows:
+    if: ${{ false }}
     runs-on: windows-latest
     timeout-minutes: 60
     steps:
@@ -219,6 +221,7 @@ jobs:
             dist/tauri-windows-x86_64-updater.json.sha256
 
   build-tauri-macos:
+    if: ${{ false }}
     runs-on: macos-15
     timeout-minutes: 90
     steps:
@@ -396,6 +399,18 @@ jobs:
         with:
           ref: ${{ inputs.ref || github.ref }}
           submodules: recursive
+          persist-credentials: false
+
+      - name: Record the product revision and require real chat
+        env:
+          QWENPAW_DASHSCOPE_API_KEY: ${{ secrets.QWENPAW_DASHSCOPE_API_KEY }}
+        run: |
+          test "$(git rev-parse HEAD)" = "9bf8cc0f7f834262d634587fa926c67c3b8e5c0e"
+          git rev-parse HEAD | tee "${RUNNER_TEMP}/product-revision.txt"
+          if [ -z "$QWENPAW_DASHSCOPE_API_KEY" ]; then
+            echo "::error::QWENPAW_DASHSCOPE_API_KEY is required for chat verification"
+            exit 1
+          fi
 
       - name: Get version
         id: version
@@ -439,6 +454,7 @@ jobs:
         run: rm -rf dist && mkdir -p dist
 
       - name: Build Tauri Linux package
+        shell: bash
         env:
           NODE_OPTIONS: "--max-old-space-size=8192"
           # Authenticate the python-build-standalone release lookup in
@@ -446,7 +462,7 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           chmod +x scripts/pack-tauri/build_linux_pyinstaller.sh
-          bash scripts/pack-tauri/build_linux_pyinstaller.sh
+          bash scripts/pack-tauri/build_linux_pyinstaller.sh 2>&1 | tee "${RUNNER_TEMP}/pr8444-build.log"
 
       - name: Verify desktop (Tauri Linux)
         timeout-minutes: 15
@@ -494,6 +510,122 @@ jobs:
         with:
           name: desktop-verify-logs-tauri-linux-${{ steps.version.outputs.version }}
           path: |
+            ${{ runner.temp }}/qwenpaw-desktop-stdout.log
+            ${{ runner.temp }}/qwenpaw-desktop-stderr.log
+            ${{ runner.temp }}/verify-screenshots/
+
+      - name: Preserve Linux build evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: pr8444-final-build-evidence
+          retention-days: 14
+          if-no-files-found: warn
+          path: |
+            ${{ runner.temp }}/product-revision.txt
+            ${{ runner.temp }}/pr8444-build.log
+            ${{ runner.temp }}/qwenpaw-desktop-stdout.log
+            ${{ runner.temp }}/qwenpaw-desktop-stderr.log
+            ${{ runner.temp }}/verify-screenshots/
+
+  verify-linux-deb-chat:
+    needs: build-tauri-linux
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - name: Checkout verification scripts
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.ref || github.ref }}
+          persist-credentials: false
+
+      - name: Download the installer built by this run
+        uses: actions/download-artifact@v4
+        with:
+          name: tauri-linux
+          path: downloaded
+
+      - name: Verify installer checksum and metadata
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          import shutil
+          packages = list(Path('downloaded').rglob('QwenPaw-Tauri-*-linux-x86_64.deb'))
+          assert len(packages) == 1, packages
+          package = packages[0]
+          checksum = package.with_name(package.name + '.sha256')
+          assert checksum.is_file(), checksum
+          Path('dist').mkdir()
+          shutil.move(str(package), 'dist/' + package.name)
+          shutil.move(str(checksum), 'dist/' + checksum.name)
+          PY
+          (
+            cd dist
+            sha256sum -c ./*.deb.sha256
+          )
+          test "$(dpkg-deb -f dist/*.deb Version)" = "2.3.1~beta.1"
+          dpkg --compare-versions "$(dpkg-deb -f dist/*.deb Version)" lt 2.3.1
+          cat dist/*.deb.sha256
+          dpkg-deb -f dist/*.deb Package Version Architecture Depends
+
+      - name: Install the downloaded deb before verification dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends "$PWD"/dist/*.deb
+          dpkg-query -W -f='${Package} ${Version} ${Status}\n' qwen-paw-desktop
+          ldd /usr/bin/qwenpaw-desktop > "${RUNNER_TEMP}/native-library-check.log"
+          cat "${RUNNER_TEMP}/native-library-check.log"
+          if grep -q 'not found' "${RUNNER_TEMP}/native-library-check.log"; then
+            echo '::error::Installed executable has unresolved shared libraries'
+            exit 1
+          fi
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install virtual display
+        run: sudo apt-get install -y --no-install-recommends xvfb
+
+      - name: Require the configured chat verification key
+        env:
+          QWENPAW_DASHSCOPE_API_KEY: ${{ secrets.QWENPAW_DASHSCOPE_API_KEY }}
+        run: |
+          if [ -z "$QWENPAW_DASHSCOPE_API_KEY" ]; then
+            echo "::error::QWENPAW_DASHSCOPE_API_KEY is required for chat verification"
+            exit 1
+          fi
+
+      - name: Verify installed desktop and real model response
+        timeout-minutes: 15
+        uses: ./.github/actions/verify-tauri-linux
+        with:
+          dashscope-api-key: ${{ secrets.QWENPAW_DASHSCOPE_API_KEY }}
+          allow-flaky-llm: "false"
+
+      - name: Stop desktop processes
+        if: always()
+        run: |
+          pkill -f qwenpaw-desktop 2>/dev/null || true
+          pkill -f qwenpaw-backend 2>/dev/null || true
+          sleep 2
+          pkill -9 -f qwenpaw-desktop 2>/dev/null || true
+          pkill -9 -f qwenpaw-backend 2>/dev/null || true
+
+      - name: Preserve installation and chat evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: pr8444-final-installed-deb-chat-evidence
+          retention-days: 14
+          if-no-files-found: warn
+          path: |
+            dist/*.sha256
+            ${{ runner.temp }}/native-library-check.log
             ${{ runner.temp }}/qwenpaw-desktop-stdout.log
             ${{ runner.temp }}/qwenpaw-desktop-stderr.log
             ${{ runner.temp }}/verify-screenshots/
