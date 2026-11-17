@@ -1,14 +1,16 @@
 # -*- coding: utf-8 -*-
 """Regression tests for desktop packaging workflows."""
 
-import json
 import importlib
+import io
+import json
 import os
 from pathlib import Path
 import re
 import shutil
 import subprocess
 import sys
+import tarfile
 import threading
 import time
 import tomllib
@@ -51,17 +53,65 @@ def test_linux_publisher_preserves_windows_install_registry_key():
 
 
 @pytest.mark.skipif(sys.platform != "linux", reason="Linux packaging script")
-@pytest.mark.parametrize("status", [0, 37])
-def test_linux_packaging_preserves_bundler_failure(tmp_path, status):
-    """A partial package must never be published after the bundler fails."""
+@pytest.mark.parametrize(
+    ("status", "version", "expected"),
+    [
+        (37, "2.3.1b1", None),
+        (0, "2.3.1", "2.3.1"),
+        (0, "2.3.1.dev0", "2.3.1~~dev.0"),
+        (0, "2.3.1a1", "2.3.1~alpha.1"),
+        (0, "2.3.1b1.dev0", "2.3.1~beta.1~dev.0"),
+        (0, "2.3.1b1", "2.3.1~beta.1"),
+        (0, "2.3.1rc1", "2.3.1~rc.1"),
+        (0, "2.3.1.post0", "2.3.1+post.0"),
+        (0, "2.3.1.post1.dev0", "2.3.1+post.1~dev.0"),
+        (0, "2.3.1b1.post1.dev0", "2.3.1~beta.1+post.1~dev.0"),
+    ],
+)
+def test_linux_packaging(tmp_path, status, version, expected):
+    """Publish only successful bundles, with correctly ordered deb metadata."""
     script = tmp_path / "scripts/pack-tauri/build_linux_pyinstaller.sh"
     script.parent.mkdir(parents=True)
     shutil.copyfile(REPO_ROOT / script.relative_to(tmp_path), script)
-    version = tmp_path / "src/qwenpaw/__version__.py"
-    version.parent.mkdir(parents=True)
-    version.write_text('__version__ = "1.0.0"\n')
+    version_file = tmp_path / "src/qwenpaw/__version__.py"
+    version_file.parent.mkdir(parents=True)
+    version_file.write_text(f'__version__ = "{version}"\n')
     bundle = tmp_path / "console/src-tauri/target/release/bundle"
     bundle.mkdir(parents=True)
+    fixture = tmp_path / "fixture"
+    fixture.mkdir()
+    (fixture / "debian-binary").write_text("2.0\n")
+    control = (
+        "Package: qwen-paw-desktop\nVersion: 2.3.1-beta.1\n"
+        "Architecture: amd64\nMaintainer: Test <test@example.com>\n"
+        "Description: Packaging regression fixture\n"
+    )
+    for archive, entries in {
+        "control.tar.gz": {
+            "control": (control.encode(), 0o644),
+            "postinst": (b"#!/bin/sh\nexit 0\n", 0o755),
+        },
+        "data.tar.gz": {
+            "usr/bin/qwenpaw-desktop": (b"original application\n", 0o755),
+        },
+    }.items():
+        with tarfile.open(fixture / archive, "w:gz") as tar:
+            for name, (data, mode) in entries.items():
+                info = tarfile.TarInfo(name)
+                info.size, info.mode = len(data), mode
+                tar.addfile(info, io.BytesIO(data))
+    subprocess.run(
+        [
+            "ar",
+            "rc",
+            "test.deb",
+            "debian-binary",
+            "control.tar.gz",
+            "data.tar.gz",
+        ],
+        cwd=fixture,
+        check=True,
+    )
     bin_dir = tmp_path / "bin"
     bin_dir.mkdir()
     for name in ("node", "rustc", "cargo", "pkg-config"):
@@ -72,7 +122,7 @@ def test_linux_packaging_preserves_bundler_failure(tmp_path, status):
     npm.write_text(
         "#!/bin/sh\n"
         'mkdir -p "$BUNDLE/deb"\n'
-        'touch "$BUNDLE/deb/test.deb"\n'
+        'cp "$FIXTURE/test.deb" "$BUNDLE/deb/test.deb"\n'
         'exit "$BUNDLER_STATUS"\n',
     )
     npm.chmod(0o755)
@@ -84,6 +134,7 @@ def test_linux_packaging_preserves_bundler_failure(tmp_path, status):
             "PATH": str(bin_dir) + os.pathsep + os.environ["PATH"],
             "QWENPAW_SKIP_BACKEND_BUILD": "1",
             "BUNDLE": str(bundle),
+            "FIXTURE": str(fixture),
             "BUNDLER_STATUS": str(status),
         },
         capture_output=True,
@@ -94,6 +145,67 @@ def test_linux_packaging_preserves_bundler_failure(tmp_path, status):
     assert result.returncode == status, result.stdout + result.stderr
     outputs = list((tmp_path / "dist").glob("*"))
     assert len(outputs) == (1 if status == 0 else 0)
+    if status == 0:
+        package = outputs[0]
+        assert package.name.startswith(f"QwenPaw-Tauri-{version}-linux-")
+        assert (
+            subprocess.check_output(
+                ["ar", "p", str(package), "data.tar.gz"],
+            )
+            == (fixture / "data.tar.gz").read_bytes()
+        )
+        metadata = subprocess.check_output(
+            ["ar", "p", str(package), "control.tar.gz"],
+        )
+        with tarfile.open(fileobj=io.BytesIO(metadata), mode="r:gz") as tar:
+            members = {m.name.removeprefix("./"): m for m in tar.getmembers()}
+            assert tar.extractfile(members["control"]).read().decode() == (
+                control.replace(
+                    "Version: 2.3.1-beta.1", f"Version: {expected}"
+                )
+            )
+            assert members["postinst"].mode == 0o755
+            assert tar.extractfile(members["postinst"]).read() == (
+                b"#!/bin/sh\nexit 0\n"
+            )
+
+
+@pytest.mark.skipif(sys.platform != "linux", reason="Linux checksum step")
+def test_linux_checksum_is_portable(tmp_path):
+    """Downloaded installers can be verified from their containing folder."""
+    job = _load_workflow("desktop-build.yml")["jobs"]["build-tauri-linux"]
+    script = next(
+        step["run"]
+        for step in job["steps"]
+        if step.get("name") == "Checksum desktop artifacts (Tauri Linux)"
+    )
+    dist = tmp_path / "dist"
+    dist.mkdir()
+    package = dist / "QwenPaw-Tauri-2.3.1b1-linux-x86_64.deb"
+    package.write_bytes(b"installer contents")
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    dpkg = bin_dir / "dpkg-deb"
+    dpkg.write_text("#!/bin/sh\nexit 0\n")
+    dpkg.chmod(0o755)
+    subprocess.run(
+        ["bash", "-e", "-o", "pipefail", "-c", script],
+        cwd=tmp_path,
+        env={
+            **os.environ,
+            "PATH": str(bin_dir) + os.pathsep + os.environ["PATH"],
+        },
+        check=True,
+        capture_output=True,
+    )
+    downloaded = tmp_path / "Downloads"
+    dist.rename(downloaded)
+    subprocess.run(
+        ["sha256sum", "-c", package.name + ".sha256"],
+        cwd=downloaded,
+        check=True,
+        capture_output=True,
+    )
 
 
 @pytest.mark.parametrize("rendered", [True, False])

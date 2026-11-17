@@ -39,7 +39,7 @@ echo ""
 # ---------------------------------------------------------------- prerequisites
 echo "== Checking prerequisites =="
 missing=()
-for tool in npm node rustc cargo python3; do
+for tool in npm node rustc cargo python3 ar tar gzip; do
   if command -v "${tool}" >/dev/null 2>&1; then
     echo "  [OK] ${tool}"
   else
@@ -126,6 +126,45 @@ if [ -z "${DEB_PATH}" ]; then
   echo "ERROR: no .deb produced under ${BUNDLE_DIR}/deb"
   exit 1
 fi
+
+# Tauri writes SemVer into the deb, where '-' means a package revision.
+# Rewrite only the control archive; keep the application payload unchanged.
+DEB_CONTROL_DIR="$(mktemp -d)"
+trap 'rm -rf "$DEB_CONTROL_DIR"' EXIT
+mkdir "${DEB_CONTROL_DIR}/files"
+ar p "${DEB_PATH}" control.tar.gz | tar -xz -C "${DEB_CONTROL_DIR}/files"
+python3 - "${DEB_CONTROL_DIR}/files/control" "${VERSION}" <<'PY'
+import re
+import sys
+from pathlib import Path
+
+match = re.fullmatch(
+    r"(\d+\.\d+\.\d+)(?:(a|b|rc)(\d+))?(?:\.post(\d+))?(?:\.dev(\d+))?",
+    sys.argv[2],
+)
+if not match:
+    raise SystemExit(f"Unsupported Python version for deb: {sys.argv[2]}")
+version, pre, number, post, dev = match.groups()
+if pre:
+    version += "~" + {"a": "alpha", "b": "beta", "rc": "rc"}[pre] + "." + number
+if post is not None:
+    version += "+post." + post
+if dev is not None:
+    # A release's dev builds must also sort before its first alpha.
+    version += ("~~dev." if pre is None and post is None else "~dev.") + dev
+control = Path(sys.argv[1])
+text, count = re.subn(r"(?m)^Version: .+$", f"Version: {version}", control.read_text())
+if count != 1:
+    raise SystemExit("Expected exactly one Version field in the deb control file")
+control.write_text(text)
+print(f"Debian package version: {version}")
+PY
+tar --owner=0 --group=0 -czf "${DEB_CONTROL_DIR}/control.tar.gz" \
+  -C "${DEB_CONTROL_DIR}/files" .
+ar r "${DEB_PATH}" "${DEB_CONTROL_DIR}/control.tar.gz"
+rm -rf "${DEB_CONTROL_DIR}"
+trap - EXIT
+
 DEB_OUT="${DIST}/QwenPaw-Tauri-${VERSION}-linux-${ARCH}.deb"
 cp -f "${DEB_PATH}" "${DEB_OUT}"
 
