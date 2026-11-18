@@ -1,160 +1,106 @@
-# Reusable "prepare" half of the desktop release: build the Tauri desktop
-# packages (Windows + macOS + Linux), run the install/launch/chat UI verification,
-# and upload the installers + updater sidecars as run artifacts.
-#
-# This workflow performs NO publishing. It is called by release.yml during the
-# prepare phase (pinned to the release commit via `ref`), and can also be run
-# standalone via workflow_dispatch to validate a packaging change.
-#
-# The matching publish half lives in desktop-publish.yml.
-
-name: Desktop Build (reusable)
+name: Verify signed Linux updates
 
 on:
-  workflow_call:
-    inputs:
-      ref:
-        description: "Git ref/SHA to build (pins the build to the release commit)"
-        type: string
-        required: false
-        default: ""
   workflow_dispatch:
     inputs:
-      ref:
-        description: "Git ref/SHA to build (default: this workflow's ref)"
+      source_run:
+        description: Build run containing the signed pair
         type: string
-        required: false
-        default: ""
+        required: true
 
 permissions:
   contents: read
+  actions: read
 
 jobs:
-  build-tauri-linux:
+  verify-linux-upgrade:
     runs-on: ubuntu-24.04
-    timeout-minutes: 90
+    timeout-minutes: 30
+    defaults:
+      run:
+        shell: bash
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
         with:
-          ref: ${{ inputs.ref || github.ref }}
-          submodules: recursive
           persist-credentials: false
 
-      - name: Get version
-        id: version
-        uses: ./.github/actions/get-version
+      - uses: actions/download-artifact@v4
+        with:
+          repository: ${{ github.repository }}
+          run-id: ${{ inputs.source_run }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          name: ubuntu-desktop-upgrade-pair
+          path: update-pair
 
-      - name: Install Linux packaging dependencies
+      - name: Check package integrity and version ordering
         run: |
-          sudo apt-get update
-          # Numba's TBB extension needs libtbb.so.12 during dependency collection.
-          sudo apt-get install -y --no-install-recommends \
-            build-essential curl file libtbb12 pkgconf \
-            libgtk-3-dev libsoup-3.0-dev librsvg2-dev \
-            libayatana-appindicator3-dev libwebkit2gtk-4.1-dev xvfb
+          cd update-pair
+          sha256sum -c package-checksums.txt
+          sha256sum -c ./*.deb.sig.sha256
+          sha256sum -c tauri-linux-x86_64-deb-updater.json.sha256
+          prior=$(dpkg-deb -f QwenPaw-Tauri-2.3.1b1-linux-x86_64.deb Version)
+          candidate=$(dpkg-deb -f QwenPaw-Tauri-2.3.1-linux-x86_64.deb Version)
+          test "$prior" = '2.3.1~beta.1'
+          test "$candidate" = '2.3.1'
+          dpkg --compare-versions "$prior" lt "$candidate"
 
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        env:
-          PIP_NO_CACHE_DIR: "1"
+      - uses: actions/setup-python@v5
         with:
           python-version: "3.11"
 
-      - name: Install packaging helper dependencies
-        run: python -m pip install packaging
-
-      - name: Set up Node
-        uses: actions/setup-node@v4
-        with:
-          node-version-file: .nvmrc
-          cache: "npm"
-          cache-dependency-path: console/package-lock.json
-
-      - name: Set up Rust
-        uses: dtolnay/rust-toolchain@stable
-
-      - name: Rust cache
-        uses: Swatinem/rust-cache@v2
-        with:
-          workspaces: console/src-tauri
-
-      - name: Clean dist directory
-        run: rm -rf dist && mkdir -p dist
-
-      - name: Prepare isolated updater signing and endpoint
-        shell: bash
+      - name: Prepare local browser and the private test update server
         run: |
-          test "$(git rev-parse HEAD)" = "acbb2d99ef7e69f18bb4abd44c8f2043e29dcec6"
-          umask 077
-          cli_version=$(node -p 'require("./console/package-lock.json").packages["node_modules/@tauri-apps/cli"].version')
-          npm exec --yes --package "@tauri-apps/cli@${cli_version}" -- tauri signer generate --ci --write-keys "$RUNNER_TEMP/test-updater.key"
-          echo "TAURI_UPDATER_PUBKEY=$(tr -d '\r\n' < "$RUNNER_TEMP/test-updater.key.pub")" >> "$GITHUB_ENV"
-          echo "TAURI_UPDATER_ENDPOINTS=https://localhost:8443/latest.json" >> "$GITHUB_ENV"
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends xvfb xauth webkit2gtk-driver pkexec
+          python -m pip install packaging
+          openssl req -x509 -newkey rsa:2048 -nodes -days 1 \
+            -subj '/CN=localhost' -addext 'subjectAltName=DNS:localhost,IP:127.0.0.1' \
+            -keyout "$RUNNER_TEMP/update-server.key" -out "$RUNNER_TEMP/update-server.crt"
+          sudo install -m 644 "$RUNNER_TEMP/update-server.crt" /usr/local/share/ca-certificates/qwenpaw-test.crt
+          sudo update-ca-certificates
+          python scripts/pack-tauri/generate_update_manifest.py manifest \
+            --version 2.3.1 --base-url https://localhost:8443 \
+            --metadata update-pair/tauri-linux-x86_64-deb-updater.json \
+            --notes "Isolated Linux update smoke test" --output update-pair/latest.json
 
-      - name: Build older Linux installer
-        shell: bash
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          NODE_OPTIONS: "--max-old-space-size=8192"
+      - name: Authorize dpkg on the disposable runner
         run: |
-          bash scripts/pack-tauri/build_linux_pyinstaller.sh
-          mkdir "$RUNNER_TEMP/upgrade-pair"
-          mv dist/QwenPaw-Tauri-2.3.1b1-linux-x86_64.deb "$RUNNER_TEMP/upgrade-pair/"
-          rm -rf dist
-          df -h .
+          # On a hosted runner Xvfb has no interactive PolicyKit agent.
+          sudo tee /etc/polkit-1/rules.d/49-qwenpaw-update-smoke.rules >/dev/null <<'POLICY'
+          polkit.addRule(function(action, subject) {
+            if (action.id == "org.freedesktop.policykit.exec" &&
+                action.lookup("program") == "/usr/bin/dpkg" &&
+                subject.user == "runner") {
+              return polkit.Result.YES;
+            }
+          });
+          POLICY
+          sudo systemctl start polkit
+          pkexec /usr/bin/dpkg --version
 
-      - name: Build newer Linux installer
-        shell: bash
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          NODE_OPTIONS: "--max-old-space-size=8192"
+      - name: Exercise immediate and cached app updates
+        timeout-minutes: 20
         run: |
-          sed -i 's/^__version__ = "2.3.1b1"$/__version__ = "2.3.1"/' src/qwenpaw/__version__.py
-          bash scripts/pack-tauri/build_linux_pyinstaller.sh
-          test -f dist/QwenPaw-Tauri-2.3.1-linux-x86_64.deb
+          export UPDATER_TEST_CERT="$RUNNER_TEMP/update-server.crt"
+          export UPDATER_TEST_TLS_KEY="$RUNNER_TEMP/update-server.key"
+          export SSL_CERT_FILE=/etc/ssl/certs/ca-certificates.crt
+          xvfb-run -a -s "-screen 0 1600x1000x24" \
+            python scripts/verify/verify_linux_update_pair.py update-pair
 
-      - name: Sign Tauri Linux updater
-        shell: bash
-        env:
-          VERSION: 2.3.1
+      - name: Collect package maintenance and desktop logs
+        if: always()
         run: |
-          export TAURI_SIGNING_PRIVATE_KEY=$(cat "$RUNNER_TEMP/test-updater.key")
-          export TAURI_SIGNING_PRIVATE_KEY_PASSWORD=''
-          if [ -z "$TAURI_SIGNING_PRIVATE_KEY" ]; then
-            echo "No signing key configured, skipping Linux updater signature"
-            exit 0
-          fi
-          deb="QwenPaw-Tauri-${VERSION}-linux-x86_64.deb"
-          # Sign only after the build has finalized the deb control metadata.
-          (cd console && npm exec -- tauri signer sign "${GITHUB_WORKSPACE}/dist/${deb}")
-          python scripts/pack-tauri/generate_update_manifest.py stage \
-            --bundle-dir dist \
-            --pattern "$deb" \
-            --target linux-x86_64-deb \
-            --output "dist/$deb" \
-            --pubkey-config console/src-tauri/tauri.version.conf.json
-          (
-            cd dist
-            sha256sum "${deb}.sig" > "${deb}.sig.sha256"
-            sha256sum tauri-linux-x86_64-deb-updater.json > tauri-linux-x86_64-deb-updater.json.sha256
-          )
+          mkdir -p "$RUNNER_TEMP/linux-upgrade-evidence"
+          sudo cp /var/log/dpkg.log "$RUNNER_TEMP/linux-upgrade-evidence/dpkg.log"
+          sudo chown "$(id -u):$(id -g)" "$RUNNER_TEMP/linux-upgrade-evidence/dpkg.log"
+          sudo journalctl -t pkexec --no-pager > "$RUNNER_TEMP/linux-upgrade-evidence/pkexec.log"
+          sudo rm -f /etc/polkit-1/rules.d/49-qwenpaw-update-smoke.rules
 
-      - name: Collect the upgrade pair
-        shell: bash
-        run: |
-          mv dist/QwenPaw-Tauri-2.3.1-linux-x86_64.deb dist/*.deb.sig dist/*.deb.sig.sha256 \
-            dist/tauri-linux-x86_64-deb-updater.json* "$RUNNER_TEMP/upgrade-pair/"
-          cd "$RUNNER_TEMP/upgrade-pair"
-          sha256sum ./*.deb > package-checksums.txt
-          dpkg-deb -f QwenPaw-Tauri-2.3.1b1-linux-x86_64.deb Version
-          dpkg-deb -f QwenPaw-Tauri-2.3.1-linux-x86_64.deb Version
-
-      - name: Upload the two Linux installers and updater metadata
+      - name: Upload verification evidence
+        if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: ubuntu-desktop-upgrade-pair
-          path: ${{ runner.temp }}/upgrade-pair
-          compression-level: 0
-          if-no-files-found: error
-          retention-days: 3
+          name: linux-update-verification
+          path: |
+            ${{ runner.temp }}/linux-upgrade-evidence/*.log
+            ${{ runner.temp }}/linux-upgrade-evidence/*.png
