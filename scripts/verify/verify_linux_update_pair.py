@@ -244,7 +244,11 @@ def main():
             print("PASS: local HTTPS update manifest is reachable", flush=True)
             for mode in ("immediate", "cached"):
                 subprocess.run(
-                    ["sudo", "apt-get", "install", "-y", "--allow-downgrades",
+                    ["sudo", "apt-get",
+                     "-o", "Dir::Etc::sourcelist=" + os.environ["UPDATER_TEST_APT_SOURCES"],
+                     "-o", "Dir::Etc::sourceparts=-",
+                     "-o", "Acquire::https::Timeout=30",
+                     "install", "-y", "--allow-downgrades",
                      "--no-install-recommends", str(UPDATES / "QwenPaw-Tauri-2.3.1b1-linux-x86_64.deb")],
                     check=True,
                 )

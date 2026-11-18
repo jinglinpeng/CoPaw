@@ -101,6 +101,7 @@ jobs:
       - name: Exercise immediate and cached app updates
         timeout-minutes: 20
         run: |
+          export UPDATER_TEST_APT_SOURCES="$RUNNER_TEMP/ubuntu-update-smoke.list"
           export UPDATER_TEST_CERT="$RUNNER_TEMP/update-server.crt"
           export UPDATER_TEST_TLS_KEY="$RUNNER_TEMP/update-server.key"
           export SSL_CERT_FILE=/etc/ssl/certs/ca-certificates.crt
