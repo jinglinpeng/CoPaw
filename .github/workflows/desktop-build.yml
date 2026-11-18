@@ -55,7 +55,9 @@ jobs:
           sudo apt-get -o Acquire::Retries=2 -o Acquire::https::Timeout=20 \
             -o Dir::Etc::sourcelist=sources.list.d/ubuntu.sources \
             -o Dir::Etc::sourceparts=- update
-          sudo apt-get install -y --no-install-recommends xvfb xauth webkit2gtk-driver pkexec
+          sudo apt-get -o Acquire::Retries=2 -o Acquire::https::Timeout=20 \
+            -o Dir::Etc::sourcelist=sources.list.d/ubuntu.sources \
+            -o Dir::Etc::sourceparts=- install -y --no-install-recommends xvfb xauth webkit2gtk-driver pkexec
           python -m pip install packaging
           openssl req -x509 -newkey rsa:2048 -nodes -days 1 -sha256 \
             -subj '/CN=QwenPaw update test CA' -addext 'basicConstraints=critical,CA:TRUE' \
@@ -113,6 +115,10 @@ jobs:
           sudo cp /var/log/dpkg.log "$RUNNER_TEMP/linux-upgrade-evidence/dpkg.log"
           sudo chown "$(id -u):$(id -g)" "$RUNNER_TEMP/linux-upgrade-evidence/dpkg.log"
           sudo journalctl -t pkexec --no-pager > "$RUNNER_TEMP/linux-upgrade-evidence/pkexec.log"
+          for storage in "$RUNNER_TEMP/linux-upgrade-evidence/"*-app-data; do
+            find "$storage" -path '*/logs/startup/*.log' -type f -print -exec cat {} \; \
+              >> "$RUNNER_TEMP/linux-upgrade-evidence/startup.log" 2>/dev/null || true
+          done
           sudo rm -f /etc/polkit-1/rules.d/49-qwenpaw-update-smoke.rules
 
       - name: Upload verification evidence
