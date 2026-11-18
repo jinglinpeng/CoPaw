@@ -233,9 +233,10 @@ async fn install_verified(
             None => Err(emit_error(app, "install", &"Missing update metadata")),
         }
     };
+    // The replacement process can start before this process exits.
+    // Release the admission and runtime leases before restart or recovery.
+    drop(installation);
     if result.is_err() {
-        // Release both admission and runtime launch leases before recovery.
-        drop(installation);
         backend::recover_after_update(app).await;
         return;
     }
