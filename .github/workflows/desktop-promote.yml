@@ -83,6 +83,7 @@ jobs:
         run: |
           bash "$RELEASE_INFRA/scripts/pack/download_desktop_artifacts.sh" \
             --attempts 2 \
+            --require-linux \
             --include-updater-metadata
 
       - name: Install ossutil
@@ -236,6 +237,11 @@ jobs:
             "QwenPaw-Desktop-Tauri-macOS-*" \
             "QwenPaw-Tauri-*-macOS.zip" \
             "mac-tauri"
+          merge_tauri_metadata \
+            "linux-tauri-metadata.json" \
+            "QwenPaw-Desktop-Tauri-Linux-*" \
+            "QwenPaw-Tauri-*-linux-x86_64.deb" \
+            "linux-tauri"
 
           # Upload updated desktop/index.json
           bash "$RELEASE_INFRA/scripts/pack/oss_copy_with_readback.sh" \

@@ -1,5 +1,5 @@
 # Reusable "prepare" half of the desktop release: build the Tauri desktop
-# packages (Windows + macOS), run the install/launch/chat UI verification,
+# packages (Windows + macOS + Linux), run the install/launch/chat UI verification,
 # and upload the installers + updater sidecars as run artifacts.
 #
 # This workflow performs NO publishing. It is called by release.yml during the
@@ -480,19 +480,17 @@ jobs:
       - name: Upload desktop artifacts (Tauri Linux)
         uses: actions/upload-artifact@v4
         with:
-          name: tauri-linux
+          name: QwenPaw-Desktop-Tauri-Linux-${{ steps.version.outputs.version }}
           path: |
             dist/QwenPaw-Tauri-*-linux-*.deb
             dist/QwenPaw-Tauri-*-linux-*.deb.sha256
-            ${{ runner.temp }}/qwenpaw-desktop-stdout.log
-            ${{ runner.temp }}/qwenpaw-desktop-stderr.log
-            ${{ runner.temp }}/verify-screenshots/
 
-      - name: Upload desktop verify logs (Tauri Linux)
-        if: failure()
+      - name: Upload desktop verify evidence (Tauri Linux)
+        if: always()
         uses: actions/upload-artifact@v4
         with:
           name: desktop-verify-logs-tauri-linux-${{ steps.version.outputs.version }}
+          if-no-files-found: ignore
           path: |
             ${{ runner.temp }}/qwenpaw-desktop-stdout.log
             ${{ runner.temp }}/qwenpaw-desktop-stderr.log

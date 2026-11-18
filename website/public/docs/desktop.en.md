@@ -8,15 +8,16 @@
 > - **Potential performance issues**: Startup time, memory usage, and other performance aspects may need further optimization
 > - **Features under development**: Some features may be unstable or missing
 >
-> ✅ The desktop app is now built with **Tauri** and ships with a built-in **in-app auto-updater**, so you can upgrade to newer versions without uninstalling and reinstalling.
+> ✅ The desktop app is built with **Tauri**. Windows and macOS support **in-app automatic updates**.
 >
 > We welcome your feedback to help improve product quality.
 
-**Download**: [GitHub Releases][releases]
+**Download**: [Download page][downloads] · [GitHub Releases][github-releases]
 
 This guide explains how to install and use the QwenPaw Desktop application on Windows, macOS, and Linux.
 
-[releases]: https://qwenpaw.agentscope.io/downloads
+[downloads]: https://qwenpaw.agentscope.io/downloads/
+[github-releases]: https://github.com/agentscope-ai/QwenPaw/releases
 
 ## Important Notice
 
@@ -41,7 +42,7 @@ This guide explains how to install and use the QwenPaw Desktop application on Wi
 ### Installation Steps
 
 1. **Download the installer**
-   Download `QwenPaw-Tauri-<version>-Windows-setup.exe` from the [Release page][releases]
+   Download `QwenPaw-Tauri-<version>-Windows-setup.exe` from the [download page][downloads].
 
 2. **Run the installer**
    Double-click the `.exe` file and follow the installation wizard
@@ -108,7 +109,7 @@ The code is completely open source, and the build process is transparently verif
 ### Installation Steps
 
 1. **Download the archive**
-   Download `QwenPaw-Tauri-<version>-macOS.zip` from the [Release page][releases]
+   Download `QwenPaw-Tauri-<version>-macOS.zip` from the [download page][downloads].
 
 2. **Extract**
    Double-click the `.zip` file to extract and get `QwenPaw Desktop.app`
@@ -237,8 +238,6 @@ A: Currently using:
 
 ## Linux Guide
 
-Linux desktop packages are currently available for testing through GitHub Actions. They are not yet published to GitHub Releases or the download website, and automatic updates are not available.
-
 ### System Requirements
 
 - **Operating System**: Ubuntu 24.04 LTS or newer, Debian 13 or newer (glibc 2.39+), x86_64
@@ -248,7 +247,7 @@ Linux desktop packages are currently available for testing through GitHub Action
 
 ### Installation Steps
 
-1. Open a successful **Desktop Build (reusable)** run in the repository's GitHub Actions. Download the `tauri-linux` artifact from **Artifacts**, extract it, and locate `QwenPaw-Tauri-<version>-linux-x86_64.deb`.
+1. Download `QwenPaw-Tauri-<version>-linux-x86_64.deb` from the [download page][downloads] or [GitHub Releases][github-releases].
 2. Install it with apt so dependencies resolve automatically:
 
    ```bash
