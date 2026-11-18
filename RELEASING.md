@@ -9,7 +9,7 @@ that a failure in any one of them blocks the whole release: you can never end up
 with, e.g., a web release that has no matching desktop build.
 
 Linux `.deb` installers are published to GitHub Releases and the download page.
-Linux users update manually by installing a newer package.
+The updater uses the same signed package from OSS.
 
 > Orchestrator: [`.github/workflows/release.yml`](.github/workflows/release.yml).
 > The older per-artifact workflows are kept as a fallback — see
@@ -45,7 +45,7 @@ Linux users update manually by installing a newer package.
    installers to the release and upload them to OSS, then publish plugins and
    flip the draft to *published* (pinned to the built SHA). After publishing,
    it refreshes the desktop download index, promotes the Windows and macOS
-   `latest` files and updater manifest, deploys the website (stable/post only),
+   `latest` files and the three-platform updater manifest, deploys the website (stable/post only),
    and opens the Release Duty verification issue.
 
 A full run is ~60–75 min, dominated by the desktop Tauri builds.

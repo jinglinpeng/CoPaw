@@ -91,6 +91,8 @@ if os.environ.get("REQUIRE_LINUX") == "true":
     patterns.append(re.compile(r"^QwenPaw-Desktop-Tauri-Linux-"))
 if include_meta:
     patterns.append(re.compile(r"^tauri-updater-meta-(windows|macos)$"))
+    if os.environ.get("REQUIRE_LINUX") == "true":
+        patterns.append(re.compile(r"^tauri-updater-meta-linux$"))
 
 copies = {}
 for raw in sys.stdin:

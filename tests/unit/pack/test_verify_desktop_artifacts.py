@@ -143,6 +143,7 @@ def test_valid_installers_and_updater_metadata_pass(tmp_path: Path) -> None:
         ("valid", None),
         ("missing", "Missing required linux artifact"),
         ("corrupt", "SHA-256 mismatch"),
+        ("wrong-signature", "linux updater signature names"),
     ],
 )
 def test_linux_release_artifact(
@@ -160,12 +161,29 @@ def test_linux_release_artifact(
         )
         if state == "corrupt":
             linux.write_bytes(b"corrupt Linux installer")
+        updater = tmp_path / "tauri-updater-meta-linux"
+        signed_name = (
+            linux.name.replace("1.0.0", "2.0.0")
+            if state == "wrong-signature"
+            else linux.name
+        )
+        signature = _write_file(
+            updater / f"{signed_name}.sig",
+            b"complete Linux signature",
+        )
+        _write_metadata(
+            updater / "tauri-linux-x86_64-deb-updater.json",
+            target="linux-x86_64-deb",
+            artifact=signed_name,
+            signature=signature.name,
+        )
 
     result = _run_verifier(tmp_path, "--require", "linux")
 
     if error is None:
         assert result.returncode == 0, result.stderr
         assert "verified linux artifact" in result.stdout
+        assert "verified linux-updater metadata" in result.stdout
     else:
         assert result.returncode == 1
         assert error in result.stderr

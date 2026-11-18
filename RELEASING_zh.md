@@ -35,8 +35,8 @@ QwenPaw 一个版本会发布四种产物——**PyPI** wheel、**Docker** 镜�
    job，因此上面任一失败都会跳过整个发布阶段。全绿后：发布 PyPI、推多架构 Docker
    镜像、把桌面安装包挂到 release 并上传 OSS、发布插件——然后**最后一步**才把草稿翻成
    *published*（tag 钉到构建用的 SHA）。发布后刷新桌面下载索引，推送 Windows 和 macOS 的
-   `latest` 文件及自动更新清单，部署官网（仅正式版/post），并创建 Release Duty 验收 issue。
-   Linux 用户可从 GitHub Releases 或官网下载新版 deb，手动安装更新。
+   `latest` 文件和三个平台的自动更新清单，部署官网（仅正式版/post），并创建 Release Duty 验收 issue。
+   Linux 自动更新使用 OSS 上的同一个已签名 deb。
 
 整体约 60–75 分钟，主要耗时在桌面 Tauri 构建。
 

@@ -444,6 +444,8 @@ jobs:
           # Authenticate the python-build-standalone release lookup in
           # stage_python_runtime.py to avoid anonymous API rate limits.
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAURI_UPDATER_PUBKEY: ${{ vars.TAURI_UPDATER_PUBKEY }}
+          TAURI_UPDATER_ENDPOINTS: ${{ vars.TAURI_UPDATER_ENDPOINTS }}
         run: |
           chmod +x scripts/pack-tauri/build_linux_pyinstaller.sh
           bash scripts/pack-tauri/build_linux_pyinstaller.sh
@@ -477,6 +479,32 @@ jobs:
           )
           dpkg-deb -I "${deb_artifacts[0]}" | sed -n '/Depends/p'
 
+      - name: Sign Tauri Linux updater
+        shell: bash
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        run: |
+          if [ -z "$TAURI_SIGNING_PRIVATE_KEY" ]; then
+            echo "No signing key configured, skipping Linux updater signature"
+            exit 0
+          fi
+          deb="QwenPaw-Tauri-${VERSION}-linux-x86_64.deb"
+          # Sign only after the build has finalized the deb control metadata.
+          (cd console && npm exec -- tauri signer sign "${GITHUB_WORKSPACE}/dist/${deb}")
+          python scripts/pack-tauri/generate_update_manifest.py stage \
+            --bundle-dir dist \
+            --pattern "$deb" \
+            --target linux-x86_64-deb \
+            --output "dist/$deb" \
+            --pubkey-config console/src-tauri/tauri.version.conf.json
+          (
+            cd dist
+            sha256sum "${deb}.sig" > "${deb}.sig.sha256"
+            sha256sum tauri-linux-x86_64-deb-updater.json > tauri-linux-x86_64-deb-updater.json.sha256
+          )
+
       - name: Upload desktop artifacts (Tauri Linux)
         uses: actions/upload-artifact@v4
         with:
@@ -484,6 +512,18 @@ jobs:
           path: |
             dist/QwenPaw-Tauri-*-linux-*.deb
             dist/QwenPaw-Tauri-*-linux-*.deb.sha256
+
+      - name: Upload Tauri Linux updater metadata
+        if: hashFiles('dist/tauri-linux-x86_64-deb-updater.json') != ''
+        uses: actions/upload-artifact@v4
+        with:
+          name: tauri-updater-meta-linux
+          if-no-files-found: error
+          path: |
+            dist/QwenPaw-Tauri-*-linux-x86_64.deb.sig
+            dist/QwenPaw-Tauri-*-linux-x86_64.deb.sig.sha256
+            dist/tauri-linux-x86_64-deb-updater.json
+            dist/tauri-linux-x86_64-deb-updater.json.sha256
 
       - name: Upload desktop verify evidence (Tauri Linux)
         if: always()
