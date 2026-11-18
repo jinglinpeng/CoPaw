@@ -210,11 +210,11 @@ def verify_upgrade(mode):
                 window.start()
                 window.click("persisted download ready icon", '[class*="appBrandReadyIcon"]')
             window.click("Update Now", "button", "Update Now")
+            before = desktop_pids()
             window.click(
                 "desktop update confirmation",
                 'dialog[open][aria-labelledby=desktop-update-title] footer button:last-child',
             )
-            before = desktop_pids()
             wait_for("updated dpkg version", lambda: installed_version() == NEW, 240)
             wait_for("updated desktop process", lambda: (desktop_pids() - before), 150)
             wait_for("updated app backend version", lambda: backend_restarted(working), 180)

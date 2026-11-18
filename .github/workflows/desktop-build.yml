@@ -50,7 +50,11 @@ jobs:
 
       - name: Prepare local browser and the private test update server
         run: |
-          sudo apt-get update
+          sudo sed -Ei 's|https?://[^ ]*archive\.ubuntu\.com/ubuntu/?|https://archive.ubuntu.com/ubuntu/|g' \
+            /etc/apt/sources.list.d/ubuntu.sources
+          sudo apt-get -o Acquire::Retries=2 -o Acquire::https::Timeout=20 \
+            -o Dir::Etc::sourcelist=sources.list.d/ubuntu.sources \
+            -o Dir::Etc::sourceparts=- update
           sudo apt-get install -y --no-install-recommends xvfb xauth webkit2gtk-driver pkexec
           python -m pip install packaging
           openssl req -x509 -newkey rsa:2048 -nodes -days 1 \
@@ -76,7 +80,7 @@ jobs:
           });
           POLICY
           sudo systemctl start polkit
-          pkexec /usr/bin/dpkg --version
+          pkexec dpkg --version
 
       - name: Exercise immediate and cached app updates
         timeout-minutes: 20
