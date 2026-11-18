@@ -107,7 +107,9 @@ class Window:
                     !el.disabled &&
                     (!arguments[1] || el.textContent.trim() === arguments[1]));
             if (!item) return false;
-            item.click();
+            item.dispatchEvent(new MouseEvent("click", {
+                bubbles: true, cancelable: true, view: window,
+            }));
             return true;
         """, selector, text))
 
