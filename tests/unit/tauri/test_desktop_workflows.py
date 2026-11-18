@@ -444,6 +444,32 @@ def test_desktop_updater_manifest_only_publishes_stable_versions(
         ),
         encoding="utf-8",
     )
+    linux_supported = workflow_name == "desktop-promote.yml"
+    if linux_supported:
+        linux = "QwenPaw-Tauri-2.3.0-linux-x86_64.deb"
+        installer_dir = tmp_path / "QwenPaw-Desktop-Tauri-Linux-2.3.0"
+        installer_dir.mkdir()
+        (installer_dir / linux).write_bytes(b"!<arch>\ndebian-binary")
+        linux_meta = tmp_path / "tauri-updater-meta-linux"
+        linux_meta.mkdir()
+        (linux_meta / f"{linux}.sig").write_text("linux-signature")
+        (linux_meta / "tauri-linux-x86_64-deb-updater.json").write_text(
+            json.dumps(
+                {
+                    "target": "linux-x86_64-deb",
+                    "artifact": linux,
+                    "signature": f"{linux}.sig",
+                },
+            ),
+        )
+        link = next(
+            step["run"]
+            for step in steps
+            if step.get("name")
+            == "Link artifacts into updater-meta dirs for manifest generation"
+        )
+        subprocess.run(["bash", "-e", "-c", link], cwd=tmp_path, check=True)
+
     published = tmp_path / "published.json"
     previous = '{"version": "2.2.2"}\n'
     published.write_text(previous, encoding="utf-8")
@@ -496,6 +522,11 @@ def test_desktop_updater_manifest_only_publishes_stable_versions(
             "url": "https://example.test/desktop/win-tauri/installer.exe",
             "signature": "test-signature",
         }
+        if linux_supported:
+            assert manifest["platforms"]["linux-x86_64-deb"] == {
+                "url": f"https://example.test/desktop/linux-tauri/{linux}",
+                "signature": "linux-signature",
+            }
 
 
 def test_nsis_template_avoids_solid_compression() -> None:

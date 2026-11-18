@@ -8,7 +8,7 @@
 > - **Potential performance issues**: Startup time, memory usage, and other performance aspects may need further optimization
 > - **Features under development**: Some features may be unstable or missing
 >
-> ✅ The desktop app is built with **Tauri**. Windows and macOS support **in-app automatic updates**.
+> ✅ The desktop app is built with **Tauri** and supports **in-app updates**.
 >
 > We welcome your feedback to help improve product quality.
 
@@ -272,7 +272,7 @@ The app creates `~/.qwenpaw` on first launch and initializes a default workspace
 
 ### Updates and Uninstall
 
-- **Updates**: download and install the newer Debian package
+- **Updates**: choose **Update Now** or **Download in Background** in the app. Installing the update requires administrator authorization.
 - **Uninstall**: `sudo apt remove qwen-paw-desktop` — this keeps `~/.qwenpaw`, remove it manually for a clean wipe
 
 ## Technical Support
