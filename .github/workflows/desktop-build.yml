@@ -57,10 +57,23 @@ jobs:
             -o Dir::Etc::sourceparts=- update
           sudo apt-get install -y --no-install-recommends xvfb xauth webkit2gtk-driver pkexec
           python -m pip install packaging
-          openssl req -x509 -newkey rsa:2048 -nodes -days 1 \
-            -subj '/CN=localhost' -addext 'subjectAltName=DNS:localhost,IP:127.0.0.1' \
-            -keyout "$RUNNER_TEMP/update-server.key" -out "$RUNNER_TEMP/update-server.crt"
-          sudo install -m 644 "$RUNNER_TEMP/update-server.crt" /usr/local/share/ca-certificates/qwenpaw-test.crt
+          openssl req -x509 -newkey rsa:2048 -nodes -days 1 -sha256 \
+            -subj '/CN=QwenPaw update test CA' -addext 'basicConstraints=critical,CA:TRUE' \
+            -keyout "$RUNNER_TEMP/update-ca.key" -out "$RUNNER_TEMP/update-ca.crt"
+          openssl req -newkey rsa:2048 -nodes -subj '/CN=localhost' \
+            -keyout "$RUNNER_TEMP/update-server.key" -out "$RUNNER_TEMP/update-server.csr"
+          cat > "$RUNNER_TEMP/update-server.ext" <<'EXT'
+          basicConstraints=critical,CA:FALSE
+          keyUsage=critical,digitalSignature,keyEncipherment
+          extendedKeyUsage=serverAuth
+          subjectAltName=DNS:localhost,IP:127.0.0.1
+          EXT
+          openssl x509 -req -in "$RUNNER_TEMP/update-server.csr" -out "$RUNNER_TEMP/update-server.crt" \
+            -CA "$RUNNER_TEMP/update-ca.crt" -CAkey "$RUNNER_TEMP/update-ca.key" -CAcreateserial \
+            -days 1 -sha256 -extfile "$RUNNER_TEMP/update-server.ext"
+          openssl verify -purpose sslserver -verify_hostname localhost \
+            -CAfile "$RUNNER_TEMP/update-ca.crt" "$RUNNER_TEMP/update-server.crt"
+          sudo install -m 644 "$RUNNER_TEMP/update-ca.crt" /usr/local/share/ca-certificates/qwenpaw-test.crt
           sudo update-ca-certificates
           python scripts/pack-tauri/generate_update_manifest.py manifest \
             --version 2.3.1 --base-url https://localhost:8443 \
@@ -88,6 +101,8 @@ jobs:
           export UPDATER_TEST_CERT="$RUNNER_TEMP/update-server.crt"
           export UPDATER_TEST_TLS_KEY="$RUNNER_TEMP/update-server.key"
           export SSL_CERT_FILE=/etc/ssl/certs/ca-certificates.crt
+          export NO_PROXY=localhost,127.0.0.1
+          export no_proxy=localhost,127.0.0.1
           xvfb-run -a -s "-screen 0 1600x1000x24" \
             python scripts/verify/verify_linux_update_pair.py update-pair
 

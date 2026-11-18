@@ -237,6 +237,9 @@ def main():
         worker = threading.Thread(target=server.serve_forever, daemon=True)
         worker.start()
         try:
+            manifest = json.loads(_http("GET", "https://localhost:8443/latest.json"))
+            assert manifest.get("version") == NEW
+            print("PASS: local HTTPS update manifest is reachable", flush=True)
             for mode in ("immediate", "cached"):
                 subprocess.run(
                     ["sudo", "apt-get", "install", "-y", "--allow-downgrades",
