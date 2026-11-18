@@ -13,7 +13,7 @@ import sys
 import threading
 import time
 
-from desktop_verify import _http
+from desktop_verify import SEL_INPUT, _http
 
 PACKAGE = "qwen-paw-desktop"
 EXECUTABLE = "/usr/bin/qwenpaw-desktop"
@@ -80,9 +80,10 @@ class Window:
             timeout=180,
         )
         self.session = "/session/" + session["sessionId"]
-        wait_for("desktop update controls", lambda: self.js(
-            "return document.querySelector('main[data-desktop-client=ready]') !== null",
-        ))
+        wait_for("desktop console to render", lambda: self.js("""
+            return [...document.querySelectorAll(arguments[0])]
+                .some(el => el.getBoundingClientRect().width > 0);
+        """, SEL_INPUT.replace(":visible", "")))
 
     def js(self, script, *args):
         return self.command(
@@ -142,6 +143,18 @@ def desktop_pids():
             continue
         if exe in (EXECUTABLE, EXECUTABLE + " (deleted)"):
             pids.add(int(path.parent.name))
+    return pids
+
+
+def agent_host_pids():
+    pids = set()
+    for pid in desktop_pids():
+        try:
+            cmdline = (Path("/proc") / str(pid) / "cmdline").read_bytes()
+        except OSError:
+            continue
+        if b"--agent-host" in cmdline.split(b"\0"):
+            pids.add(pid)
     return pids
 
 
@@ -206,8 +219,10 @@ def verify_upgrade(mode):
                 downloads = UpdateServer.package_downloads
                 print("PASS cached: download completed while the old deb remained installed", flush=True)
                 # Reopen the old version to prove the cached state survives relaunch.
+                frontend = desktop_pids() - agent_host_pids()
+                window.js("void window.__TAURI_INTERNALS__.invoke('quit_app')")
+                wait_for("old desktop window to quit", lambda: not (frontend & desktop_pids()), 30)
                 window.close()
-                stop_desktop()
                 window = Window(env, log)
                 window.start()
                 window.click("persisted download ready icon", '[class*="appBrandReadyIcon"]')
