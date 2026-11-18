@@ -3,15 +3,13 @@
 _中文版：[RELEASING_zh.md](RELEASING_zh.md)_
 
 QwenPaw ships four artifacts from a single version — the **PyPI** wheel, the
-**Docker** image, the **desktop** apps (Tauri, Windows + macOS) and the
+**Docker** image, the **desktop** apps (Tauri, Windows + macOS + Linux) and the
 **plugins** bundle. They are published together by one orchestrated workflow so
 that a failure in any one of them blocks the whole release: you can never end up
 with, e.g., a web release that has no matching desktop build.
 
-Linux `.deb` packages are also built and verified during the prepare phase, but
-are currently available only as the `tauri-linux` GitHub Actions artifact for
-testing. Publishing Linux installers to GitHub Releases, OSS and the download
-website, and providing automatic updates, are not yet implemented.
+Linux `.deb` installers are published to GitHub Releases and the download page.
+Linux users update manually by installing a newer package.
 
 > Orchestrator: [`.github/workflows/release.yml`](.github/workflows/release.yml).
 > The older per-artifact workflows are kept as a fallback — see
@@ -43,12 +41,12 @@ website, and providing automatic updates, are not yet implemented.
    - `build-plugins` — pack the plugin bundle.
 3. **Gate + Publish** — every publish job `needs` **all** prepare jobs, so a
    single failure above skips the entire publish phase. When all prepare jobs are
-   green: publish to PyPI, push the multi-arch Docker image, attach the Windows
-   and macOS installers to the release + upload them to OSS, publish plugins —
-   then, as the **last** step, flip the draft to *published* (pinned to the built
-   SHA). After publishing, it promotes the desktop `latest`/updater, deploys the website
-   (stable/post only — betas are skipped), and opens the Release Duty verification
-   issue.
+   green: publish to PyPI, push the multi-arch Docker image, attach the desktop
+   installers to the release and upload them to OSS, then publish plugins and
+   flip the draft to *published* (pinned to the built SHA). After publishing,
+   it refreshes the desktop download index, promotes the Windows and macOS
+   `latest` files and updater manifest, deploys the website (stable/post only),
+   and opens the Release Duty verification issue.
 
 A full run is ~60–75 min, dominated by the desktop Tauri builds.
 

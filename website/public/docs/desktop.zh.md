@@ -8,15 +8,16 @@
 > - **性能可能存在缺陷**：启动速度、内存占用等方面可能需要进一步优化
 > - **功能持续完善中**：部分功能可能不稳定或缺失
 >
-> ✅ 桌面应用现已采用 **Tauri** 构建，内置**应用内自动更新**，无需卸载重装即可升级到新版本。
+> ✅ 桌面应用采用 **Tauri** 构建。Windows 和 macOS 支持**应用内自动更新**。
 >
 > 欢迎反馈问题，帮助我们改进产品质量。
 
-**下载地址**：[GitHub Releases][releases]
+**下载地址**：[官网下载页][downloads] · [GitHub Releases][github-releases]
 
 本文档说明如何在 Windows、macOS 和 Linux 系统上安装和使用 QwenPaw Desktop 桌面应用。
 
-[releases]: https://qwenpaw.agentscope.io/downloads
+[downloads]: https://qwenpaw.agentscope.io/downloads/
+[github-releases]: https://github.com/agentscope-ai/QwenPaw/releases
 
 ## 特别说明
 
@@ -41,7 +42,7 @@
 ### 安装步骤
 
 1. **下载安装包**
-   从 [Release 页面][releases]下载 `QwenPaw-Tauri-<version>-Windows-setup.exe` 文件
+   从[官网下载页][downloads]下载 `QwenPaw-Tauri-<version>-Windows-setup.exe`。
 
 2. **运行安装程序**
    双击 `.exe` 文件，按照安装向导提示完成安装
@@ -108,7 +109,7 @@ A: 应用未经过 **Microsoft 代码签名**（成本 $200-800/年），Windows
 ### 安装步骤
 
 1. **下载压缩包**
-   从 [Release 页面][releases]下载 `QwenPaw-Tauri-<version>-macOS.zip` 文件
+   从[官网下载页][downloads]下载 `QwenPaw-Tauri-<version>-macOS.zip`。
 
 2. **解压缩**
    双击 `.zip` 文件自动解压，得到 `QwenPaw Desktop.app` 应用
@@ -237,8 +238,6 @@ A: 当前采用
 
 ## Linux 使用指南
 
-Linux 桌面版目前通过 GitHub Actions 提供测试安装包，尚未发布到 GitHub Releases 或官网下载页，也暂不支持自动更新。
-
 ### 系统要求
 
 - **操作系统**：Ubuntu 24.04 LTS 或更新、Debian 13 或更新（glibc 2.39+），x86_64
@@ -248,7 +247,7 @@ Linux 桌面版目前通过 GitHub Actions 提供测试安装包，尚未发布�
 
 ### 安装步骤
 
-1. 在仓库的 GitHub Actions 中打开一次成功的 **Desktop Build (reusable)** 运行，从 **Artifacts** 下载 `tauri-linux`，解压后找到 `QwenPaw-Tauri-<version>-linux-x86_64.deb`。
+1. 从[官网下载页][downloads]或 [GitHub Releases][github-releases] 下载 `QwenPaw-Tauri-<version>-linux-x86_64.deb`。
 2. 用 apt 安装，依赖会自动补齐：
 
    ```bash
