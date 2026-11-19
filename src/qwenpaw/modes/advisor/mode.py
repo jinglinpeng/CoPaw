@@ -4,7 +4,7 @@
 from __future__ import annotations
 
 import logging
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any, Optional
 
 from agentscope.message import Msg, TextBlock
@@ -68,6 +68,7 @@ class AdvisorSessionState:
 
     override: bool | None = None
     middleware: AdvisorMiddleware | None = None
+    local_results: dict[str, tuple[str, str]] = field(default_factory=dict)
 
     @property
     def consults_used(self) -> int:
@@ -237,6 +238,12 @@ class AdvisorMode(AgentMode):
             else AdvisorSessionState()
         )
         am = cfg.advisor_mode
+        reuse_plan = (
+            state.middleware is not None
+            and state.middleware.privacy_config == am.privacy
+        )
+        if not reuse_plan:
+            state.local_results = {}
         advisor = AdvisorClient(
             agent_id=agent_id,
             agent_config=cfg,
@@ -256,8 +263,8 @@ class AdvisorMode(AgentMode):
             on_demand_enabled=am.on_demand_enabled,
             max_consults=am.max_consults,
             consults_used=state.consults_used,
-            plan_injected=state.plan_injected,
-            plan=state.plan,
+            plan_injected=reuse_plan and state.plan_injected,
+            plan=state.plan if reuse_plan else "",
             transcript=(
                 state.middleware.transcript
                 if state.middleware is not None
@@ -268,6 +275,8 @@ class AdvisorMode(AgentMode):
             log_dir=default_log_dir(agent_id),
             session_id=session_id,
             agent_id=agent_id,
+            privacy=am.privacy,
+            local_results=state.local_results,
         )
         state.middleware = middleware
         return middleware

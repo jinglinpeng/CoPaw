@@ -31,6 +31,8 @@ from ..capabilities import (
 logger = logging.getLogger(__name__)
 
 DriverInvoker = Callable[[DriverInvocation], Awaitable[DriverInvocationResult]]
+MCP_ADVISOR_RESULT_KEY = "qwenpaw/advisor_result_key"
+ADVISOR_RESULT_SOURCE = "advisor_result_source"
 
 
 def _text_block(text: str) -> Any:
@@ -176,7 +178,21 @@ class DriverCapabilityTool(ToolBase):
                 request_context=self._request_context,
             ),
         )
-        return _tool_chunk_from_driver_result(result)
+        chunk = _tool_chunk_from_driver_result(result)
+        chunk.metadata.pop(ADVISOR_RESULT_SOURCE, None)
+        meta = getattr(result.value, "meta", None)
+        if (
+            self._capability.protocol == "mcp"
+            and chunk.state == ToolResultState.SUCCESS
+            and isinstance(meta, dict)
+        ):
+            key = meta.get(MCP_ADVISOR_RESULT_KEY)
+            if isinstance(key, str) and key and len(key) <= 256:
+                chunk.metadata[ADVISOR_RESULT_SOURCE] = (
+                    self._capability.capability_id,
+                    key,
+                )
+        return chunk
 
 
 async def build_driver_agent_tools(

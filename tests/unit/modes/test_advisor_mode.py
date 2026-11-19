@@ -15,6 +15,7 @@ from agentscope.message import Base64Source, DataBlock, TextBlock
 
 from qwenpaw.config.config import (
     AdvisorInterventionConfig,
+    AdvisorPrivacyConfig,
     AgentProfileConfig,
     ModelSlotConfig,
 )
@@ -32,6 +33,7 @@ from qwenpaw.modes.advisor.models import (
     slot_to_dict,
 )
 from qwenpaw.runtime.phases import Phase
+from qwenpaw.runtime.hooks import HookAction
 
 
 def _config(
@@ -144,6 +146,33 @@ async def test_hook_routes_agent_to_subagent_model():
         "provider_id": "dash",
         "model": "qwen3-8b",
     }
+
+
+async def test_protected_worker_rejects_override_to_the_advisor():
+    cfg = _config()
+    cfg.advisor_mode.privacy = AdvisorPrivacyConfig(public_task="Approved task")
+    override = SimpleNamespace(model_slot_override=cfg.active_model)
+    result = await _picked().hooks()[0].run(_ctx(cfg, request=override))
+    assert result.action == HookAction.SHORT_CIRCUIT
+
+
+def test_result_references_follow_the_advisor_session_lifecycle():
+    source = "driver://mcp/sql/tool/query_db#invoke"
+    cfg = _config()
+    cfg.advisor_mode.privacy = AdvisorPrivacyConfig(
+        public_task="Approved task", result_reference_sources=[source],
+    )
+    mode = _picked()
+    ctx = _ctx(cfg)
+    first_turn = mode.build_middleware(ctx, cfg)
+    reference = first_turn._privacy.register_result((source, "var_1"))
+    question = json.dumps({"topic": "validate_method", "result_ref": reference})
+    next_turn = mode.build_middleware(ctx, cfg)
+    assert next_turn._privacy.consultation(question, "plan", 1, 32).result_ref == reference
+
+    mode.end_session(ctx.session_id)
+    new_session = mode.build_middleware(ctx, cfg)
+    assert new_session._privacy.consultation(question, "plan", 1, 32).result_ref is None
 
 
 async def test_hook_prefers_the_worker_model_override():

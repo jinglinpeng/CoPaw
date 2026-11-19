@@ -17,8 +17,10 @@ from agentscope.message import (
     ToolResultState,
     UserMsg,
 )
+from agentscope.tool import ToolResponse
 
-from qwenpaw.config.config import AdvisorInterventionConfig
+from qwenpaw.config.config import AdvisorInterventionConfig, AdvisorPrivacyConfig
+from qwenpaw.drivers.adapters.agentscope_tool import ADVISOR_RESULT_SOURCE
 from qwenpaw.modes.advisor.prompts import ADVISOR_SYSTEM_PROMPT
 from qwenpaw.modes.advisor.middleware import (
     _LiveExchange,
@@ -875,9 +877,119 @@ async def test_consult_request_carries_the_task_plan_and_recent_messages():
     assert "pandoc" in request and "-> FAILED" in request
 
 
+async def test_protected_advisor_only_receives_approved_structured_context():
+    secret = "private-query-result-551a"
+    agent = _agent_with_task(secret)
+    advisor = _Advisor(["Public plan", "ADJUST\nCheck the join."])
+    mw = AdvisorMiddleware(
+        advisor=advisor,
+        privacy=AdvisorPrivacyConfig(
+            public_task="Find the top seller.",
+            public_context="Approved database schema.",
+            public_references=["Order.OwnerId", "Opportunity.OwnerId"],
+        ),
+    )
+    tools = [{"function": {
+        "name": PLAN_TOOL_NAME,
+        "parameters": {"properties": {"question": {"type": "string"}}},
+    }}]
+    model_input = {
+        "messages": [{"role": "system", "content": secret}],
+        "tools": tools,
+    }
+    for _ in range(2):
+        await mw.on_model_call(agent, model_input, _next_handler)
+    assert secret in model_input["messages"][0]["content"]
+    parameters = model_input["tools"][0]["function"]["parameters"]
+    assert "select_field" in parameters["properties"]["question"]["description"]
+    for _ in range(3):
+        add_result(agent, "execute_shell_command", {"command": secret}, FAIL + secret)
+        await mw.on_model_call(agent, model_input, _next_handler)
+    await mw.consult(json.dumps({
+        "topic": "select_field",
+        "references": ["Order.OwnerId", "Opportunity.OwnerId"],
+    }))
+    await mw.consult(json.dumps({"topic": "select_field", "references": [secret]}))
+    await mw.consult(secret)
+    assert [entry["kind"] for entry in mw.transcript["calls"]] == [
+        "plan", "followup", "consult", "consult", "consult",
+    ]
+    assert "Approved database schema." in advisor.calls[0][0]["content"]
+    assert "Compare the candidate fields" in advisor.calls[2][1]["content"]
+    assert mw.consults[0]["references"] == ["Opportunity.OwnerId", "Order.OwnerId"]
+    assert mw.consults[1]["topic"] is mw.consults[2]["topic"] is None
+    assert secret not in json.dumps(advisor.calls)
+    with pytest.raises(ValueError, match="approved request"):
+        await mw._call_advisor(secret, kind="consult")
+
+
 async def test_agents_without_the_hook_are_fine():
     mw, agent = _plan_mw(["THE PLAN"]), _agent_with_task()
     assert await mw._inject_plan(agent, tools=[]) is not None
+
+
+async def test_query_reference_survives_turns_and_cannot_leave_its_session():
+    capability = "driver://mcp/sql/tool/query_db#invoke"
+    config = AdvisorPrivacyConfig(
+        public_task="Compare sales totals.",
+        public_references=["Order.OwnerId"],
+        result_reference_sources=[capability],
+    )
+    local_results = {}
+    advisor = _Advisor(["Compare by owner."])
+    mw = AdvisorMiddleware(
+        advisor=advisor, privacy=config, local_results=local_results,
+    )
+
+    async def query(source, state=ToolResultState.SUCCESS):
+        async def run_tool(**kwargs):
+            yield ToolResponse(
+                content=[TextBlock(text="sensitive SQL output")],
+                state=state,
+                metadata={ADVISOR_RESULT_SOURCE: source},
+            )
+
+        response, = [
+            chunk async for chunk in mw.on_acting(_Agent(), {}, run_tool)
+        ]
+        assert ADVISOR_RESULT_SOURCE not in response.metadata
+        assert response.content[-1].text == "sensitive SQL output"
+        return response.content[0].text
+
+    assert "R_" not in await query(("unapproved", "var_dab_1"))
+    assert "R_" not in await query(
+        (capability, "var_dab_1"), ToolResultState.ERROR,
+    )
+    first = await query((capability, "var_dab_1"))
+    second = await query((capability, "var_dab_2"))
+    first_ref, second_ref = local_results
+    assert first_ref in first and second_ref in second
+    assert local_results[first_ref] == (capability, "var_dab_1")
+
+    question = json.dumps({
+        "topic": "select_field",
+        "references": ["Order.OwnerId"],
+        "result_ref": first_ref,
+    })
+    next_turn = AdvisorMiddleware(
+        advisor=advisor, privacy=config, local_results=local_results,
+    )
+    await next_turn.consult(question)
+    assert next_turn.consults[-1]["result_ref"] == first_ref
+    assert "Result reference: " + first_ref in advisor.calls[-1][1]["content"]
+    assert second_ref not in advisor.calls[-1][1]["content"]
+
+    other_session = AdvisorMiddleware(advisor=advisor, privacy=config)
+    await other_session.consult(question)
+    assert other_session.consults[-1]["result_ref"] is None
+    await query((capability, "var_dab_1"))
+    await next_turn.consult(question)
+    assert next_turn.consults[-1]["result_ref"] is None
+    assert first_ref not in advisor.calls[-1][1]["content"]
+    assert all(
+        secret not in json.dumps(advisor.calls)
+        for secret in ("var_dab_", "sensitive SQL output")
+    )
 
 
 # ── live surfacing: the exchange streams while the advisor talks ────────

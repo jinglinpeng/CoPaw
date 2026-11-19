@@ -2198,6 +2198,18 @@ class AdvisorInterventionConfig(BaseModel):
     )
 
 
+class AdvisorPrivacyConfig(BaseModel):
+    """Task inputs explicitly approved for sending to the advisor."""
+
+    public_task: str = Field(min_length=1)
+    public_context: str = ""
+    public_references: list[str] = Field(default_factory=list)
+    result_reference_sources: list[str] = Field(
+        default_factory=list,
+        description="Trusted Driver capability IDs that can issue result references.",
+    )
+
+
 class AdvisorModeConfig(BaseModel):
     """Configuration for Advisor Mode (stored in agent.json).
 
@@ -2269,6 +2281,10 @@ class AdvisorModeConfig(BaseModel):
             "Thinking level for the advisor's own calls. 'inherit' "
             "follows the agent and model defaults"
         ),
+    )
+    privacy: AdvisorPrivacyConfig | None = Field(
+        default=None,
+        description="Limit outbound advisor messages to approved task data.",
     )
 
 

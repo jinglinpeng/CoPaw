@@ -55,14 +55,17 @@ from agentscope.event import (
 from agentscope.message import (
     AssistantMsg,
     Msg,
+    TextBlock,
     ToolCallBlock,
     ToolCallState,
     ToolResultBlock,
     ToolResultState,
 )
 from agentscope.middleware import MiddlewareBase
+from agentscope.tool import ToolResponse
 
-from ...config.config import AdvisorModeConfig
+from ...config.config import AdvisorModeConfig, AdvisorPrivacyConfig
+from ...drivers.adapters.agentscope_tool import ADVISOR_RESULT_SOURCE
 from ...runtime.prompt_contributors import _read_prompt_file
 from .prompts import (
     FALLBACK_ADVICE,
@@ -78,6 +81,7 @@ from .prompts import (
     WORKER_SYSTEM_CONTEXT_HEADER,
 )
 from .tools import CONSULT_TOOL_NAME
+from .privacy import AdvisorPrivacy, ApprovedAdvisorRequest
 from .trigger import FailureDetector, InterventionTrigger, TriggerEvent
 
 if TYPE_CHECKING:
@@ -527,8 +531,14 @@ class AdvisorMiddleware(MiddlewareBase):
         plan: str = "",
         transcript: dict[str, Any] | None = None,
         recent_messages: int = AdvisorModeConfig().recent_messages,
+        privacy: AdvisorPrivacyConfig | None = None,
+        local_results: dict[str, tuple[str, str]] | None = None,
     ) -> None:
         self._advisor = advisor
+        self._privacy = (
+            AdvisorPrivacy(privacy, local_results)
+            if privacy is not None else None
+        )
         self._followup_enabled = followup_enabled
         self._plan_enabled = plan_enabled
         self._on_demand_enabled = on_demand_enabled
@@ -592,6 +602,10 @@ class AdvisorMiddleware(MiddlewareBase):
         return self._plan
 
     @property
+    def privacy_config(self) -> AdvisorPrivacyConfig | None:
+        return self._privacy.config if self._privacy is not None else None
+
+    @property
     def plan_error(self) -> str | None:
         """The last error when every plan attempt failed, else ``None``."""
         return self._plan_error
@@ -638,6 +652,27 @@ class AdvisorMiddleware(MiddlewareBase):
 
     # ── middleware hook ─────────────────────────────────────────────────
 
+    async def on_acting(
+        self,
+        agent: "Agent",
+        input_kwargs: dict,
+        next_handler: Callable[..., AsyncIterator],
+    ) -> AsyncIterator:
+        async for response in next_handler(**input_kwargs):
+            if isinstance(response, ToolResponse) and self._privacy is not None:
+                source = response.metadata.pop(ADVISOR_RESULT_SOURCE, None)
+                if response.state == ToolResultState.SUCCESS:
+                    reference = self._privacy.register_result(source)
+                    if reference is not None:
+                        response.content.insert(0, TextBlock(
+                            text=(
+                                f"Advisor result reference: {reference}\n"
+                                "Use this reference when consulting the "
+                                "advisor about the query result below.\n\n"
+                            ),
+                        ))
+            yield response
+
     async def on_model_call(
         self,
         agent: "Agent",
@@ -645,6 +680,10 @@ class AdvisorMiddleware(MiddlewareBase):
         next_handler: Callable[..., Any],
     ) -> Any:
         injected: Msg | None = None
+        if self._privacy is not None:
+            input_kwargs["tools"] = self._privacy.worker_tools(
+                input_kwargs.get("tools") or [],
+            )
         # Advisor Mode is the innermost model-call middleware. Refresh
         # even when the opening plan is disabled or was already injected;
         # an empty input must also clear the preceding call's context.
@@ -734,19 +773,33 @@ class AdvisorMiddleware(MiddlewareBase):
             return CONSULT_BUDGET_EXHAUSTED
 
         self._consults_used += 1
-        request = CONSULT_REQUEST_TEMPLATE.format(
-            task=self._task or "(not available)",
-            index=self._consults_used,
-            max_consults=self._max_consults,
-            question=question,
-            plan=self._plan or NO_PLAN_NOTE,
-            recent_messages=self._recent_context(self._context),
-        )
+        if self._privacy is not None:
+            request = self._privacy.consultation(
+                question,
+                self._plan or NO_PLAN_NOTE,
+                self._consults_used,
+                self._max_consults,
+            )
+            audit = {
+                "request": request.text,
+                "topic": request.topic,
+                "references": list(request.references),
+                "result_ref": request.result_ref,
+            }
+        else:
+            request = CONSULT_REQUEST_TEMPLATE.format(
+                task=self._task or "(not available)",
+                index=self._consults_used,
+                max_consults=self._max_consults,
+                question=question,
+                plan=self._plan or NO_PLAN_NOTE,
+                recent_messages=self._recent_context(self._context),
+            )
+            audit = {"request": request, "question": question}
         record: dict[str, Any] = {
             "timestamp": time.strftime("%Y-%m-%dT%H:%M:%S"),
             "index": self._consults_used,
-            "question": question,
-            "request": request,
+            **audit,
         }
         try:
             reply = await self._call_advisor(
@@ -914,26 +967,33 @@ class AdvisorMiddleware(MiddlewareBase):
         agent: "Agent",
         event: TriggerEvent,
     ) -> Msg | None:
-        trigger_note = TRIGGER_NOTES.get(event.reason, event.reason).format(
-            failures=event.failures,
-            window_size=event.window_size,
-        )
-        request = FOLLOWUP_REQUEST_TEMPLATE.format(
-            task=self._task or "(not available)",
-            index=event.intervention_index,
-            max_interventions=self._trigger.config.max_interventions,
-            plan=self._plan or NO_PLAN_NOTE,
-            recent_messages=self._recent_context(agent.state.context),
-            trigger_note=trigger_note,
-            severity_note=SEVERITY_NOTES.get(event.severity, ""),
-        )
+        if self._privacy is not None:
+            request = self._privacy.followup(
+                self._plan or NO_PLAN_NOTE,
+                event.intervention_index,
+                self._trigger.config.max_interventions,
+            )
+        else:
+            trigger_note = TRIGGER_NOTES.get(event.reason, event.reason).format(
+                failures=event.failures,
+                window_size=event.window_size,
+            )
+            request = FOLLOWUP_REQUEST_TEMPLATE.format(
+                task=self._task or "(not available)",
+                index=event.intervention_index,
+                max_interventions=self._trigger.config.max_interventions,
+                plan=self._plan or NO_PLAN_NOTE,
+                recent_messages=self._recent_context(agent.state.context),
+                trigger_note=trigger_note,
+                severity_note=SEVERITY_NOTES.get(event.severity, ""),
+            )
         record: dict[str, Any] = {
             "timestamp": time.strftime("%Y-%m-%dT%H:%M:%S"),
             "index": event.intervention_index,
             "reason": event.reason,
             "severity": event.severity,
             "step_index": event.step_index,
-            "request": request,
+            "request": self._request_text(request),
         }
         advice = ""
         action = ""
@@ -1037,21 +1097,22 @@ class AdvisorMiddleware(MiddlewareBase):
 
         Returns the injected message when it landed, else ``None``.
         """
-        instruction = self._extract_instruction(agent.state.context)
-        if not instruction:
-            logger.warning("AdvisorMiddleware: no user instruction found")
-            return None
-
-        tool_list = self._format_tool_list(tools)
-        env_context = self._read_env_context()
-        env_section = (
-            f"{ENV_SECTION_HEADER}\n\n{env_context}" if env_context else ""
-        )
-        plan_request = PLAN_REQUEST_TEMPLATE.format(
-            instruction=instruction,
-            tool_list=tool_list,
-            env_section=env_section,
-        )
+        if self._privacy is not None:
+            plan_request = self._privacy.plan()
+        else:
+            instruction = self._extract_instruction(agent.state.context)
+            if not instruction:
+                logger.warning("AdvisorMiddleware: no user instruction found")
+                return None
+            env_context = self._read_env_context()
+            env_section = (
+                f"{ENV_SECTION_HEADER}\n\n{env_context}" if env_context else ""
+            )
+            plan_request = PLAN_REQUEST_TEMPLATE.format(
+                instruction=instruction,
+                tool_list=self._format_tool_list(tools),
+                env_section=env_section,
+            )
         logger.info(
             "AdvisorMiddleware: asking advisor (%s) for a plan ...",
             getattr(self._advisor, "label", "?"),
@@ -1119,7 +1180,7 @@ class AdvisorMiddleware(MiddlewareBase):
 
     async def _call_advisor(
         self,
-        message: str,
+        message: str | ApprovedAdvisorRequest,
         on_text: Callable[[str], None] | None = None,
         *,
         kind: str,
@@ -1128,7 +1189,7 @@ class AdvisorMiddleware(MiddlewareBase):
         receives the cumulative reply while it streams."""
         messages: list[dict[str, str]] = [
             {"role": "system", "content": self._system_prompt()},
-            {"role": "user", "content": message},
+            {"role": "user", "content": self._request_text(message)},
         ]
         # Keep the exact AdvisorClient input for every attempt, including
         # retries and failures. Source hashes refer to the full texts in
@@ -1149,7 +1210,9 @@ class AdvisorMiddleware(MiddlewareBase):
                         entry["text"].encode("utf-8"),
                     ).hexdigest(),
                 }
-                for entry in self._worker_system_messages
+                for entry in (
+                    self._worker_system_messages if self._privacy is None else []
+                )
             ],
             "status": "pending",
         }
@@ -1175,6 +1238,8 @@ class AdvisorMiddleware(MiddlewareBase):
 
     def _system_prompt(self) -> str:
         """Advisor guidance plus the effective worker system context."""
+        if self._privacy is not None:
+            return self._privacy.system_prompt()
         if self._guidance is None:
             self._guidance = self._read_guidance()
         prompt = ADVISOR_SYSTEM_PROMPT
@@ -1191,6 +1256,13 @@ class AdvisorMiddleware(MiddlewareBase):
                 )
             )
         return prompt
+
+    def _request_text(self, message: str | ApprovedAdvisorRequest) -> str:
+        if isinstance(message, ApprovedAdvisorRequest):
+            return message.text
+        if self._privacy is not None:
+            raise ValueError("Advisor privacy requires an approved request")
+        return message
 
     def _read_guidance(self) -> str:
         """``ADVISOR.md`` from the directory the advisor plans for."""
@@ -1214,14 +1286,14 @@ class AdvisorMiddleware(MiddlewareBase):
 
     def _record_plan(
         self,
-        request: str,
+        request: str | ApprovedAdvisorRequest,
         plan: str | None = None,
         error: str | None = None,
         usage: dict[str, int] | None = None,
     ) -> None:
         self._transcript["plan"] = {
             "timestamp": time.strftime("%Y-%m-%dT%H:%M:%S"),
-            "request": request,
+            "request": self._request_text(request),
             "plan": plan,
             "error": error,
             "usage": usage,
