@@ -1,0 +1,55 @@
+{
+  "schema": "qwenpaw.frozen-collaboration-source.v1",
+  "version": "P4.1",
+  "parent": "P4",
+  "status": "frozen",
+  "base_revision": "9e301810f8a4dddd7d17abc7783776aceb4a287d",
+  "implementation_frozen_at": "2026-11-19T08:27:08.437084+00:00",
+  "named_at": "2026-11-19T08:27:08.437084+00:00",
+  "authorization": "用户要求：修复 P4 隐私闸门在顾问回放中暴露的两个漏洞，量级提示暂不做；修复后推送到 P4 所在分支。",
+  "experiment": null,
+  "experiment_status": "not_run",
+  "source_tree": {
+    "path": "src/qwenpaw",
+    "git_tree": "5489253aabdba344b3a2fc7a3ba285123be1d121",
+    "check": "git rev-parse <commit>:src/qwenpaw"
+  },
+  "files": {
+    "src/qwenpaw/config/config.py": "744e23582235c52874ba4f08340ab5f029f607c02e3dbb8318cc89273d978671",
+    "src/qwenpaw/modes/advisor/middleware.py": "8e82cba326baa0cc687f8a510befa3196b71282ed6a83ca147bc265105fbf4ee",
+    "src/qwenpaw/modes/advisor/mode.py": "50b987fb2b2bbd7de77ba59953401d7c9debe6d7f0626d859579c13bd49e84d8",
+    "src/qwenpaw/modes/advisor/privacy.py": "4da9da7172748c0f93e2b4397f0acf94562554a3de938a43fde86c9550584098",
+    "src/qwenpaw/modes/advisor/prompts.py": "dd408bd4924e8676f82dab26b845fc698dc7ecb38ac31c879a63f0704d110a9f",
+    "src/qwenpaw/modes/advisor/tools.py": "8c6d896125959188f16d07e1a8ea67e1d11ad64b3d71da514d0c41a242ebea97",
+    "src/qwenpaw/modes/advisor/trigger.py": "d3576d942f7cc6520f17bd406e927ab97b00fe8fee223b57f1575bef0cd96238"
+  },
+  "rendered_advisor_system_prompt_sha256": "440dc9bf3c333dc610fb6c45d168682cdf2da2b3d739759f1503cbbdd868ecb3",
+  "privacy_prompt_sha256": {
+    "PRIVACY_ADVISOR_NOTE": "4d1a14f947a64b61552522c8f16994f820dae8177ece29723c19af2c28cdd1ae",
+    "PRIVACY_WORKER_NOTE": "c0cc920d9bb328441258df586e837fa5e1db5d3cfa2fb41f35c5fb8cc82c86e8"
+  },
+  "scope_vs_P4": [
+    "Worker text no longer makes pieces of result ids public: a prefix or suffix (5+ characters) of an id seen in a result stays data when the worker writes it, e.g. an id tail it filtered on or quoted in a question.",
+    "JSON keys that mix digits with capitals (record ids used as keys, e.g. ka0Wt000000Eo6cIAC) are data, not schema field names."
+  ],
+  "unchanged_vs_P4": [
+    "middleware, prompts, trigger, config and the privacy switch (advisor_mode.privacy.enabled, default off)",
+    "with privacy off, advisor input is identical to P4"
+  ],
+  "found_by": "Offline advice replay of the 15 P3 DAB consults through the P4 middleware: 29 result-id tokens in 4 of the 15 privacy-on requests were left unmasked.",
+  "threat_model": "accidental leakage only (honest worker, curious advisor)",
+  "known_privacy_gaps": [
+    "paraphrased meaning is sent",
+    "values written in another form (2020-11 vs November) are not matched",
+    "values shorter than 4 characters that are not all caps are not indexed",
+    "integers up to 10 are not masked",
+    "lowercase single-word dictionary keys (e.g. category values used as keys) are still read as field names",
+    "masked numbers carry no magnitude (decided: not addressed in P4.1)"
+  ],
+  "intended_arms": [
+    "P4.1 privacy off (= P3 + DAB failure detection)",
+    "P4.1 privacy on"
+  ],
+  "outbound_privacy_filter_implemented": true,
+  "change_policy": "Preserve P4.1; freeze subsequent implementation changes under a new version."
+}

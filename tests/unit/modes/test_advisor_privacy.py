@@ -126,6 +126,18 @@ def test_identifier_fragments_and_short_codes_are_masked():
     assert "SQL" in masked
 
 
+def test_an_id_tail_the_worker_matched_on_stays_data():
+    """The worker filters on the tail of an id it saw in a result; writing
+    that tail does not make it the worker's own word."""
+    privacy = _seen(_privacy())
+    privacy.observe_worker(
+        "hits = [o for o in rows if 'NIaRIAW' in o['OwnerId']]",
+    )
+    masked = privacy.mask("Transfers: NIaRIAW->NIXCIA4; hits for o in rows")
+    assert "NIaRIAW" not in masked and "NIXCIA4" not in masked
+    assert "hits for o in rows" in masked
+
+
 def test_number_rules():
     privacy = _seen(_privacy())
     masked = privacy.mask(
@@ -194,6 +206,24 @@ def test_field_name_keys_are_schema_but_capitalised_keys_are_data():
     masked = privacy.mask("Parsed application_number; Sports and PA counts")
     assert "application_number" in masked
     assert "Sports" not in masked and " PA " not in masked
+
+
+def test_record_ids_used_as_keys_are_data():
+    privacy = _privacy()
+    privacy.observe_result(
+        json.dumps(
+            {
+                "ka0Wt000000Eo6cIAC": ["30 days"],
+                "rowCount": 2,
+                "address_line2": "x",
+            },
+        ),
+    )
+    masked = privacy.mask(
+        "Article ka0Wt000000Eo6cIAC; rowCount and address_line2 parsed",
+    )
+    assert "ka0Wt000000Eo6cIAC" not in masked
+    assert "rowCount" in masked and "address_line2" in masked
 
 
 def test_names_copied_from_long_text_stay_data():
@@ -440,6 +470,30 @@ async def test_consultation_keeps_tool_data_from_the_advisor():
     record = mw.transcript["calls"][-1]
     assert record["privacy"]["final_pass_masked"] is False
     assert mw.consults[-1]["question"] == question
+
+
+async def test_id_tails_in_the_question_stay_masked():
+    """The consult call is in the context when the question is masked; its
+    own arguments must not release the id tails it quotes."""
+    advisor = _EchoAdvisor(prefix="")
+    mw, agent = _middleware(advisor), _agent_with_data()
+    await _model_call(mw, agent)
+    question = "Only transfer: NIaRIAW->NIXCIA4. Return the full Id?"
+    agent.state.context.append(
+        _assistant(
+            [
+                {
+                    "type": "tool_call",
+                    "id": "c3",
+                    "name": "consult_advisor",
+                    "input": json.dumps({"question": question}),
+                },
+            ],
+        ),
+    )
+    await mw.consult(question)
+    sent = _sent(advisor)
+    assert "NIaRIAW" not in sent and "NIXCIA4" not in sent
 
 
 async def test_tool_call_arguments_are_masked_inside_their_json():

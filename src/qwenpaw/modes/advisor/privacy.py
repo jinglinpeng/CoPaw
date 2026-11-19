@@ -210,10 +210,14 @@ def _strings(data: Any) -> Iterable[tuple[str, bool]]:
 def _field_name(key: str) -> bool:
     """A key shaped like a field identifier (``application_number``,
     ``rowCount``, ``state``) names a column, not a value. Capitalised words
-    and all-caps keys (``Sports``, ``PA``) are left as data."""
-    return bool(_FIELD_NAME_RE.fullmatch(key)) and (
-        "_" in key or key[:1].islower()
-    )
+    and all-caps keys (``Sports``, ``PA``) are left as data, and so are
+    record ids used as keys (``ka0Wt000000Eo6cIAC``), which mix digits with
+    capitals."""
+    if not _FIELD_NAME_RE.fullmatch(key):
+        return False
+    if any(c.isdigit() for c in key) and any(c.isupper() for c in key):
+        return False
+    return "_" in key or key[:1].islower()
 
 
 def parse_structured(
@@ -395,7 +399,13 @@ class AdvisorPrivacy:
         for n in range(1, self._ngram + 1):
             grams = set(_windows(words, n))
             if worker:
-                grams -= self._result_ngrams
+                # The worker repeating a result, or a piece of a result id
+                # (an id's tail it matched on), does not make it its own.
+                grams = {
+                    gram
+                    for gram in grams - self._result_ngrams
+                    if not any(w in self._code_parts for w in gram.split())
+                }
             self._public_ngrams.update(grams)
         terms = {t for t in _TERM_RE.findall(low)}
         terms |= {t.lstrip("#@") for t in terms}
@@ -405,6 +415,7 @@ class AdvisorPrivacy:
         }
         if worker:
             terms -= self._result_terms
+            terms -= self._code_parts
         self._public_terms.update(terms)
 
     def _is_public(self, value: str) -> bool:

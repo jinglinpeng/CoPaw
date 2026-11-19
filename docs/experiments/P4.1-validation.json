@@ -1,0 +1,67 @@
+{
+  "scope": "P4.1 source freeze; offline replays of the P3 DAB logs and an offline advice replay against the real advisors (P4 gate); no benchmark runs.",
+  "at": "2026-11-19T08:27:08.437084+00:00",
+  "environment": "worktree .venv (uv, Python 3.12)",
+  "advisor_system_prompt_hash_matches_P3": true,
+  "git_diff_check": "passed",
+  "focused_pytest": {
+    "status": "passed",
+    "passed": 278,
+    "skipped": 2,
+    "command": "python -m pytest -p no:cacheprovider -q tests/unit/agents/test_injected_events.py tests/unit/app/routers/test_advisor_mode_router.py tests/unit/app/routers/test_loops_router.py tests/unit/config/test_advisor_mode_config.py tests/unit/modes/test_advisor_middleware.py tests/unit/modes/test_advisor_mode.py tests/unit/modes/test_advisor_privacy.py tests/unit/modes/test_advisor_trigger.py tests/unit/plugins/test_install_lock.py tests/unit/runtime/test_builder_mode_middlewares.py",
+    "new_regression_tests": [
+      "test_an_id_tail_the_worker_matched_on_stays_data",
+      "test_record_ids_used_as_keys_are_data",
+      "test_id_tails_in_the_question_stay_masked"
+    ],
+    "new_tests_fail_on_P4": true
+  },
+  "broad_pytest": {
+    "status": "not_rerun",
+    "reason": "Only privacy.py (used by advisor mode alone) and its tests changed since P4; see P4-validation.json for the repository-wide run and its pre-existing environment failures."
+  },
+  "flake8": {
+    "status": "passed",
+    "command": "python -m flake8 --extend-ignore=E203 --max-line-length=120 src/qwenpaw/modes/advisor/privacy.py tests/unit/modes/test_advisor_privacy.py"
+  },
+  "black": {
+    "status": "passed",
+    "version": "23.3.0",
+    "line_length": 79,
+    "files": ["src/qwenpaw/modes/advisor/privacy.py", "tests/unit/modes/test_advisor_privacy.py"]
+  },
+  "offline_replay": {
+    "source": "/dev2/benchmark/experiments/qwenpaw-collaboration/dab_advisor/artifacts/p3-five-full54-20261117-v1",
+    "request_rebuild": "Each of the 15 P3 consult requests rebuilt from acp-events.jsonl through the P4/P4.1 middleware; with privacy off the rebuilt request equals the recorded P3 request byte for byte except P4's FAILED labels on DAB errors.",
+    "result_id_tokens_left_unmasked": {
+      "definition": "Code-shaped tokens (5+ chars) in a privacy-on request that are a result id or a 5+ char prefix/suffix of one, excluding tokens in the task, plan or worker system prompt.",
+      "P4": {"consults_affected": 4, "tokens": 29},
+      "P4.1": {"consults_affected": 1, "tokens": 3, "note": "all three are labels the worker wrote in its own code before any result showed them (variantA2_by_opp_owner, ...), so public by provenance"}
+    },
+    "string_cell_values": {
+      "definition": "As in P4-validation.json (whole string cells of earlier results); it does not cover id pieces or keys, which is why it missed the P4 gaps.",
+      "result_values_in_questions": {"before": 85, "after": 0},
+      "result_values_in_last_10_tool_arguments": {"before": 2554, "after": 0},
+      "max_mask_ms": 173.5
+    },
+    "placeholders_in_privacy_on_requests": {"P4": 714, "P4.1": 752, "note": "changed only in the 4 affected consults"}
+  },
+  "advice_replay_P4": {
+    "design": "Per consult and advisor (qwen3.8-max-0902, kimi-k3): privacy-off request twice, privacy-on request once, harness settings (temperature 0, max_tokens 32768, streaming); 90 calls. Blind pairwise judging by qwen3.8-max-0902 with the task, the unmasked question and the ground truth; 90 judgments.",
+    "same_recommendation": {
+      "qwen3.8-max-0902": {"off_vs_off": "13/15", "off_vs_on": "19/30 same, 5 partly, 6 different"},
+      "kimi-k3": {"off_vs_off": "13/15", "off_vs_on": "25/30 same, 4 partly, 1 different"}
+    },
+    "toward_ground_truth_yes": {
+      "qwen3.8-max-0902": {"off_1": "14/30", "off_2": "16/30", "on": "13/30"},
+      "kimi-k3": {"off_1": "16/30", "off_2": "14/30", "on": "14/30"}
+    },
+    "notes": [
+      "No privacy-on reply said data was hidden; all placeholders in replies restored.",
+      "Max PATENTS.query1 chose the wrong interpretation with privacy on when the deciding count (244 duplicate applications) was masked.",
+      "Run with the P4 gate; the P4.1 fix changes 4 of the 15 privacy-on requests."
+    ],
+    "advisor_cost_cny_list_price": 23.73
+  },
+  "conclusion": "Both P4 gate gaps are fixed with regression tests; advisor tests, lint and offline replays pass. P4.1 has not been run on a benchmark."
+}
