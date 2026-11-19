@@ -20,6 +20,7 @@ from .middleware import (
     AdvisorMiddleware,
     default_log_dir,
 )
+from .privacy import AdvisorPrivacy
 from .trigger import InterventionTrigger
 from .models import (
     AdvisorClient,
@@ -248,6 +249,16 @@ class AdvisorMode(AgentMode):
             "workspace_dir",
             None,
         )
+        privacy = None
+        if am.privacy.enabled:
+            # One gate per conversation: what the worker saw in earlier
+            # requests stays masked in later ones.
+            previous = (
+                state.middleware.privacy
+                if state.middleware is not None
+                else None
+            )
+            privacy = previous or AdvisorPrivacy(am.privacy)
         middleware = AdvisorMiddleware(
             advisor=advisor,
             trigger=InterventionTrigger(config=am.intervention),
@@ -268,6 +279,7 @@ class AdvisorMode(AgentMode):
             log_dir=default_log_dir(agent_id),
             session_id=session_id,
             agent_id=agent_id,
+            privacy=privacy,
         )
         state.middleware = middleware
         return middleware
@@ -365,7 +377,9 @@ class AdvisorMode(AgentMode):
             f"{'on' if am.followup_enabled else 'off'}\n"
             "- consult_advisor tool: "
             f"{'on' if am.on_demand_enabled else 'off'} "
-            f"(max {am.max_consults} per conversation)"
+            f"(max {am.max_consults} per conversation)\n"
+            "- tool data kept from the advisor: "
+            f"{'on' if am.privacy.enabled else 'off'}"
         )
 
 

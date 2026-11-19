@@ -29,6 +29,12 @@ Every request to the advisor is self-contained: the worker's current
 system instructions (unclipped), the task, the opening plan and the
 agent's latest messages (clipped). The plan is written once per
 conversation and carried over to its later turns.
+
+With privacy on (``advisor_mode.privacy``), tool data stays on the
+worker's side: tool results are described instead of forwarded, data
+values in everything else are replaced by placeholders before the request
+leaves (see ``privacy.py``), and the placeholders in the advisor's reply
+are restored before the worker reads it.
 """
 
 from __future__ import annotations
@@ -39,6 +45,7 @@ import copy
 import hashlib
 import json
 import logging
+import re
 import time
 import uuid
 from pathlib import Path
@@ -63,6 +70,7 @@ from agentscope.message import (
 from agentscope.middleware import MiddlewareBase
 
 from ...config.config import AdvisorModeConfig
+from ...constant import QWENPAW_MESSAGE_TAG_KEY, SCROLL_MEMORY_MESSAGE_TAG
 from ...runtime.prompt_contributors import _read_prompt_file
 from .prompts import (
     FALLBACK_ADVICE,
@@ -73,17 +81,20 @@ from .prompts import (
     GUIDANCE_SECTION_HEADER,
     NO_PLAN_NOTE,
     PLAN_REQUEST_TEMPLATE,
+    PRIVACY_ADVISOR_NOTE,
+    PRIVACY_WORKER_NOTE,
     SEVERITY_NOTES,
     TRIGGER_NOTES,
     WORKER_SYSTEM_CONTEXT_HEADER,
 )
-from .tools import CONSULT_TOOL_NAME
+from .tools import CONSULT_TOOL_DESCRIPTION, CONSULT_TOOL_NAME
 from .trigger import FailureDetector, InterventionTrigger, TriggerEvent
 
 if TYPE_CHECKING:
     from agentscope.agent import Agent
 
     from .models import AdvisorClient
+    from .privacy import AdvisorPrivacy
 
 logger = logging.getLogger(__name__)
 
@@ -223,12 +234,15 @@ def _format_messages(
     limit: int,
     detector: FailureDetector,
     plan: str = "",
+    privacy: "AdvisorPrivacy | None" = None,
 ) -> str:
     """Render the agent's latest context for the advisor: what the user
     and the worker said, the tool calls the worker made and how each
     turned out. Every text, tool call and tool result is one entry and
     the last ``limit`` entries are kept. The opening plan is left out,
-    since the request carries it in full."""
+    since the request carries it in full. With ``privacy``, text is masked
+    before it is clipped and a successful tool result is described, not
+    shown."""
     entries: list[str] = []
     for msg in reversed(context):
         role = getattr(msg, "role", "") or ""
@@ -243,7 +257,7 @@ def _format_messages(
         else:
             continue
         for block in reversed(blocks):
-            entry = _format_block(block, who, detector, plan)
+            entry = _format_block(block, who, detector, plan, privacy)
             if entry:
                 entries.append(entry)
             if len(entries) >= limit:
@@ -259,6 +273,7 @@ def _format_block(
     who: str,
     detector: FailureDetector,
     plan: str,
+    privacy: "AdvisorPrivacy | None" = None,
 ) -> str:
     """One entry of :func:`_format_messages`, empty for blocks it skips."""
     btype = _block_get(block, "type")
@@ -266,6 +281,8 @@ def _format_block(
     if btype == "text":
         text = str(_block_get(block, "text", "") or "").strip()
         if text:
+            if privacy is not None:
+                text = privacy.mask(text)
             entry = f"{who}: {_clip(text, _MAX_OUTPUT_CHARS)}"
     elif btype == "tool_call":
         name = _block_get(block, "name") or "unknown"
@@ -273,18 +290,108 @@ def _format_block(
         if not isinstance(raw, str):
             raw = json.dumps(raw, ensure_ascii=False, default=str)
         if name != PLAN_TOOL_NAME or raw != _PLAN_CALL_ARGS_JSON:
+            if privacy is not None:
+                raw = _mask_args(raw, privacy)
             entry = f"{who} called {name}({_clip(raw, _MAX_ARGS_CHARS)})"
     elif btype == "tool_result":
         name = _block_get(block, "name") or "unknown"
         output = _result_text(block)
-        clipped = _clip(output, _MAX_OUTPUT_CHARS)
         if not name.startswith(PLAN_TOOL_NAME):
-            status = "FAILED" if detector.classify(name, output) else "ok"
-            entry = f"{name} -> {status}\n  {clipped}"
+            failed = detector.classify(name, output)
+            status = "FAILED" if failed else "ok"
+            if privacy is not None:
+                # Only an error's wording is forwarded; data stays local.
+                output = (
+                    privacy.mask(output)
+                    if _looks_failed(detector, name, output)
+                    else privacy.describe_result(output)
+                )
+            entry = f"{name} -> {status}\n  {_clip(output, _MAX_OUTPUT_CHARS)}"
         elif not plan or output != plan:
-            # The advisor's own earlier answers.
-            entry = f"advisor ({name}): {clipped}"
+            # The advisor's own earlier answers (restored for the worker,
+            # so masked again on the way back).
+            if privacy is not None:
+                output = privacy.mask(output)
+            entry = f"advisor ({name}): {_clip(output, _MAX_OUTPUT_CHARS)}"
     return entry
+
+
+def _arg_texts(raw: Any) -> list[str]:
+    """The texts inside tool-call arguments (code, queries, questions),
+    unescaped, so they read as the worker wrote them."""
+    if isinstance(raw, str):
+        try:
+            raw = json.loads(raw)
+        except ValueError:
+            return [raw]
+    texts: list[str] = []
+
+    def walk(value: Any) -> None:
+        if isinstance(value, str):
+            texts.append(value)
+        elif isinstance(value, dict):
+            for item in value.values():
+                walk(item)
+        elif isinstance(value, list):
+            for item in value:
+                walk(item)
+        elif value is not None:
+            texts.append(str(value))
+
+    walk(raw)
+    return texts
+
+
+def _mask_args(raw: str, privacy: "AdvisorPrivacy") -> str:
+    """Mask the values inside JSON tool-call arguments and re-serialise
+    them, so escapes such as ``\\n`` cannot hide a value from the gate."""
+    try:
+        data = json.loads(raw)
+    except ValueError:
+        return privacy.mask(raw)
+
+    def walk(value: Any) -> Any:
+        if isinstance(value, str):
+            return privacy.mask(value)
+        if isinstance(value, dict):
+            return {key: walk(item) for key, item in value.items()}
+        if isinstance(value, list):
+            return [walk(item) for item in value]
+        if isinstance(value, (int, float)) and not isinstance(value, bool):
+            masked = privacy.mask(str(value))
+            return value if masked == str(value) else masked
+        return value
+
+    return json.dumps(walk(data), ensure_ascii=False)
+
+
+# Error wording the failure detector does not cover (it decides when to
+# intervene and stays as it is). With privacy on, a result matching this is
+# forwarded as masked error text instead of being described: the advisor
+# needs the error, not the data.
+_ERROR_TEXT_RE = re.compile(
+    r"execution failed\. The error message is:"
+    r"|Traceback \(most recent call last\)"
+    r"|^\s*[A-Za-z_.]*(?:Error|Exception):",
+    re.MULTILINE,
+)
+
+
+def _looks_failed(detector: FailureDetector, name: str, output: str) -> bool:
+    """Whether a tool result is an error, for the privacy path only."""
+    return bool(detector.classify(name, output)) or bool(
+        _ERROR_TEXT_RE.search(output or ""),
+    )
+
+
+def _is_memory_msg(msg: Any) -> bool:
+    """The compacted-history stand-in the context manager puts in front
+    of the context: a user-role message that the user did not write."""
+    metadata = _block_get(msg, "metadata") or {}
+    return (
+        isinstance(metadata, dict)
+        and metadata.get(QWENPAW_MESSAGE_TAG_KEY) == SCROLL_MEMORY_MESSAGE_TAG
+    )
 
 
 def _workspace_listing(
@@ -527,8 +634,30 @@ class AdvisorMiddleware(MiddlewareBase):
         plan: str = "",
         transcript: dict[str, Any] | None = None,
         recent_messages: int = AdvisorModeConfig().recent_messages,
+        privacy: "AdvisorPrivacy | None" = None,
     ) -> None:
         self._advisor = advisor
+        # Set when tool data must stay on the worker's side. One instance
+        # per conversation, carried across its requests like the plan.
+        self._privacy = privacy
+        if privacy is not None:
+            # The advisor's own instructions are public, so a tool result
+            # that happens to repeat their words is not masked in them.
+            for text in (
+                ADVISOR_SYSTEM_PROMPT,
+                WORKER_SYSTEM_CONTEXT_HEADER,
+                PLAN_REQUEST_TEMPLATE,
+                FOLLOWUP_REQUEST_TEMPLATE,
+                CONSULT_REQUEST_TEMPLATE,
+                GUIDANCE_SECTION_HEADER,
+                ENV_SECTION_HEADER,
+                NO_PLAN_NOTE,
+                PRIVACY_ADVISOR_NOTE,
+                CONSULT_TOOL_DESCRIPTION,
+                *SEVERITY_NOTES.values(),
+                *TRIGGER_NOTES.values(),
+            ):
+                privacy.observe_public(text)
         self._followup_enabled = followup_enabled
         self._plan_enabled = plan_enabled
         self._on_demand_enabled = on_demand_enabled
@@ -578,8 +707,15 @@ class AdvisorMiddleware(MiddlewareBase):
             }
         else:
             self._transcript = copy.deepcopy(transcript)
+        if privacy is not None:
+            self._transcript["privacy"] = True
 
     # ── properties ──────────────────────────────────────────────────────
+
+    @property
+    def privacy(self) -> "AdvisorPrivacy | None":
+        """The conversation's privacy gate, ``None`` when privacy is off."""
+        return self._privacy
 
     @property
     def plan_injected(self) -> bool:
@@ -673,8 +809,13 @@ class AdvisorMiddleware(MiddlewareBase):
             self._mark_existing_results_seen(agent.state.context)
             self._baselined = True
         self._context = agent.state.context
+        self._privacy_scan(agent.state.context)
         self._task = (
-            self._extract_instruction(agent.state.context) or self._task
+            self._extract_instruction(
+                agent.state.context,
+                skip_memory=self._privacy is not None,
+            )
+            or self._task
         )
         if (
             self._plan_enabled
@@ -706,6 +847,140 @@ class AdvisorMiddleware(MiddlewareBase):
             input_kwargs["messages"] = messages
         return await next_handler(**input_kwargs)
 
+    # ── privacy ─────────────────────────────────────────────────────────
+
+    def _privacy_scan(self, context: list[Msg] | None) -> None:
+        """Read the context into the privacy index, oldest first.
+
+        Order matters: whatever the worker, the user or a system prompt
+        wrote before a tool result showed it stays public. Blocks already
+        read are skipped, so the scan can run before every advisor call
+        (a consultation can follow tool results of the same step).
+        """
+        privacy = self._privacy
+        if privacy is None:
+            return
+        try:
+            for entry in self._worker_system_messages:
+                privacy.observe_public(entry["text"])
+            for msg in context or []:
+                self._privacy_scan_msg(privacy, msg)
+        except Exception:  # never break the agent over bookkeeping
+            logger.warning(
+                "AdvisorMiddleware: privacy scan failed",
+                exc_info=True,
+            )
+
+    def _privacy_scan_msg(self, privacy: "AdvisorPrivacy", msg: Any) -> None:
+        role = _block_get(msg, "role") or ""
+        memory = _is_memory_msg(msg)
+        content = _block_get(msg, "content", "")
+        if isinstance(content, str):
+            blocks: list[Any] = [{"type": "text", "text": content}]
+        elif isinstance(content, list):
+            blocks = content
+        else:
+            return
+        for block in blocks:
+            btype = _block_get(block, "type")
+            name = _block_get(block, "name") or ""
+            if btype == "text":
+                payload = str(_block_get(block, "text", "") or "")
+            elif btype == "tool_call":
+                payload = _block_get(block, "input")
+                if not isinstance(payload, str):
+                    payload = json.dumps(
+                        payload, ensure_ascii=False, default=str
+                    )
+            elif btype == "tool_result":
+                payload = _result_text(block)
+            else:
+                continue
+            key = hashlib.sha1(
+                "\0".join(
+                    (role, str(memory), btype, name, payload),
+                ).encode("utf-8", "replace"),
+            ).hexdigest()
+            if key in privacy.scanned_blocks:
+                continue
+            privacy.scanned_blocks.add(key)
+            if btype == "text":
+                if memory:
+                    # A summary of earlier results is data, not the user's.
+                    privacy.observe_result(payload)
+                elif role == "user":
+                    privacy.observe_public(
+                        payload,
+                        numbers=True,
+                        declassify=True,
+                    )
+                elif role == "system":
+                    privacy.observe_public(payload)
+                else:
+                    privacy.observe_worker(payload)
+            elif btype == "tool_call":
+                for text in _arg_texts(payload):
+                    privacy.observe_worker(text)
+            elif not name.startswith(PLAN_TOOL_NAME):
+                # The advisor's own answers are skipped: the worker reads
+                # them restored, with the real values in.
+                privacy.observe_result(
+                    payload,
+                    failed=_looks_failed(
+                        self._trigger.detector, name, payload
+                    ),
+                )
+
+    def _mask(self, text: str) -> str:
+        """``text`` as the advisor may see it."""
+        if self._privacy is None:
+            return text
+        return self._privacy.mask(text)
+
+    def _restore(self, text: str) -> str:
+        """An advisor reply as the worker reads it."""
+        if self._privacy is None:
+            return text
+        return self._privacy.restore(text)
+
+    def _restoring(
+        self,
+        on_text: Callable[[str], None] | None,
+    ) -> Callable[[str], None] | None:
+        """A streaming callback that receives restored text."""
+        if self._privacy is None or on_text is None:
+            return on_text
+        return self._privacy.restoring(on_text)
+
+    def _final_privacy_pass(
+        self,
+        messages: list[dict[str, str]],
+    ) -> tuple[list[dict[str, str]], dict[str, Any]]:
+        """Mask every outgoing message once more.
+
+        The request builders mask what they assemble, so this pass should
+        change nothing; when it does, a builder missed a path and the
+        record says so.
+        """
+        privacy = self._privacy
+        if privacy is None:
+            return messages, {}
+        masked: list[dict[str, str]] = []
+        counts: dict[str, int] = {}
+        changed = False
+        for message in messages:
+            content = privacy.mask(message["content"], numbers=False)
+            changed = changed or content != message["content"]
+            for kind, n in privacy.placeholder_counts(content).items():
+                counts[kind] = counts.get(kind, 0) + n
+            masked.append({**message, "content": content})
+        if changed:
+            logger.warning(
+                "AdvisorMiddleware: the final privacy pass masked values "
+                "a request builder left in",
+            )
+        return masked, {"placeholders": counts, "final_pass_masked": changed}
+
     # ── on-demand consultation ──────────────────────────────────────────
 
     async def consult(
@@ -734,11 +1009,14 @@ class AdvisorMiddleware(MiddlewareBase):
             return CONSULT_BUDGET_EXHAUSTED
 
         self._consults_used += 1
+        # Results of the step that called this tool may not have been read
+        # into the privacy index yet.
+        self._privacy_scan(self._context)
         request = CONSULT_REQUEST_TEMPLATE.format(
             task=self._task or "(not available)",
             index=self._consults_used,
             max_consults=self._max_consults,
-            question=question,
+            question=self._mask(question),
             plan=self._plan or NO_PLAN_NOTE,
             recent_messages=self._recent_context(self._context),
         )
@@ -751,7 +1029,7 @@ class AdvisorMiddleware(MiddlewareBase):
         try:
             reply = await self._call_advisor(
                 request,
-                on_text=on_text,
+                on_text=self._restoring(on_text),
                 kind="consult",
             )
         except Exception as exc:
@@ -766,6 +1044,8 @@ class AdvisorMiddleware(MiddlewareBase):
                 f"{FALLBACK_ADVICE}"
             )
         record["reply"] = reply
+        if self._privacy is not None:
+            record["reply_to_worker"] = self._restore(reply)
         record["usage"] = self._usage()
         self._record_consult(record)
         # The agent just asked, so do not count the same run of failures
@@ -778,7 +1058,11 @@ class AdvisorMiddleware(MiddlewareBase):
             self._max_consults,
             len(reply),
         )
-        text = reply.strip() or "(the advisor had nothing to add)"
+        text = (
+            self._restore(reply).strip() or "(the advisor had nothing to add)"
+        )
+        if self._privacy is not None:
+            text = f"{text}\n\n{PRIVACY_WORKER_NOTE}"
         left = self.consults_left
         noun = "consultation" if left == 1 else "consultations"
         return f"{text}\n\n({left} {noun} left)"
@@ -918,6 +1202,7 @@ class AdvisorMiddleware(MiddlewareBase):
             failures=event.failures,
             window_size=event.window_size,
         )
+        self._privacy_scan(agent.state.context)
         request = FOLLOWUP_REQUEST_TEMPLATE.format(
             task=self._task or "(not available)",
             index=event.intervention_index,
@@ -953,7 +1238,9 @@ class AdvisorMiddleware(MiddlewareBase):
             try:
                 advice = await self._call_advisor(
                     request,
-                    on_text=live.on_text if live.active else None,
+                    on_text=self._restoring(
+                        live.on_text if live.active else None,
+                    ),
                     kind="followup",
                 )
             except Exception as exc:
@@ -991,6 +1278,8 @@ class AdvisorMiddleware(MiddlewareBase):
             {"action": action, "advice": advice, "usage": self._usage()},
         )
         self._record_intervention(record)
+        # What the worker and the chat show: placeholders restored.
+        shown = self._restore(advice)
 
         # CONTINUE carries no new instruction, so nothing is put in front
         # of the agent.
@@ -999,14 +1288,14 @@ class AdvisorMiddleware(MiddlewareBase):
                 "AdvisorMiddleware: advisor said %s, nothing injected",
                 _CONTINUE,
             )
-            live.finish(advice)
+            live.finish(shown)
             return None
         if not body:
             logger.info(
                 "AdvisorMiddleware: %s reply had no body, nothing injected",
                 action,
             )
-            live.finish(advice)
+            live.finish(shown)
             return None
 
         # The verdict line stays on the injected result, so the agent and
@@ -1015,11 +1304,11 @@ class AdvisorMiddleware(MiddlewareBase):
             agent.name,
             FOLLOWUP_TOOL_NAME,
             _FOLLOWUP_CALL_ARGS,
-            advice.strip(),
+            shown.strip(),
             call_id=call_id,
         )
         agent.state.context.append(msg)
-        live.finish(advice)
+        live.finish(shown)
         logger.info(
             "AdvisorMiddleware: follow-up advice injected (%d chars)",
             len(body),
@@ -1037,10 +1326,14 @@ class AdvisorMiddleware(MiddlewareBase):
 
         Returns the injected message when it landed, else ``None``.
         """
-        instruction = self._extract_instruction(agent.state.context)
+        instruction = self._extract_instruction(
+            agent.state.context,
+            skip_memory=self._privacy is not None,
+        )
         if not instruction:
             logger.warning("AdvisorMiddleware: no user instruction found")
             return None
+        self._privacy_scan(agent.state.context)
 
         tool_list = self._format_tool_list(tools)
         env_context = self._read_env_context()
@@ -1068,7 +1361,9 @@ class AdvisorMiddleware(MiddlewareBase):
             try:
                 plan = await self._call_advisor(
                     plan_request,
-                    on_text=live.on_text if live.active else None,
+                    on_text=self._restoring(
+                        live.on_text if live.active else None,
+                    ),
                     kind="plan",
                 )
                 break
@@ -1102,17 +1397,20 @@ class AdvisorMiddleware(MiddlewareBase):
             len(plan),
         )
         self._record_plan(plan_request, plan=plan, usage=self._usage())
+        # Later requests carry the plan as the advisor wrote it; the
+        # worker reads it with any placeholders restored.
         self._plan = plan
+        shown = self._restore(plan)
 
         msg = _exchange_msg(
             agent.name,
             PLAN_TOOL_NAME,
             _PLAN_CALL_ARGS,
-            plan,
+            shown,
             call_id=call_id,
         )
         agent.state.context.append(msg)
-        live.finish(plan)
+        live.finish(shown)
         return msg
 
     # ── advisor call ────────────────────────────────────────────────────
@@ -1130,6 +1428,9 @@ class AdvisorMiddleware(MiddlewareBase):
             {"role": "system", "content": self._system_prompt()},
             {"role": "user", "content": message},
         ]
+        privacy_audit: dict[str, Any] | None = None
+        if self._privacy is not None:
+            messages, privacy_audit = self._final_privacy_pass(messages)
         # Keep the exact AdvisorClient input for every attempt, including
         # retries and failures. Source hashes refer to the full texts in
         # the JSON section of messages[0], not the clipped recent history.
@@ -1153,6 +1454,8 @@ class AdvisorMiddleware(MiddlewareBase):
             ],
             "status": "pending",
         }
+        if privacy_audit is not None:
+            record["privacy"] = privacy_audit
         calls.append(record)
         self._save_transcript()
         try:
@@ -1169,6 +1472,10 @@ class AdvisorMiddleware(MiddlewareBase):
                 reply=reply,
                 usage=copy.deepcopy(self._usage()),
             )
+            if self._privacy is not None:
+                # The advisor wrote these numbers itself; repeating them
+                # back to it discloses nothing.
+                self._privacy.observe_public(reply, numbers=True)
             return reply
         finally:
             self._save_transcript()
@@ -1180,12 +1487,27 @@ class AdvisorMiddleware(MiddlewareBase):
         prompt = ADVISOR_SYSTEM_PROMPT
         if self._guidance:
             prompt += f"\n\n{GUIDANCE_SECTION_HEADER}\n\n{self._guidance}"
+        if self._privacy is not None:
+            prompt += f"\n\n{PRIVACY_ADVISOR_NOTE}"
         if self._worker_system_messages:
+            sources = self._worker_system_messages
+            if self._privacy is not None:
+                # Numbers in system prompts are configuration, not data.
+                sources = [
+                    {
+                        "message_index": entry["message_index"],
+                        "text": self._privacy.mask(
+                            entry["text"],
+                            numbers=False,
+                        ),
+                    }
+                    for entry in sources
+                ]
             prompt += (
                 "\n\n"
                 + WORKER_SYSTEM_CONTEXT_HEADER
                 + json.dumps(
-                    self._worker_system_messages,
+                    sources,
                     ensure_ascii=False,
                     indent=2,
                 )
@@ -1207,7 +1529,9 @@ class AdvisorMiddleware(MiddlewareBase):
             context,
             self._recent_messages,
             self._trigger.detector,
-            plan=self._plan,
+            # The plan as it sits in the worker's context.
+            plan=self._restore(self._plan),
+            privacy=self._privacy,
         )
 
     # ── transcript persistence ──────────────────────────────────────────
@@ -1287,14 +1611,21 @@ class AdvisorMiddleware(MiddlewareBase):
         return "\n".join(lines) if lines else "(no tools available)"
 
     @staticmethod
-    def _extract_instruction(context: list[Msg]) -> str:
+    def _extract_instruction(
+        context: list[Msg],
+        skip_memory: bool = False,
+    ) -> str:
         """The text of the latest user message in *context*.
 
         Follow-up and consultation requests describe the message the
-        agent is answering now.
+        agent is answering now. ``skip_memory`` passes over the
+        compacted-history stand-in, which has the user role but holds a
+        summary of earlier tool results, not the user's words.
         """
         for msg in reversed(context):
             if getattr(msg, "role", None) != "user":
+                continue
+            if skip_memory and _is_memory_msg(msg):
                 continue
             content = getattr(msg, "content", "")
             if isinstance(content, str):

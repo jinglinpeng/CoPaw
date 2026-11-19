@@ -44,6 +44,14 @@ def test_round_trips_through_json():
             "cooldown_steps": 0,
             "max_interventions": 3,
         },
+        "privacy": {
+            "enabled": False,
+            "small_int_max": 10,
+            "min_value_chars": 4,
+            "shingle_words": 3,
+            "format_min_records": 5,
+            "reference_pattern": r"\bvar_[A-Za-z0-9_.:\-]+",
+        },
         "advisor_model": None,
         "worker_model": None,
         "advisor_thinking": "off",
@@ -51,6 +59,25 @@ def test_round_trips_through_json():
     back = AgentProfileConfig.model_validate(raw)
     assert back.advisor_mode.enabled is True
     assert back.advisor_mode.followup_enabled is False
+
+
+def test_privacy_is_off_by_default_and_round_trips():
+    cfg = AgentProfileConfig(id="a", name="A")
+    assert cfg.advisor_mode.privacy.enabled is False
+    cfg.advisor_mode.privacy.enabled = True
+    cfg.advisor_mode.privacy.small_int_max = 0
+    back = AgentProfileConfig.model_validate(
+        json.loads(cfg.model_dump_json()),
+    )
+    assert back.advisor_mode.privacy.enabled is True
+    assert back.advisor_mode.privacy.small_int_max == 0
+
+
+def test_legacy_advisor_section_without_privacy_loads_with_it_off():
+    raw = json.loads(AgentProfileConfig(id="a", name="A").model_dump_json())
+    del raw["advisor_mode"]["privacy"]
+    back = AgentProfileConfig.model_validate(raw)
+    assert back.advisor_mode.privacy.enabled is False
 
 
 def test_model_overrides_round_trip():

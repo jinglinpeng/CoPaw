@@ -49,6 +49,16 @@ STRUCTURED_FAILURE_PATTERNS: tuple[str, ...] = (
     r"^\w+\(\) got an unexpected keyword argument",
     # "governance: 'Bash' is denied by policy"
     r"^governance:.*\bdenied by policy\b",
+    # Tools that report errors as an ordinary result, in their own wording:
+    # DataAgentBench's common_scaffold tools (query_db, execute_python, ...,
+    # served over MCP) answer "The tool execute_python execution failed.
+    # The error message is: ...". Anchored to the start of the output, so a
+    # result that merely quotes this line does not count. A snippet that ran
+    # but forgot to print the "__RESULT__:" marker is left out: it is a
+    # one-step slip the agent fixes on its next call, not a sign of being
+    # stuck.
+    r"\AThe tool \S+ execution failed\. The error message is:"
+    r'(?!\s*"?__RESULT__: not found)',
 )
 
 STRUCTURED_FAILURE_MARKERS: tuple[str, ...] = ('"ok": false',)

@@ -217,6 +217,26 @@ ENV_SECTION_HEADER = (
     "sizes are in bytes, and a trailing slash marks a directory:"
 )
 
+# Appended to the advisor's system prompt when privacy is on.
+PRIVACY_ADVISOR_NOTE = (
+    "# Private data\n\n"
+    "The worker's tool results stay on its side. You see what the worker "
+    "did and whether each call worked, not the data a call returned. "
+    "Values from that data are replaced by placeholders: <DATE_n> dates, "
+    "<V_n> values, <T_n> text fragments, <ID_n> identifiers, <C_n> codes "
+    "and <N_n> numbers. The same placeholder always stands for the same "
+    "value, and different placeholders for different values. Use the "
+    "placeholder when you refer to a value; the worker reads the real one. "
+    "Do not ask for hidden values: give conditional guidance, or a check "
+    "the worker can run on its side."
+)
+
+# Closes every consultation answer the worker gets when privacy is on.
+PRIVACY_WORKER_NOTE = (
+    "(Values and numbers from your tool results were masked before your "
+    "question reached the advisor. State decisive differences in words.)"
+)
+
 __all__ = [
     "ADVISOR_SYSTEM_PROMPT",
     "CONSULT_REQUEST_TEMPLATE",
@@ -226,6 +246,8 @@ __all__ = [
     "GUIDANCE_SECTION_HEADER",
     "NO_PLAN_NOTE",
     "PLAN_REQUEST_TEMPLATE",
+    "PRIVACY_ADVISOR_NOTE",
+    "PRIVACY_WORKER_NOTE",
     "SEVERITY_NOTES",
     "TRIGGER_NOTES",
 ]

@@ -124,6 +124,66 @@ def test_content_mentioning_those_words_is_not_a_failure(detector):
     assert not detector.classify("read_file", out).is_failure
 
 
+# DataAgentBench's tools, as they reach the agent over MCP: a normal
+# result whose text says the call failed, the message JSON-encoded.
+DAB_FAILURES = [
+    "\nThe tool execute_python execution failed. The error message is:\n"
+    '"Execution failed with exit code 1\\nSyntaxError: invalid syntax"\n',
+    "\nThe tool execute_python execution failed. The error message is:\n"
+    '"Failed to parse the printed result (JSONDecodeError):\\nPrinted"\n',
+    "\nThe tool query_db execution failed. The error message is:\n"
+    '"DuckDB query execution error (ParserException): Parser Error"\n'
+    "... (too long, truncated)\n",
+]
+DAB_MISSING_MARKER = (
+    "\nThe tool execute_python execution failed. The error message is:\n"
+    '"__RESULT__: not found in the printed output."\n'
+)
+
+
+@pytest.mark.parametrize("output", DAB_FAILURES)
+def test_dab_tool_failures_are_detected(detector, output):
+    verdict = detector.classify("dab__execute_python", output)
+    assert verdict.is_failure and verdict.layer == "structured"
+
+
+def test_dab_missing_result_marker_is_not_a_failure(detector):
+    """The snippet ran but did not print "__RESULT__:"; the agent fixes
+    that on its next call, so it is no sign of being stuck."""
+    assert not detector.classify("dab__execute_python", DAB_MISSING_MARKER)
+    trigger = InterventionTrigger(
+        AdvisorInterventionConfig(window_size=10, window_failures=4),
+    )
+    outputs = [DAB_MISSING_MARKER, DAB_FAILURES[0]] * 3
+    assert not any(
+        trigger.observe("dab__execute_python", {"code": f"c{i}"}, out)
+        for i, out in enumerate(outputs)
+    )
+
+
+def test_dab_success_and_quoted_failures_are_not_failures(detector):
+    ok = (
+        "\nThe tool query_db was executed successfully.\n\n"
+        "The result is stored under key:\nvar_dab_000003\n\n"
+        'The result is:\n[{"note": "The tool x execution failed. '
+        'The error message is: y"}]\n'
+    )
+    assert not detector.classify("dab__query_db", ok)
+    quoted = "Earlier:\n" + DAB_FAILURES[0]
+    assert not detector.classify("read_file", quoted)
+
+
+def test_dab_failures_feed_the_trigger():
+    trigger = InterventionTrigger(
+        AdvisorInterventionConfig(consecutive_failures=3),
+    )
+    events = [
+        trigger.observe("dab__execute_python", {"code": f"c{i}"}, out)
+        for i, out in enumerate(DAB_FAILURES)
+    ]
+    assert events[:2] == [None, None] and events[2] is not None
+
+
 # ── Trigger policy ──────────────────────────────────────────────────────
 
 FAIL = "Command failed with exit code 1."

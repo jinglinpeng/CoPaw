@@ -174,6 +174,27 @@ async def test_intervenes_after_consecutive_failures():
     assert len(followups(agent)) == 1
 
 
+async def test_intervenes_after_consecutive_dab_tool_failures():
+    """DataAgentBench tools arrive over MCP as text blocks that read as an
+    ordinary result; their failure wording still counts."""
+    mw, agent = make_mw(), _Agent()
+    error = (
+        "\nThe tool execute_python execution failed. The error message is:"
+        "\n\"Execution failed with exit code 1\\nNameError: name 'x' is "
+        'not defined"\n'
+    )
+    for i in range(3):
+        add_result(
+            agent,
+            "dab__execute_python",
+            {"code": f"print({i})"},
+            [{"type": "text", "text": error}],
+        )
+        await mw._check_and_intervene(agent)
+    assert len(mw.advisor.calls) == 1
+    assert len(followups(agent)) == 1
+
+
 async def test_advice_is_injected_where_the_agent_can_see_it():
     mw, agent = make_mw(), _Agent()
     for i in range(3):

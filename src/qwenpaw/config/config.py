@@ -2198,6 +2198,60 @@ class AdvisorInterventionConfig(BaseModel):
     )
 
 
+class AdvisorPrivacyConfig(BaseModel):
+    """Keep tool data on the worker's side of Advisor Mode.
+
+    When enabled, the advisor sees what the worker did and how each tool
+    call turned out, but no tool result content. Values that first
+    appeared in a tool result, and numbers not found in the task or the
+    advisor's own replies, are replaced by placeholders such as ``<V_1>``
+    before any text reaches the advisor. Placeholders in the advisor's
+    replies are turned back into the real values for the worker.
+    """
+
+    enabled: bool = Field(
+        default=False,
+        description=(
+            "Mask tool-result values in everything sent to the advisor"
+        ),
+    )
+    small_int_max: int = Field(
+        default=10,
+        ge=0,
+        description="Integers up to this value are never masked",
+    )
+    min_value_chars: int = Field(
+        default=4,
+        ge=1,
+        description=(
+            "Shortest tool-result string treated as a value to mask "
+            "(shorter all-caps codes are handled separately)"
+        ),
+    )
+    shingle_words: int = Field(
+        default=3,
+        ge=2,
+        description=(
+            "Length in words of the text fragments matched against "
+            "tool-result text"
+        ),
+    )
+    format_min_records: int = Field(
+        default=5,
+        ge=2,
+        description=(
+            "A text fragment found in at least this many distinct "
+            "tool-result records counts as format, not data"
+        ),
+    )
+    reference_pattern: str = Field(
+        default=r"\bvar_[A-Za-z0-9_.:\-]+",
+        description=(
+            "Regex for result handles (storage keys) that are never masked"
+        ),
+    )
+
+
 class AdvisorModeConfig(BaseModel):
     """Configuration for Advisor Mode (stored in agent.json).
 
@@ -2248,6 +2302,13 @@ class AdvisorModeConfig(BaseModel):
     intervention: AdvisorInterventionConfig = Field(
         default_factory=AdvisorInterventionConfig,
         description="Thresholds for the mid-run auto intervention",
+    )
+    privacy: AdvisorPrivacyConfig = Field(
+        default_factory=AdvisorPrivacyConfig,
+        description=(
+            "Keep tool-result values on the worker's side (masked before "
+            "they reach the advisor)"
+        ),
     )
     advisor_model: Optional[ModelSlotConfig] = Field(
         default=None,

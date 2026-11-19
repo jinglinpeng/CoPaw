@@ -1,0 +1,67 @@
+{
+  "schema": "qwenpaw.frozen-collaboration-source.v1",
+  "version": "P4",
+  "parent": "P3",
+  "status": "frozen",
+  "base_revision": "2ebc2cdf6b2ea94c7fe1b19857430ae648f450e8",
+  "implementation_frozen_at": "2026-11-19T06:40:10.443422+00:00",
+  "named_at": "2026-11-19T06:40:10.443422+00:00",
+  "authorization": "用户要求：L2 隐私保护与 DAB 失败识别一起冻结成一个版本；Pcurrent 立即指向 P4。",
+  "experiment": null,
+  "experiment_status": "not_run",
+  "source_tree": {
+    "path": "src/qwenpaw",
+    "git_tree": "bbeec42a00fb01f6d61819678fc2248d2888955d",
+    "check": "git rev-parse <commit>:src/qwenpaw"
+  },
+  "files": {
+    "src/qwenpaw/config/config.py": "744e23582235c52874ba4f08340ab5f029f607c02e3dbb8318cc89273d978671",
+    "src/qwenpaw/modes/advisor/middleware.py": "8e82cba326baa0cc687f8a510befa3196b71282ed6a83ca147bc265105fbf4ee",
+    "src/qwenpaw/modes/advisor/mode.py": "50b987fb2b2bbd7de77ba59953401d7c9debe6d7f0626d859579c13bd49e84d8",
+    "src/qwenpaw/modes/advisor/privacy.py": "af35a946f6c30fda99179af7a14b8d048527b45a2cb4f0495525336344b2bd93",
+    "src/qwenpaw/modes/advisor/prompts.py": "dd408bd4924e8676f82dab26b845fc698dc7ecb38ac31c879a63f0704d110a9f",
+    "src/qwenpaw/modes/advisor/tools.py": "8c6d896125959188f16d07e1a8ea67e1d11ad64b3d71da514d0c41a242ebea97",
+    "src/qwenpaw/modes/advisor/trigger.py": "d3576d942f7cc6520f17bd406e927ab97b00fe8fee223b57f1575bef0cd96238"
+  },
+  "rendered_advisor_system_prompt_sha256": "440dc9bf3c333dc610fb6c45d168682cdf2da2b3d739759f1503cbbdd868ecb3",
+  "privacy_prompt_sha256": {
+    "PRIVACY_ADVISOR_NOTE": "4d1a14f947a64b61552522c8f16994f820dae8177ece29723c19af2c28cdd1ae",
+    "PRIVACY_WORKER_NOTE": "c0cc920d9bb328441258df586e837fa5e1db5d3cfa2fb41f35c5fb8cc82c86e8"
+  },
+  "scope_vs_P3": [
+    "L2 outbound privacy gate on everything sent to the advisor (advisor_mode.privacy, default off)",
+    "DataAgentBench tool failures counted by the intervention trigger (always on; missing __RESULT__ marker excluded)"
+  ],
+  "unchanged_vs_P3": [
+    "ADVISOR_SYSTEM_PROMPT",
+    "advisor request templates and consultation tool",
+    "trigger thresholds, recent_messages=20, 800-char text/result clip, 300-char tool-argument clip"
+  ],
+  "privacy_switch": {
+    "path": "advisor_mode.privacy.enabled",
+    "default": false,
+    "set_in": "agent.json only; not exposed in the console UI or API",
+    "defaults": {
+      "small_int_max": 10,
+      "min_value_chars": 4,
+      "shingle_words": 3,
+      "format_min_records": 5,
+      "reference_pattern": "\\bvar_[A-Za-z0-9_.:\\-]+"
+    },
+    "off": "advisor input identical to P3",
+    "on": "successful tool results replaced by a shape description; values first seen in tool results and unlisted numbers > 10 replaced by placeholders in every advisor-bound text; placeholders restored locally in advisor replies; error text masked and sent"
+  },
+  "threat_model": "accidental leakage only (honest worker, curious advisor)",
+  "known_privacy_gaps": [
+    "paraphrased meaning is sent",
+    "values written in another form (2020-11 vs November) are not matched",
+    "values shorter than 4 characters that are not all caps are not indexed",
+    "integers up to 10 are not masked"
+  ],
+  "intended_arms": [
+    "P4 privacy off (= P3 + DAB failure detection)",
+    "P4 privacy on"
+  ],
+  "outbound_privacy_filter_implemented": true,
+  "change_policy": "Preserve P4; freeze subsequent implementation changes under a new version."
+}

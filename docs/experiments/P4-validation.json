@@ -1,0 +1,68 @@
+{
+  "scope": "P4 source freeze; offline replays of the P3 DAB logs; no model calls or benchmark runs.",
+  "at": "2026-11-19T06:40:10.443422+00:00",
+  "environment": "worktree .venv (uv, Python 3.12)",
+  "advisor_system_prompt_hash_matches_P3": true,
+  "git_diff_check": "passed",
+  "focused_pytest": {
+    "status": "passed",
+    "passed": 275,
+    "skipped": 2,
+    "command": "python -m pytest -p no:cacheprovider -q tests/unit/agents/test_injected_events.py tests/unit/app/routers/test_advisor_mode_router.py tests/unit/app/routers/test_loops_router.py tests/unit/config/test_advisor_mode_config.py tests/unit/modes/test_advisor_middleware.py tests/unit/modes/test_advisor_mode.py tests/unit/modes/test_advisor_privacy.py tests/unit/modes/test_advisor_trigger.py tests/unit/plugins/test_install_lock.py tests/unit/runtime/test_builder_mode_middlewares.py"
+  },
+  "broad_pytest": {
+    "status": "failures_outside_advisor_preexisting",
+    "command": "python -m pytest -q -p no:cacheprovider tests/unit --ignore=tests/unit/channels",
+    "passed": 16926,
+    "failed": 17,
+    "errors": 8,
+    "skipped": 54,
+    "failing_files": [
+      "tests/unit/plugins/test_plugin_process.py (9 failed, 8 errors)",
+      "tests/unit/plugins/test_manifest_dependencies.py (4 failed)",
+      "tests/unit/hub/test_process_isolation.py (2 failed)",
+      "tests/unit/hub/test_docker_provisioner.py (1 failed)",
+      "tests/unit/agents/utils/test_file_handling.py (1 failed: remote download)"
+    ],
+    "baseline_check": "The same tests fail on a clean checkout of the P3 commit 2ebc2cdf6 with the same environment (package installs, Docker, filesystem isolation, network); none touch advisor code.",
+    "channels_excluded_reason": "tests/unit/channels needs dingtalk_stream, which is not installed (as in P3-validation.json)."
+  },
+  "flake8": {
+    "status": "passed",
+    "command": "python -m flake8 --extend-ignore=E203 --max-line-length=120 <changed source and test files>"
+  },
+  "black": {
+    "status": "frozen_format_difference",
+    "version": "23.3.0",
+    "line_length": 79,
+    "detail": "All changed files pass except prompts.py, where Black asks for the same two quote-style changes inside P3's frozen ADVISOR_SYSTEM_PROMPT; those bytes are retained, as in P3."
+  },
+  "pre_commit_all_files": {
+    "status": "unavailable",
+    "reason": "No module named pre_commit in the test environment."
+  },
+  "offline_replay": {
+    "source": "/dev2/benchmark/experiments/qwenpaw-collaboration/dab_advisor/artifacts/p3-five-full54-20261117-v1",
+    "failure_detection": {
+      "failed_tool_calls": 636,
+      "detected_by_P3": 0,
+      "detected_by_P4": 354,
+      "excluded_missing_result_marker": 282,
+      "successful_calls_flagged": 0,
+      "successful_calls": 5009,
+      "simulated_interventions": {
+        "max-advisor-27b": {"trials": 7, "interventions": 9},
+        "k3-advisor-27b": {"trials": 5, "interventions": 5}
+      },
+      "note": "Default thresholds, counters reset at each active consult; valid only up to the first intervention, after which the real trajectory would differ."
+    },
+    "privacy_gate": {
+      "consults": 15,
+      "result_values_in_questions": {"before": 85, "after": 0},
+      "result_values_in_last_10_tool_arguments": {"before": 2554, "after": 0},
+      "max_mask_ms": 171.4,
+      "note": "A value counts when it is a string cell (at least 4 characters, not numeric, not a field-name key, not in public text) of a result returned before the consult."
+    }
+  },
+  "conclusion": "Advisor tests, lint and offline replays pass; repository-wide failures are pre-existing and environment-dependent. P4 has not been run on a benchmark."
+}

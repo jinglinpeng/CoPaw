@@ -228,6 +228,18 @@ def test_middleware_env_root_prefers_project_dir(tmp_path):
     assert mw._env_context_root == "/ws"
 
 
+def test_privacy_gate_is_built_when_enabled_and_kept_per_conversation():
+    mode = AdvisorMode()
+    cfg = _config()
+    assert mode.build_middleware(_ctx(cfg), cfg).privacy is None
+
+    cfg.advisor_mode.privacy.enabled = True
+    first = mode.build_middleware(_ctx(cfg), cfg)
+    second = mode.build_middleware(_ctx(cfg), cfg)
+    assert first.privacy is not None
+    assert second.privacy is first.privacy, "one gate per conversation"
+
+
 # ── /advisor command ────────────────────────────────────────────────────
 
 
