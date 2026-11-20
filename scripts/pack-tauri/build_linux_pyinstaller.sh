@@ -11,7 +11,7 @@
 #   dist/QwenPaw-Tauri-<version>-linux-<arch>.deb
 #
 # Prerequisites (Ubuntu/Debian):
-#   sudo apt-get install -y build-essential curl file libtbb12 pkgconf \
+#   sudo apt-get install -y build-essential curl file pkgconf \
 #     libgtk-3-dev libsoup-3.0-dev librsvg2-dev libayatana-appindicator3-dev \
 #     libwebkit2gtk-4.1-dev
 #   Rust (rustup) and Node.js >= 22 must be on PATH; Python 3.11-3.13 is used
@@ -69,7 +69,7 @@ if [ ${#missing[@]} -gt 0 ]; then
   echo "Missing prerequisites: ${missing[*]}"
   echo ""
   echo "Install the system packages:"
-  echo "  sudo apt-get install -y build-essential curl file libtbb12 pkgconf \\"
+  echo "  sudo apt-get install -y build-essential curl file pkgconf \\"
   echo "    libgtk-3-dev libsoup-3.0-dev librsvg2-dev \\"
   echo "    libayatana-appindicator3-dev libwebkit2gtk-4.1-dev"
   echo ""
