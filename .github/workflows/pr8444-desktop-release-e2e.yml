@@ -1,0 +1,52 @@
+# VALIDATION ONLY, not part of PR #8444. Do not merge.
+# Runs the desktop half of a release (build -> publish -> promote) against
+# this fork's test OSS bucket, so the Linux release path gets a real run.
+name: PR 8444 desktop release E2E
+
+on:
+  push:
+    branches: [t3/pr-8444-release-e2e]
+
+permissions:
+  actions: read
+  contents: write
+
+concurrency:
+  group: pr8444-desktop-release-e2e
+  cancel-in-progress: false
+
+jobs:
+  guard:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Refuse anything but the fork's test bucket
+        env:
+          OSS_BUCKET: ${{ vars.OSS_BUCKET }}
+        run: |
+          if [ "${GITHUB_REPOSITORY,,}" != "jinglinpeng/copaw" ] || [ "$OSS_BUCKET" != "qwenpawtest" ]; then
+            echo "::error::This validation may only publish to the fork's test bucket"
+            exit 1
+          fi
+
+  build-desktop:
+    needs: [guard]
+    uses: ./.github/workflows/desktop-build.yml
+    with:
+      ref: ${{ github.sha }}
+    secrets: inherit
+
+  publish-desktop:
+    needs: [build-desktop]
+    uses: ./.github/workflows/desktop-publish.yml
+    with:
+      tag: v2.3.1b1-pr8444-e2e.1
+      ref: ${{ github.sha }}
+    secrets: inherit
+
+  promote-desktop:
+    needs: [publish-desktop]
+    uses: ./.github/workflows/desktop-promote.yml
+    with:
+      tag: v2.3.1b1-pr8444-e2e.1
+      ref: ${{ github.sha }}
+    secrets: inherit
