@@ -41,6 +41,15 @@ use platform_windows::{
     press_key, resolve_window, scroll, set_value, type_text, validate_observation,
 };
 
+#[cfg(target_os = "linux")]
+mod platform_linux;
+#[cfg(target_os = "linux")]
+use platform_linux::{
+    active_window, click, close_window, desktop_locked, drag, ensure_permissions, input_sequence,
+    invoke_element, is_forbidden, last_input_age_ms, list_apps, list_windows, observe_window,
+    press_key, resolve_window, scroll, set_value, type_text, validate_observation,
+};
+
 #[cfg(target_os = "macos")]
 mod platform_macos;
 #[cfg(target_os = "macos")]

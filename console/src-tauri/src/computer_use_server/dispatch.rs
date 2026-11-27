@@ -181,7 +181,7 @@ pub(super) fn dispatch_request(
         _ => {}
     }
 
-    #[cfg(windows)]
+    #[cfg(not(target_os = "macos"))]
     if requests_text_edit(method, &params) {
         return Err((
             "unsupported_operation",
@@ -308,7 +308,7 @@ pub(super) fn dispatch_request(
                     transient_text_ready,
                 )
             }
-            #[cfg(windows)]
+            #[cfg(not(target_os = "macos"))]
             {
                 type_text(observation(state, observation_id)?, &params)
             }
@@ -722,7 +722,7 @@ fn requires_stable_observation(method: &str) -> bool {
 /// desktop guard for every mutation; this is an internal safety boundary, not
 /// a product-facing platform promise.
 fn requires_user_idle(method: &str, window: &WindowInfo) -> bool {
-    #[cfg(windows)]
+    #[cfg(not(target_os = "macos"))]
     {
         let _ = window;
         changes_window_state(method)

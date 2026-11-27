@@ -1,0 +1,22 @@
+# Standalone build of the Computer Use helper.
+#
+# The helper's sources live in ../src (computer_use_server and
+# computer_use_protocol) and are shared with the desktop package. Building them
+# here avoids compiling Tauri and its webkit2gtk dependency, which a server
+# without a desktop toolchain cannot provide.
+[package]
+name = "qwenpaw-computer-use-helper-standalone"
+version = "0.1.0"
+edition = "2021"
+publish = false
+
+[[bin]]
+name = "qwenpaw-computer-use-helper"
+path = "src/main.rs"
+
+[dependencies]
+serde_json = "1.0"
+sha2 = "0.10"
+libc = "0.2"
+
+[workspace]

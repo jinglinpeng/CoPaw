@@ -409,6 +409,96 @@ async def test_target_free_builtin_read_skips_model_but_not_existing_ask(
     assert (await assess_tool_call("OtherTool", "")).needs_approval
 
 
+def _plugin_tool(name, owner):
+    from qwenpaw.runtime.tool_registry import ToolDescriptor
+
+    async def tool(action: str = ""):
+        return action
+
+    tool.__name__ = name
+    tool._tool_descriptor = ToolDescriptor(
+        name=name,
+        func=tool,
+        owner_plugin_id=owner,
+    )
+    return tool
+
+
+@pytest.mark.asyncio
+async def test_registered_computer_use_skips_model_but_not_existing_ask(
+    monkeypatch,
+):
+    from qwenpaw.governance.tool_registry import (
+        DEFAULT_REGISTRY,
+        ToolRegistry,
+        register_tool_governance,
+    )
+    from qwenpaw.providers.typesafe_provider import TypeSafeEvaluationError
+
+    calls = []
+
+    async def offline(*args, **kwargs):
+        calls.append(kwargs)
+        raise TypeSafeEvaluationError("offline")
+
+    monkeypatch.setattr(TypeSafeProvider, "evaluate", offline)
+    previous_owner = DEFAULT_REGISTRY.get_owner("computer_use")
+    register_tool_governance(
+        DEFAULT_REGISTRY,
+        python_name="computer_use",
+        tool_type="internal",
+        target_param="action",
+        owner="computer-use",
+    )
+    try:
+        policy_name = DEFAULT_REGISTRY.python_to_policy_name("computer_use")
+        registered = _plugin_tool("computer_use", "computer-use")
+
+        result = await assess_tool_call(
+            policy_name,
+            "click",
+            tool_func=registered,
+        )
+        assert not result.needs_approval
+        assert not calls
+        assert (
+            await assess_tool_call(
+                policy_name,
+                "click",
+                tool_func=registered,
+                baseline_ask=True,
+            )
+        ).needs_approval
+        assert not calls
+
+        async def computer_use(action: str = ""):
+            return action
+
+        impostors = [
+            (policy_name, computer_use),
+            (policy_name, _plugin_tool("computer_use", "other-plugin")),
+            ("OtherTool", registered),
+        ]
+        for tool_name, tool_func in impostors:
+            assert (
+                await assess_tool_call(tool_name, "click", tool_func=tool_func)
+            ).needs_approval
+        assert len(calls) == len(impostors)
+
+        monkeypatch.setattr(
+            ToolRegistry,
+            "get_owner",
+            lambda self, python_name: "other-plugin",
+        )
+        assert (
+            await assess_tool_call(policy_name, "click", tool_func=registered)
+        ).needs_approval
+        assert len(calls) == len(impostors) + 1
+    finally:
+        if previous_owner is None:
+            DEFAULT_REGISTRY.unregister_python_tool("computer_use")
+
+
 @pytest.mark.asyncio
 async def test_declared_local_media_read_skips_decision_model(
     monkeypatch,

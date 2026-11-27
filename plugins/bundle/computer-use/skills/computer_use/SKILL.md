@@ -1,6 +1,6 @@
 ---
 name: computer_use
-description: "Use computer_use for live Windows or macOS GUI work that structured tools cannot complete. Discover an approved app and window, act from fresh observations, and verify every requested result."
+description: "Use computer_use for live Windows, macOS, or Linux GUI work that structured tools cannot complete. Discover an approved app and window, act from fresh observations, and verify every requested result."
 metadata:
   builtin_skill_version: "1.0"
   qwenpaw:
@@ -43,8 +43,8 @@ final state is incomplete or uncertain, report that accurately.
    another window.
 
 Use `launch_app` with a canonical App ID. If the application is not listed,
-use an explicit absolute executable path on Windows or application-bundle path
-on macOS. After launch, list its windows again because launch completion does
+use an explicit absolute executable path on Windows or Linux, or an
+application-bundle path on macOS. After launch, list its windows again because launch completion does
 not prove that a usable window already exists.
 
 When the runtime reports a missing system permission, stop and ask the user to
@@ -206,6 +206,12 @@ include `ENTER`, `TAB`, `ESC`, `SPACE`, `BACKSPACE`, `DELETE`, `HOME`, `END`,
   `WIN+SHIFT+N` is Command-Shift-N.
 - `begin_text_edit` is macOS-only. Use it only for an observed menu command
   whose semantics require immediate text input; otherwise use `invoke`.
+
+## Linux Conventions
+
+- Linux support covers X11 desktops. `WIN` is the Super key.
+- Control types are AT-SPI role names such as `push button`, `text`, or
+  `table cell`.
 
 ## Recover From Changes
 

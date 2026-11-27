@@ -15,7 +15,7 @@ from typing import ClassVar
 # Platforms with a native helper. The helper is a Rust binary built and staged
 # only for these two; on anything else there is nothing to talk to, however the
 # host is configured.
-_SUPPORTED_PLATFORMS = frozenset({"win32", "darwin"})
+_SUPPORTED_PLATFORMS = frozenset({"win32", "darwin", "linux"})
 
 _PIPE_ENV = "QWENPAW_COMPUTER_USE_PIPE"
 _CAPABILITY_ENV = "QWENPAW_COMPUTER_USE_CAPABILITY"

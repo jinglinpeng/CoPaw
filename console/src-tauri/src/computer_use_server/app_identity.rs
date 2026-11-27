@@ -70,6 +70,14 @@ pub(super) fn app_id_from_path(path: &Path) -> String {
     app_id_from_bundle_path(path)
 }
 
+/// Linux names an application by the real path of its executable, the same
+/// spelling Windows uses, so a running process and a launch target agree.
+#[cfg(target_os = "linux")]
+pub(super) fn app_id_from_path(path: &Path) -> String {
+    let resolved = std::fs::canonicalize(path).unwrap_or_else(|_| path.to_path_buf());
+    format!("process:{}", resolved.to_string_lossy())
+}
+
 /// Validate what `launch_app` was given and resolve it to something the
 /// platform can start.
 ///
@@ -124,6 +132,53 @@ fn resolve_launch_path(app: &str) -> Result<PathBuf, (&'static str, String)> {
     }
     path.canonicalize()
         .map_err(|error| ("app_not_found", error.to_string()))
+}
+
+/// Linux accepts an absolute path to an executable file.
+#[cfg(target_os = "linux")]
+fn resolve_launch_path(app: &str) -> Result<PathBuf, (&'static str, String)> {
+    use std::os::unix::fs::PermissionsExt;
+    let value = app.strip_prefix("process:").unwrap_or(app);
+    let path = PathBuf::from(value);
+    let executable = path.is_absolute()
+        && path.is_file()
+        && std::fs::metadata(&path)
+            .map(|metadata| metadata.permissions().mode() & 0o111 != 0)
+            .unwrap_or(false);
+    if !executable {
+        return Err((
+            "app_not_found",
+            "launch_app accepts an App ID from list_apps or an absolute executable path."
+                .to_string(),
+        ));
+    }
+    path.canonicalize()
+        .map_err(|error| ("app_not_found", error.to_string()))
+}
+
+/// Start the application in its own session so it outlives the helper and
+/// never shares the helper's process group or standard streams.
+#[cfg(target_os = "linux")]
+pub(super) fn launch_at(path: &Path) -> Result<(), (&'static str, String)> {
+    use std::os::unix::process::CommandExt;
+    use std::process::Stdio;
+    let mut command = std::process::Command::new(path);
+    command
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null());
+    unsafe {
+        command.pre_exec(|| {
+            libc::setsid();
+            Ok(())
+        });
+    }
+    command.spawn().map(|_| ()).map_err(|error| {
+        (
+            "input_failed",
+            format!("Could not launch application: {error}"),
+        )
+    })
 }
 
 /// Start the application at a resolved path.

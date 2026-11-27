@@ -35,7 +35,7 @@ impl InteractionSession {
                 _host_focus: HostFocusLease::begin()?,
             });
         }
-        #[cfg(windows)]
+        #[cfg(not(target_os = "macos"))]
         {
             Ok(Self {})
         }
@@ -48,6 +48,9 @@ impl InteractionSession {
 pub(super) type NativeElement = windows::Win32::UI::Accessibility::IUIAutomationElement;
 #[cfg(target_os = "macos")]
 pub(super) type NativeElement = super::platform_macos::AxElement;
+/// Linux keeps AT-SPI objects in its platform process and stores a reference.
+#[cfg(target_os = "linux")]
+pub(super) type NativeElement = super::platform_linux::LinuxElement;
 
 // Raw window captures are 32bpp bitmaps; re-encode them as JPEG so a
 // single screenshot costs hundreds of kilobytes instead of tens of
@@ -84,7 +87,7 @@ pub(super) const INPUT_GUARD_GRACE_MS: u32 = 750;
 // settles inside the existing input-grace window and should not pay it.
 #[cfg(target_os = "macos")]
 const ACTION_SETTLE_DELAY: Duration = Duration::from_millis(1_500);
-#[cfg(windows)]
+#[cfg(not(target_os = "macos"))]
 const ACTION_SETTLE_DELAY: Duration = Duration::from_millis(INPUT_GUARD_GRACE_MS as u64);
 
 static NEXT_ID: AtomicU64 = AtomicU64::new(1);

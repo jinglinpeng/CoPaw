@@ -35,7 +35,7 @@ def _reachable_host(monkeypatch: pytest.MonkeyPatch):
     monkeypatch.setattr(HostRuntimeProvider, "_capability", None)
 
 
-@pytest.mark.parametrize("platform", ["win32", "darwin"])
+@pytest.mark.parametrize("platform", ["win32", "darwin", "linux"])
 def test_a_platform_with_a_helper_is_available(
     monkeypatch: pytest.MonkeyPatch,
     platform: str,
@@ -49,7 +49,7 @@ def test_a_platform_with_a_helper_is_available(
     assert HostRuntimeProvider.is_available() is True
 
 
-@pytest.mark.parametrize("platform", ["linux", "freebsd"])
+@pytest.mark.parametrize("platform", ["freebsd", "sunos5"])
 def test_a_platform_without_a_helper_is_not_available(
     monkeypatch: pytest.MonkeyPatch,
     platform: str,

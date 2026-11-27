@@ -75,7 +75,7 @@ pub(crate) fn run(args: &[String]) -> Result<(), String> {
     }
 }
 
-#[cfg(target_os = "macos")]
+#[cfg(unix)]
 pub(crate) fn run(args: &[String]) -> Result<(), String> {
     use std::os::unix::fs::PermissionsExt;
     use std::os::unix::net::UnixListener;
@@ -93,7 +93,10 @@ pub(crate) fn run(args: &[String]) -> Result<(), String> {
         .map_err(|error| format!("failed to secure Computer Use helper pid: {error}"))?;
     // macOS has no Job Object; exit when the desktop parent goes away so the
     // helper is reaped on host crash or force-quit.
+    #[cfg(target_os = "macos")]
     super::platform_macos::spawn_parent_death_watch();
+    #[cfg(target_os = "linux")]
+    super::platform_linux::spawn_parent_death_watch();
     emit_ready()?;
     for stream in listener.incoming() {
         let mut connection = match stream {

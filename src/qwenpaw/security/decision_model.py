@@ -305,6 +305,34 @@ def _is_declared_no_target_read(
     return False
 
 
+# Plugin tools that gate every effect themselves, keyed by python tool name
+# with the plugin that must own them. Computer Use requires the user's
+# approval per application, refuses credential and QwenPaw windows, and stops
+# as soon as the user touches the mouse or keyboard. Its governance target is
+# only the action name ("click"), which cannot tell "click Save" from "click
+# Delete all", so asking the decision model adds latency without judging the
+# effect. Other approval levels already let it through at policy evaluation.
+_SELF_GATED_PLUGIN_TOOLS = {"computer_use": "computer-use"}
+
+
+def _is_self_gated_plugin_tool(tool_name: str, tool_func: Any = None) -> bool:
+    """Trust only the callable the owning plugin registered for the tool."""
+    func = getattr(tool_func, "__func__", tool_func)
+    descriptor = getattr(func, "_tool_descriptor", None)
+    if descriptor is None or getattr(descriptor, "func", None) is not func:
+        return False
+    python_name = getattr(descriptor, "name", "")
+    owner = _SELF_GATED_PLUGIN_TOOLS.get(python_name)
+    if owner is None or getattr(descriptor, "owner_plugin_id", "") != owner:
+        return False
+    from ..governance.tool_registry import DEFAULT_REGISTRY
+
+    return (
+        DEFAULT_REGISTRY.get_owner(python_name) == owner
+        and DEFAULT_REGISTRY.python_to_policy_name(python_name) == tool_name
+    )
+
+
 # pylint: disable-next=too-many-return-statements
 def _sips_output_exists(tool_name: str, command: str) -> bool | None:
     """Inspect only a single, literal sips command with an absolute --out.
@@ -462,6 +490,15 @@ async def assess_tool_call(
     tool_func: Any = None,
 ) -> DecisionModelAssessment:
     """Evaluate metadata for an effectful call; fail to approval on errors."""
+    if _is_self_gated_plugin_tool(tool_name, tool_func):
+        return DecisionModelAssessment(
+            baseline_ask,
+            (
+                "Decision model: tool gates its own actions; skipped"
+                if not baseline_ask
+                else "Decision model: existing approval requirement retained"
+            ),
+        )
     if (
         _is_read_only(tool_name, operation)
         or _is_declared_local_read(tool_name, target)
